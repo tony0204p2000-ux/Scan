@@ -69,7 +69,7 @@ h2{font-size:15px;margin:0 0 8px;color:var(--sub);font-weight:600}
 </head>
 <body>
 <header>
-  <h1>手機條碼掃描 <span style="font-weight:400;color:var(--sub);font-size:14px">批次模式 v1.1</span></h1>
+  <h1>手機條碼掃描 <span style="font-weight:400;color:var(--sub);font-size:14px">批次模式 v1.2</span></h1>
   <div class="count"><b id="cnt">0</b>筆</div>
 </header>
 
@@ -102,6 +102,10 @@ h2{font-size:15px;margin:0 0 8px;color:var(--sub);font-weight:600}
       <select id="optGap"><option value="500">0.5 秒</option><option value="1000">1 秒</option><option value="1500">1.5 秒</option><option value="2000">2 秒</option><option value="3000">3 秒</option></select></label>
     <label class="opt"><span>同一條碼再次加入<small>自動連續時,需離開鏡頭多久才算新的一筆</small></span>
       <select id="optHold"><option value="3000">3 秒</option><option value="5000">5 秒</option><option value="10000">10 秒</option></select></label>
+    <label class="opt"><span>瞄準框大小<small>只讀框內;條碼要整張在框內才會讀</small></span>
+      <select id="optFrame"><option value="L">大</option><option value="M">中</option><option value="S">小</option><option value="B">橫條(一維條碼)</option></select></label>
+    <label class="opt"><span>條碼類型<small>只讀指定類型,其他一律忽略</small></span>
+      <select id="optTypes"><option value="all">全部</option><option value="qr">僅 QR Code</option><option value="2d">僅二維(QR/DataMatrix)</option><option value="1d">僅一維條碼</option></select></label>
     <label class="opt"><span>重複條碼<small>清單中已有相同內容時</small></span>
       <select id="optDup"><option value="allow">照常加入</option><option value="skip">略過並提示</option></select></label>
     <label class="opt"><span>匯出時拆欄<small>依分隔符號把內容拆成多欄</small></span><input type="checkbox" id="optSplit"></label>
@@ -137,7 +141,7 @@ h2{font-size:15px;margin:0 0 8px;color:var(--sub);font-weight:600}
 'use strict';
 var $=function(id){return document.getElementById(id);};
 var KEY='phoneScanBatch.v1';
-var items=[], cfg={dup:'allow',split:true,sep:'?',beep:true,vib:true,mode:'auto',gap:1500,hold:5000};
+var items=[], cfg={dup:'allow',split:true,sep:'?',beep:true,vib:true,mode:'auto',gap:1500,hold:5000,frame:'M',types:'all'};
 var memStore=null;
 
 /* ---------- 儲存 ---------- */
@@ -196,11 +200,17 @@ function addItem(text,fmt){
 
 /* ---------- 解碼 ---------- */
 var ZX=window.ZXing, zreader=null;
-var FMT_NAMES=['QR_CODE','DATA_MATRIX','CODE_128','CODE_39','CODE_93','EAN_13','EAN_8','UPC_A','ITF','CODABAR','PDF_417','AZTEC'];
+var FMT_ALL=['QR_CODE','DATA_MATRIX','CODE_128','CODE_39','CODE_93','EAN_13','EAN_8','UPC_A','ITF','CODABAR','PDF_417','AZTEC'];
+var FMT_SET={all:FMT_ALL,qr:['QR_CODE'],'2d':['QR_CODE','DATA_MATRIX'],'1d':['CODE_128','CODE_39','CODE_93','EAN_13','EAN_8','UPC_A','ITF','CODABAR']};
+function allowed(){ return FMT_SET[cfg.types]||FMT_ALL; }
+/* 瞄準框佔可見畫面的比例 [寬, 高] */
+var FRAMES={L:[.84,.72],M:[.6,.5],S:[.4,.34],B:[.84,.2]};
+function frameSize(){ return FRAMES[cfg.frame]||FRAMES.M; }
+function applyFrame(){ var f=frameSize(); $('frame').style.inset=((1-f[1])*50)+'% '+((1-f[0])*50)+'%'; }
 function zx(){
   if(zreader) return zreader;
   var hints=new Map(), fm=[];
-  FMT_NAMES.forEach(function(n){ if(ZX.BarcodeFormat[n]!==undefined) fm.push(ZX.BarcodeFormat[n]); });
+  allowed().forEach(function(n){ if(ZX.BarcodeFormat[n]!==undefined) fm.push(ZX.BarcodeFormat[n]); });
   hints.set(ZX.DecodeHintType.POSSIBLE_FORMATS,fm);
   hints.set(ZX.DecodeHintType.TRY_HARDER,true);
   zreader=new ZX.MultiFormatReader(); zreader.setHints(hints);
@@ -256,7 +266,7 @@ function onHit(text,fmt,now){
 function region(v){
   var vw=v.videoWidth, vh=v.videoHeight, wr=$('viewWrap'), a=(wr.clientWidth/wr.clientHeight)||4/3;
   var visW=vw, visH=vh; if(vw/vh>a) visW=vh*a; else visH=vw/a;
-  var cw=Math.round(visW*.84), ch=Math.round(visH*.72);
+  var f=frameSize(), cw=Math.round(visW*f[0]), ch=Math.round(visH*f[1]);
   return {sx:Math.round((vw-cw)/2), sy:Math.round((vh-ch)/2), cw:cw, ch:ch};
 }
 function tick(){
@@ -275,7 +285,8 @@ function tick(){
       if(!rs||!rs.length) return;
       var cx=cv.width/2, cy=cv.height/2;
       var d=function(r){ var b=r.boundingBox; return b?Math.abs(b.x+b.width/2-cx)+Math.abs(b.y+b.height/2-cy):0; };
-      rs=Array.prototype.slice.call(rs).sort(function(p,q){return d(p)-d(q);});
+      var ok=allowed();
+      rs=Array.prototype.slice.call(rs).filter(function(r){return ok.indexOf(NATIVE_NAME[r.format])>=0;}).sort(function(p,q){return d(p)-d(q);});
       for(var i=0;i<rs.length;i++){ onHit(rs[i].rawValue,NATIVE_NAME[rs[i].format]||rs[i].format); if(cfg.mode==='tap') break; }
     }).catch(function(){}).then(next);
     return;
@@ -381,6 +392,9 @@ function bindCfg(){
   $('optMode').onchange=function(){cfg.mode=this.value;save();applyMode();};
   $('optGap').onchange=function(){cfg.gap=+this.value;save();};
   $('optHold').onchange=function(){cfg.hold=+this.value;save();};
+  $('optFrame').value=cfg.frame; $('optTypes').value=cfg.types;
+  $('optFrame').onchange=function(){cfg.frame=this.value;save();applyFrame();};
+  $('optTypes').onchange=function(){cfg.types=this.value;zreader=null;save();};
   $('optDup').onchange=function(){cfg.dup=this.value;save();};
   $('optSplit').onchange=function(){cfg.split=this.checked;save();};
   $('optSep').oninput=function(){cfg.sep=this.value;save();};
@@ -487,7 +501,7 @@ $('btnCopy').onclick=function(){
 /* 測試用掛勾 */
 window.__scan={hit:onHit,cfg:cfg,add:addItem,xlsx:xlsxBlob,csv:csvBlob,items:function(){return items;}};
 
-load(); bindCfg(); applyMode(); render(); initNative();
+load(); bindCfg(); applyFrame(); applyMode(); render(); initNative();
 if(memStore) status('此瀏覽器無法暫存資料,關閉頁面前請先匯出。','warn');
 })();
 </script>
