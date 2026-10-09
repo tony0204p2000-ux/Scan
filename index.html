@@ -36,6 +36,8 @@ button:disabled{opacity:.45}
 video{width:100%;height:100%;object-fit:cover;display:block}
 .frame{position:absolute;inset:14% 8%;border:2px solid rgba(255,255,255,.85);border-radius:10px;pointer-events:none;
   box-shadow:0 0 0 2000px rgba(0,0,0,.28)}
+#btnShot{display:block;width:100%;margin-bottom:10px;min-height:60px;background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;font-size:17px}
+#btnShot.armed{background:#f0a94a;border-color:#f0a94a;color:#231503}
 .frame.hit{border-color:#4ade80;box-shadow:0 0 0 2000px rgba(16,120,70,.35)}
 #status{font-size:14px;color:var(--sub);min-height:21px;margin:8px 2px 0;overflow-wrap:anywhere}
 #status.ok{color:var(--ok)} #status.warn{color:var(--warn)} #status.bad{color:var(--bad)}
@@ -67,12 +69,13 @@ h2{font-size:15px;margin:0 0 8px;color:var(--sub);font-weight:600}
 </head>
 <body>
 <header>
-  <h1>手機條碼掃描 <span style="font-weight:400;color:var(--sub);font-size:14px">批次模式</span></h1>
+  <h1>手機條碼掃描 <span style="font-weight:400;color:var(--sub);font-size:14px">批次模式 v1.1</span></h1>
   <div class="count"><b id="cnt">0</b>筆</div>
 </header>
 
 <div class="card">
   <div id="viewWrap"><video id="video" playsinline muted autoplay></video><div class="frame" id="frame"></div></div>
+  <button id="btnShot" class="hide">按一下掃一筆</button>
   <div class="row">
     <button class="primary" id="btnCam">開始連續掃描</button>
     <button id="btnPhoto">拍照掃描</button>
@@ -93,6 +96,12 @@ h2{font-size:15px;margin:0 0 8px;color:var(--sub);font-weight:600}
 <div class="card">
   <details>
     <summary>設定</summary>
+    <label class="opt"><span>掃描方式<small>一盒有多張條碼時建議用按鈕觸發</small></span>
+      <select id="optMode"><option value="auto">自動連續</option><option value="tap">按鈕觸發</option></select></label>
+    <label class="opt"><span>每筆間隔<small>自動連續時,加入一筆後暫停多久</small></span>
+      <select id="optGap"><option value="500">0.5 秒</option><option value="1000">1 秒</option><option value="1500">1.5 秒</option><option value="2000">2 秒</option><option value="3000">3 秒</option></select></label>
+    <label class="opt"><span>同一條碼再次加入<small>自動連續時,需離開鏡頭多久才算新的一筆</small></span>
+      <select id="optHold"><option value="3000">3 秒</option><option value="5000">5 秒</option><option value="10000">10 秒</option></select></label>
     <label class="opt"><span>重複條碼<small>清單中已有相同內容時</small></span>
       <select id="optDup"><option value="allow">照常加入</option><option value="skip">略過並提示</option></select></label>
     <label class="opt"><span>匯出時拆欄<small>依分隔符號把內容拆成多欄</small></span><input type="checkbox" id="optSplit"></label>
@@ -128,7 +137,7 @@ h2{font-size:15px;margin:0 0 8px;color:var(--sub);font-weight:600}
 'use strict';
 var $=function(id){return document.getElementById(id);};
 var KEY='phoneScanBatch.v1';
-var items=[], cfg={dup:'allow',split:true,sep:'?',beep:true,vib:true};
+var items=[], cfg={dup:'allow',split:true,sep:'?',beep:true,vib:true,mode:'auto',gap:1500,hold:5000};
 var memStore=null;
 
 /* ---------- 儲存 ---------- */
@@ -217,7 +226,8 @@ function draw(src,sw,sh,sx,sy,cw,ch,scale,rot){
 }
 
 /* ---------- 相機連續掃描 ---------- */
-var stream=null, running=false, native=null, lastText='', lastSeen=0, tickN=0, COOL=1500;
+var stream=null, running=false, native=null, tickN=0;
+var seen={}, lastAdd=0, armed=0;
 var NATIVE_NAME={qr_code:'QR_CODE',data_matrix:'DATA_MATRIX',code_128:'CODE_128',code_39:'CODE_39',code_93:'CODE_93',ean_13:'EAN_13',ean_8:'EAN_8',upc_a:'UPC_A',itf:'ITF',codabar:'CODABAR',pdf417:'PDF_417',aztec:'AZTEC'};
 function initNative(){
   if(!('BarcodeDetector' in window)) return Promise.resolve();
@@ -226,38 +236,65 @@ function initNative(){
     if(need.every(function(n){return fs.indexOf(n)>=0;})) native=new window.BarcodeDetector({formats:fs.filter(function(f){return NATIVE_NAME[f];})});
   }).catch(function(){});
 }
-function onHit(text,fmt){
-  var now=Date.now();
-  var same=(text===lastText && now-lastSeen<COOL);
-  lastText=text; lastSeen=now;
-  if(same) return;
-  var f=$('frame'); f.classList.add('hit'); setTimeout(function(){f.classList.remove('hit');},350);
-  addItem(text,fmt);
+function flash(){ var f=$('frame'); f.classList.add('hit'); setTimeout(function(){f.classList.remove('hit');},350); }
+function disarm(){ armed=0; var b=$('btnShot'); b.classList.remove('armed'); b.textContent='按一下掃一筆'; }
+/* 每張條碼各自記錄最後入鏡時間:多張條碼同時入鏡、輪流被讀到時也不會重複加入 */
+function onHit(text,fmt,now){
+  now=now||Date.now();
+  if(cfg.mode==='tap'){
+    if(!armed) return false;
+    disarm(); flash(); addItem(text,fmt); return true;
+  }
+  var prev=seen[text];
+  if(prev && now-prev<cfg.hold){ seen[text]=now; return false; }
+  if(now-lastAdd<cfg.gap) return false;
+  seen[text]=now; lastAdd=now;
+  for(var k in seen) if(now-seen[k]>60000) delete seen[k];
+  flash(); addItem(text,fmt); return true;
+}
+/* 畫面上瞄準框對應到影像的範圍,只解碼框內 */
+function region(v){
+  var vw=v.videoWidth, vh=v.videoHeight, wr=$('viewWrap'), a=(wr.clientWidth/wr.clientHeight)||4/3;
+  var visW=vw, visH=vh; if(vw/vh>a) visW=vh*a; else visH=vw/a;
+  var cw=Math.round(visW*.84), ch=Math.round(visH*.72);
+  return {sx:Math.round((vw-cw)/2), sy:Math.round((vh-ch)/2), cw:cw, ch:ch};
 }
 function tick(){
   if(!running) return;
   var v=$('video');
   var next=function(){ if(running) setTimeout(tick,90); };
+  if(armed && Date.now()-armed>6000){ disarm(); beep(false); status('沒讀到條碼,請對準框內再按一次。','warn'); }
+  if(cfg.mode==='tap' && !armed){ next(); return; }
   if(v.readyState<2 || !v.videoWidth){ next(); return; }
+  var g=region(v), scale=Math.min(1,1100/Math.max(g.cw,g.ch));
+  tickN++;
+  var rot=!native && tickN%3===2;
+  var cv=draw(v,v.videoWidth,v.videoHeight,g.sx,g.sy,g.cw,g.ch,scale,rot);
   if(native){
-    native.detect(v).then(function(rs){ if(rs&&rs.length) onHit(rs[0].rawValue,NATIVE_NAME[rs[0].format]||rs[0].format); }).catch(function(){}).then(next);
+    native.detect(cv).then(function(rs){
+      if(!rs||!rs.length) return;
+      var cx=cv.width/2, cy=cv.height/2;
+      var d=function(r){ var b=r.boundingBox; return b?Math.abs(b.x+b.width/2-cx)+Math.abs(b.y+b.height/2-cy):0; };
+      rs=Array.prototype.slice.call(rs).sort(function(p,q){return d(p)-d(q);});
+      for(var i=0;i<rs.length;i++){ onHit(rs[i].rawValue,NATIVE_NAME[rs[i].format]||rs[i].format); if(cfg.mode==='tap') break; }
+    }).catch(function(){}).then(next);
     return;
   }
-  var vw=v.videoWidth, vh=v.videoHeight;
-  /* 取畫面中央區域,交替嘗試橫向與直向 */
-  var cw=Math.round(vw*.9), ch=Math.round(vh*.8), sx=(vw-cw)>>1, sy=(vh-ch)>>1;
-  var scale=Math.min(1,1100/Math.max(cw,ch));
-  tickN++;
-  var r=decodeCanvas(draw(v,vw,vh,sx,sy,cw,ch,scale,tickN%3===2));
+  var r=decodeCanvas(cv);
   if(r) onHit(r.text,r.fmt);
   next();
+}
+function applyMode(){
+  disarm();
+  $('btnShot').classList.toggle('hide',cfg.mode!=='tap'||!running);
+  if(running) status(cfg.mode==='tap'?'把要讀的條碼放在框內,按「按一下掃一筆」。':'對準條碼,讀到會自動加入;加入後會暫停 '+(cfg.gap/1000)+' 秒。');
 }
 function stopCam(){
   running=false;
   if(stream){ stream.getTracks().forEach(function(t){t.stop();}); stream=null; }
   $('video').srcObject=null;
   $('viewWrap').classList.remove('on'); $('btnTorch').classList.add('hide');
-  $('btnCam').textContent='開始連續掃描'; torchOn=false;
+  $('btnCam').textContent='開始連續掃描'; torchOn=false; disarm(); $('btnShot').classList.add('hide');
 }
 var torchOn=false;
 function startCam(){
@@ -270,7 +307,7 @@ function startCam(){
     stream=s; var v=$('video'); v.srcObject=s;
     $('viewWrap').classList.add('on'); $('btnCam').textContent='停止掃描';
     var p=v.play(); if(p&&p.catch) p.catch(function(){});
-    running=true; lastText=''; status('對準條碼,讀到會自動加入。同一條碼需移開後才會再次加入。');
+    running=true; seen={}; lastAdd=0; applyMode();
     try{
       var tr=s.getVideoTracks()[0], cap=tr.getCapabilities?tr.getCapabilities():{};
       if(cap.torch) $('btnTorch').classList.remove('hide');
@@ -284,6 +321,7 @@ function startCam(){
   });
 }
 $('btnCam').onclick=function(){ running?(stopCam(),status('已停止。')):startCam(); };
+$('btnShot').onclick=function(){ if(!running) return; armed=Date.now(); this.classList.add('armed'); this.textContent='讀取中…'; };
 $('btnTorch').onclick=function(){
   if(!stream) return; torchOn=!torchOn;
   stream.getVideoTracks()[0].applyConstraints({advanced:[{torch:torchOn}]}).catch(function(){ torchOn=false; });
@@ -323,7 +361,7 @@ $('list').addEventListener('click',function(e){
 });
 $('btnUndo').onclick=function(){
   if(!items.length){ status('清單是空的。'); return; }
-  var it=items.pop(); save(); render(); lastText=''; status('已復原(移除):'+it.t);
+  var it=items.pop(); save(); render(); delete seen[it.t]; status('已復原(移除):'+it.t);
 };
 var clearArm=0;
 $('btnClear').onclick=function(){
@@ -339,6 +377,10 @@ $('btnClear').onclick=function(){
 /* ---------- 設定 ---------- */
 function bindCfg(){
   $('optDup').value=cfg.dup; $('optSplit').checked=!!cfg.split; $('optSep').value=cfg.sep; $('optBeep').checked=!!cfg.beep; $('optVib').checked=!!cfg.vib;
+  $('optMode').value=cfg.mode; $('optGap').value=String(cfg.gap); $('optHold').value=String(cfg.hold);
+  $('optMode').onchange=function(){cfg.mode=this.value;save();applyMode();};
+  $('optGap').onchange=function(){cfg.gap=+this.value;save();};
+  $('optHold').onchange=function(){cfg.hold=+this.value;save();};
   $('optDup').onchange=function(){cfg.dup=this.value;save();};
   $('optSplit').onchange=function(){cfg.split=this.checked;save();};
   $('optSep').oninput=function(){cfg.sep=this.value;save();};
@@ -443,9 +485,9 @@ $('btnCopy').onclick=function(){
 })();
 
 /* 測試用掛勾 */
-window.__scan={add:addItem,xlsx:xlsxBlob,csv:csvBlob,items:function(){return items;}};
+window.__scan={hit:onHit,cfg:cfg,add:addItem,xlsx:xlsxBlob,csv:csvBlob,items:function(){return items;}};
 
-load(); bindCfg(); render(); initNative();
+load(); bindCfg(); applyMode(); render(); initNative();
 if(memStore) status('此瀏覽器無法暫存資料,關閉頁面前請先匯出。','warn');
 })();
 </script>
