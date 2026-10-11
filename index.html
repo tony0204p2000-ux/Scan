@@ -178,6 +178,12 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
 .chipSeg button.on{background:#f0a94a;color:#231503}
 #wQtyBtn{display:block;width:100%;margin-top:6px;min-height:42px;font-size:14px;border-color:var(--warn);color:var(--warn)}
 .note.okc{color:var(--ok);font-weight:600}
+.tap{cursor:pointer}
+.gHead.tap:active,.gRow.tap:active,.wc .r.tap:active,.it .b.tap:active{background:rgba(240,169,74,.22)}
+.gHead .p::after,.gRow .l::after{content:" ✎";color:var(--sub);font-size:12px;font-family:-apple-system,"PingFang TC",sans-serif;font-weight:400}
+.wc .r.tap b::after{content:" ✎";color:var(--sub);font-size:12px}
+.note.tip{margin:0 2px 10px}
+.edm{font-style:normal;font-size:11.5px;font-family:-apple-system,"PingFang TC",sans-serif;font-weight:600;color:var(--warn);margin-left:6px}
 </style>
 </head>
 <body>
@@ -185,7 +191,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
   <header>
     <div style="display:flex;align-items:center">
       <div class="modeSeg"><button id="mIC">IC</button><button id="mWF">WAFER</button></div>
-      <span class="ver">v3.5</span>
+      <span class="ver">v3.6</span>
     </div>
     <div class="tot"><div><b class="num" id="tCnt">0</b><span id="tCntL">筆</span></div><div><b class="num" id="tQty">0</b><span id="tQtyL">總數量</span></div></div>
   </header>
@@ -289,7 +295,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
 </div>
 
 <div id="sheet"><div id="sheetIn">
-  <h3>手動輸入</h3>
+  <h3 id="sheetTitle">手動輸入</h3>
   <label>料號<input type="text" id="mPart" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="next"></label>
   <label>批號<input type="text" id="mLot" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="next"></label>
   <label>數量<input type="text" id="mQty" inputmode="numeric" autocomplete="off" enterkeyhint="done"></label>
@@ -395,13 +401,13 @@ function parse(t){
   var f=String(t).split(cfg.sep||'?').map(function(x){return x.trim();});
   var r={ok:false,part:'',lot:'',qty:null,warn:'',f:f};
   var pos=(f.length>=3 && f[0] && f[1] && toQty(f[2])!==null);
-  if(pos && isPart(f[0]) && isLot(f[1])){ r.part=f[0]; r.lot=f[1]; r.qty=toQty(f[2]); r.ok=true; }
+  if(pos && isPart(f[0]) && isLot(f[1])){ r.part=f[0]; r.lot=f[1]; r.qty=toQty(f[2]); r.ok=true; r.ix=[0,1,2]; }
   else{
     var pi=-1, li=-1, i;
     if(prefixes().length) for(i=0;i<f.length;i++) if(f[i] && isPart(f[i])){ pi=i; break; }
     if(pi>=0 && (+cfg.lotLen||0)) for(i=0;i<f.length;i++) if(i!==pi && isLot(f[i])){ li=i; break; }
-    if(pi>=0 && li>=0) for(i=0;i<f.length;i++) if(i!==pi && i!==li && toQty(f[i])!==null){ r.part=f[pi]; r.lot=f[li]; r.qty=toQty(f[i]); r.ok=true; break; }
-    if(!r.ok && pos){ r.part=f[0]; r.lot=f[1]; r.qty=toQty(f[2]); r.ok=true; }
+    if(pi>=0 && li>=0) for(i=0;i<f.length;i++) if(i!==pi && i!==li && toQty(f[i])!==null){ r.part=f[pi]; r.lot=f[li]; r.qty=toQty(f[i]); r.ok=true; r.ix=[pi,li,i]; break; }
+    if(!r.ok && pos){ r.part=f[0]; r.lot=f[1]; r.qty=toQty(f[2]); r.ok=true; r.ix=[0,1,2]; }
   }
   if(r.ok){
     var w=[]; if(!isPart(r.part)) w.push('料號字首不符'); if(!isLot(r.lot)) w.push('批號不是 '+cfg.lotLen+' 碼英數');
@@ -499,33 +505,105 @@ function renderList(st){
     if(!wafers.length){ el.innerHTML='<div class="empty">還沒有刷讀完成的 WAFER 標籤。</div>'; return; }
     for(i=wafers.length-1;i>=0;i--){
       var w=wafers[i], wt=w.type||'WF', bad=wCheck(w,wt);
-      h+='<div class="wc"><div class="h"><b>'+(i+1)+'. '+esc(w.stock)+'<span class="rTag">'+esc(wt)+'</span></b><button data-w="'+i+'">刪除</button></div>'+
-         '<div class="r"><span>ITEM NO</span><b>'+esc(w.item)+'</b></div><div class="r"><span>LOT NO</span><b>'+esc(w.lot)+'</b></div>'+
-         '<div class="r"><span>QTY</span><b class="'+(bad?'bad':'')+'">'+esc(w.qty)+(bad?'(和 WF ID 的片數不一致)':'')+'</b></div>'+
-         '<div class="r"><span>'+'WF ID'+'</span><b>'+esc(w.wf)+'</b></div></div>';
+      var ed=function(k){ return (w.ed&&w.ed[k]!==undefined)?'<i class="edm">已修改</i>':''; }, at=' data-wi="'+i+'" data-k="';
+      h+='<div class="wc"><div class="h"><b>'+(i+1)+'. <span class="rTag">'+esc(wt)+'</span></b><button data-w="'+i+'">刪除</button></div>'+
+         '<div class="r tap"'+at+'stock"><span>STOCK NO</span><b>'+esc(w.stock)+ed('stock')+'</b></div>'+
+         '<div class="r tap"'+at+'item"><span>ITEM NO</span><b>'+esc(w.item)+ed('item')+'</b></div>'+
+         '<div class="r tap"'+at+'lot"><span>LOT NO</span><b>'+esc(w.lot)+ed('lot')+'</b></div>'+
+         '<div class="r tap"'+at+'qty"><span>QTY</span><b class="'+(bad?'bad':'')+'">'+esc(w.qty)+(bad?'(和 WF ID 的片數不一致)':'')+ed('qty')+'</b></div>'+
+         '<div class="r tap"'+at+'wf"><span>WF ID</span><b>'+esc(w.wf)+ed('wf')+'</b></div></div>';
     }
-    el.innerHTML=h; return;
+    el.innerHTML='<div class="note tip">點任何一格可以修改內容。</div>'+h; return;
   }
   if(!items.length){ el.innerHTML='<div class="empty">還沒有資料。到「掃描」開始刷讀。</div>'; return; }
   if(listMode==='sum'){
-    st.parts.forEach(function(g){
-      h+='<div class="grp"><div class="gHead"><span class="p">'+esc(g.part)+(g.pending?'<span class="rTag w">ITEM NO,待換料號</span>':'')+'</span><span class="q num">'+fmtN(g.total)+'</span></div>';
-      g.lotList.forEach(function(l){ h+='<div class="gRow"><span class="l">'+esc(l.lot)+'<small>'+l.count+' 筆</small></span><span class="q num">'+fmtN(l.total)+'</span></div>'; });
+    listSt=st; h='<div class="note tip">點料號或批號可以修改,對應的掃描明細會一起更正。</div>';
+    st.parts.forEach(function(g,gi){
+      h+='<div class="grp"><div class="gHead tap" data-gi="'+gi+'"><span class="p">'+esc(g.part)+(g.pending?'<span class="rTag w">ITEM NO,待換料號</span>':'')+'</span><span class="q num">'+fmtN(g.total)+'</span></div>';
+      g.lotList.forEach(function(l,li){ h+='<div class="gRow tap" data-gi="'+gi+'" data-li="'+li+'"><span class="l">'+esc(l.lot)+'<small>'+l.count+' 筆</small></span><span class="q num">'+fmtN(l.total)+'</span></div>'; });
       h+='</div>';
     });
     if(st.bad) h+='<div class="note">另有 '+st.bad+' 筆無法拆解,未計入。可到「掃描明細」查看或刪除。</div>';
     if(!st.parts.length) h='<div class="empty">目前的資料都無法拆解成料號/批號/數量。請到「掃描明細」查看內容,或到「設定」確認分隔符號。</div>';
   }else{
+    h='<div class="note tip">點任何一筆可以修改料號、批號、數量。</div>';
     for(i=items.length-1;i>=0;i--){
       var it=items[i], p=rec(it.t);
-      h+='<div class="it"><span class="n num">'+(i+1)+'</span><span class="b">'+
+      h+='<div class="it"><span class="n num">'+(i+1)+'</span><span class="b tap" data-e="'+i+'">'+
         (p.ok?esc(p.part)+'<small>批號 '+esc(p.lot)+' · 數量 '+fmtN(p.qty)+' · '+esc(it.d.slice(11))+
-               (p.kind==='item'?' · <span class="bad">'+(p.pending?'ITEM NO,待換料號':'原 ITEM NO '+esc(p.raw))+'</span>':(p.warn?' · <span class="bad">'+esc(p.warn)+'</span>':''))+'</small>'
+               (p.kind==='item'?' · <span class="bad">'+(p.pending?'ITEM NO,待換料號':'原 ITEM NO '+esc(p.raw))+'</span>':(p.warn?' · <span class="bad">'+esc(p.warn)+'</span>':''))+(it.o?' · <i class="edm">已修改</i>':'')+'</small>'
              :esc(it.t)+'<small><span class="bad">無法拆解</span> · '+esc(it.d.slice(11))+'</small>')+
         '</span><button data-i="'+i+'">刪除</button></div>';
     }
   }
   el.innerHTML=h;
+}
+var listSt=null;
+/* 改寫一筆 IC 資料的料號/批號/數量:只換掉條碼內容裡對應的那一欄,其餘(例如 SERIES NO)保留;第一次修改時記下原始內容 */
+function setFields(it,ch){
+  var p=parse(it.t), sep=cfg.sep||'?';
+  if(!it.o) it.o=it.t;
+  if(p.ok){
+    var f=p.f.slice();
+    if(ch.part!==undefined) f[p.ix[0]]=ch.part;
+    if(ch.lot!==undefined) f[p.ix[1]]=ch.lot;
+    if(ch.qty!==undefined) f[p.ix[2]]=String(ch.qty);
+    it.t=f.join(sep);
+  }else it.t=[ch.part,ch.lot,String(ch.qty)].join(sep);
+  if(it.t===it.o) delete it.o;
+}
+function badText(v){ var s=cfg.sep||'?'; return v.indexOf(s)>=0?'內容不能含有分隔符號「'+s+'」。':''; }
+/* 彙總頁:改某個料號,或某個料號底下的某個批號 */
+function editGroup(gi,li){
+  var g=listSt&&listSt.parts[gi]; if(!g) return;
+  var isLotEdit=li!==null, l=isLotEdit?g.lotList[li]:null; if(isLotEdit && !l) return;
+  var old=isLotEdit?l.lot:g.part, n=isLotEdit?l.count:g.count;
+  ask({title:isLotEdit?'修改批號':'修改料號',desc:(isLotEdit?'料號 <b>'+esc(g.part)+'</b> 的批號 ':'料號 ')+'<b>'+esc(old)+'</b> 共 '+n+' 筆,會一起更正。',value:old,ok:'更正'},function(how,v){
+    if(how!=='ok') return;
+    v=v.toUpperCase(); var e=badText(v);
+    if(e){ toast(e,'bad'); return; }
+    if(v===old) return;
+    var cnt=0;
+    items.forEach(function(it){
+      var p=rec(it.t); if(!p.ok || p.part!==g.part) return;
+      if(isLotEdit){ if(p.lot!==old) return; setFields(it,{lot:v}); cnt++; }
+      else if(p.kind==='item'){ rmap[p.raw]=v; cnt++; }          /* 銷貨退回:改的是對應的廠內料號 */
+      else{ setFields(it,{part:v}); cnt++; }
+    });
+    lastIdx=-1; save(); render(); toast('已把 '+old+' 更正為 '+v+',共 '+cnt+' 筆','ok');
+  });
+}
+/* 明細頁:改單一筆 */
+var editIdx=-1;
+function editItem(i){
+  var it=items[i]; if(!it) return; var p=rec(it.t);
+  editIdx=i; $('sheet').classList.add('on'); $('sheetErr').textContent='';
+  $('sheetTitle').textContent='修改第 '+(i+1)+' 筆'; $('mOk').textContent='更正';
+  $('mPart').value=p.ok?p.raw:''; $('mLot').value=p.ok?p.lot:''; $('mQty').value=p.ok?String(p.qty):'';
+  $('sheetErr').textContent=p.ok?(p.kind==='item'?'這筆是 ITEM NO 標籤,料號欄是原始的 ITEM NO。':''):'原始內容:'+it.t;
+}
+/* WAFER 清單:改某一張的某一格;其他張有相同內容時可以一起改 */
+function editWafer(i,k){
+  var w=wafers[i]; if(!w) return; var old=w[k], type=w.type||'WF', o=k==='stock'?'item':'stock';
+  var sameIdx=[]; wafers.forEach(function(x,j){ if(j!==i && x[k]===old && k!=='qty') sameIdx.push(j); });
+  var lab={stock:'STOCK NO',item:'ITEM NO',lot:'LOT NO',qty:'QTY',wf:'WF ID'}[k];
+  ask({title:'修改 '+lab,desc:'第 '+(i+1)+' 張的 '+lab+'。'+(sameIdx.length?'另外有 '+sameIdx.length+' 張的內容相同。':''),value:old,numeric:k==='qty',ok:sameIdx.length?'只改這張':'更正',alt:sameIdx.length?'相同的 '+(sameIdx.length+1)+' 張一起改':''},function(how,v){
+    if(how==='cancel') return;
+    v=k==='wf'?wfNorm(v):v.toUpperCase();
+    if(!v || v===old) return;
+    if(k==='qty' && !/^\d+$/.test(v)){ toast('QTY 要是數字','bad'); return; }
+    var list=[i].concat(how==='alt'?sameIdx:[]);
+    list.forEach(function(j){
+      var x=wafers[j], t=x.type||'WF'; x.ed=x.ed||{};
+      /* STOCK NO 與 ITEM NO 原本就照規則成對的話,另一格跟著更正 */
+      var paired=(k==='stock'||k==='item') && (t==='WF'?(x.stock===x.item+'_CP'):(x.stock===x.item));
+      if(x.ed[k]===undefined) x.ed[k]=x[k];
+      x[k]=v;
+      if(paired){ if(x.ed[o]===undefined) x.ed[o]=x[o]; x[o]=t!=='WF'?v:(k==='stock'?v.replace(/_CP$/,''):(hasCP(v)?v:v+'_CP')); }
+      for(var q in x.ed) if(x.ed[q]===x[q]) delete x.ed[q];
+    });
+    save(); render(); toast('已更正 '+list.length+' 張的 '+lab,'ok');
+  });
 }
 function render(){
   var st=stats(); renderHead(st);
@@ -1055,7 +1133,7 @@ $('photo').onchange=function(){
 };
 
 /* ---------- 手動輸入 / 放棄這張 ---------- */
-function sheet(on){ $('sheet').classList.toggle('on',on); if(on){ $('sheetErr').textContent=''; $('mPart').value=''; $('mLot').value=''; $('mQty').value=''; setTimeout(function(){ $('mPart').focus(); },60); } }
+function sheet(on){ editIdx=-1; $('sheetTitle').textContent='手動輸入'; $('mOk').textContent='加入'; $('sheet').classList.toggle('on',on); if(on){ $('sheetErr').textContent=''; $('mPart').value=''; $('mLot').value=''; $('mQty').value=''; setTimeout(function(){ $('mPart').focus(); },60); } }
 $('btnManual').onclick=function(){
   if(!isWF()){ sheet(true); return; }
   var b=this;
@@ -1068,6 +1146,9 @@ function manualOk(){
   var p=$('mPart').value.trim().toUpperCase(), l=$('mLot').value.trim().toUpperCase(), q=$('mQty').value.trim(), s=cfg.sep||'?';
   if(!p||!l||toQty(q)===null){ $('sheetErr').textContent='料號、批號都要填,數量要是數字。'; return; }
   if((p+l).indexOf(s)>=0){ $('sheetErr').textContent='料號和批號不能含有分隔符號「'+s+'」。'; return; }
+  if(editIdx>=0 && items[editIdx]){
+    var i=editIdx; setFields(items[i],{part:p,lot:l,qty:q.replace(/,/g,'')}); sheet(false); lastIdx=-1; save(); render(); toast('已更正第 '+(i+1)+' 筆','ok'); return;
+  }
   sheet(false); addItem(p+s+l+s+q.replace(/,/g,''),'手動輸入');
 }
 $('mOk').onclick=manualOk;
@@ -1083,7 +1164,14 @@ $('btnUndo').onclick=function(){
 $('segSum').onclick=function(){ listMode='sum'; this.classList.add('on'); $('segDet').classList.remove('on'); render(); };
 $('segDet').onclick=function(){ listMode='det'; this.classList.add('on'); $('segSum').classList.remove('on'); render(); };
 $('listBody').addEventListener('click',function(e){
-  var b=e.target.closest?e.target.closest('button[data-i],button[data-w]'):null; if(!b) return;
+  var b=e.target.closest?e.target.closest('button[data-i],button[data-w]'):null;
+  if(!b){
+    var t=e.target.closest?e.target.closest('.tap'):null; if(!t) return;
+    if(t.hasAttribute('data-wi')) editWafer(+t.getAttribute('data-wi'),t.getAttribute('data-k'));
+    else if(t.hasAttribute('data-e')) editItem(+t.getAttribute('data-e'));
+    else if(t.hasAttribute('data-gi')) editGroup(+t.getAttribute('data-gi'),t.hasAttribute('data-li')?+t.getAttribute('data-li'):null);
+    return;
+  }
   if(!b.classList.contains('arm')){ b.classList.add('arm'); b.textContent='確定刪除'; setTimeout(function(){ b.classList.remove('arm'); b.textContent='刪除'; },3000); return; }
   if(b.hasAttribute('data-w')){ wafers.splice(+b.getAttribute('data-w'),1); }
   else{ var i=+b.getAttribute('data-i'); if(!items[i]) return; items.splice(i,1); lastIdx=-1; }
@@ -1166,14 +1254,15 @@ function sheetXml(rows,merges){
 }
 
 var HEAD=['料號','批號','數量','同批號總數','同料號總數'];
-var WHEAD=['種類','STOCK NO','ITEM NO','LOT NO','QTY','WF ID','WF 片數','QTY 核對','刷讀時間'];
+var WHEAD=['種類','STOCK NO','ITEM NO','LOT NO','QTY','WF ID','WF 片數','QTY 核對','刷讀時間','備註'];
 function tidy(){
   var st=stats(), rows=[];
   st.parts.forEach(function(g){ g.lotList.forEach(function(l){ l.rows.forEach(function(r){ rows.push({part:g.part,lot:l.lot,qty:r.qty,lotTotal:l.total,partTotal:g.total}); }); }); });
   return {rows:rows,st:st};
 }
+function wEdNote(w){ var a=[], L={stock:'STOCK NO',item:'ITEM NO',lot:'LOT NO',qty:'QTY',wf:'WF ID'}; for(var k in (w.ed||{})) a.push(L[k]+' 原為 '+w.ed[k]); return a.length?'手動修改過:'+a.join(';'):''; }
 function wRowsOut(){
-  return wafers.map(function(w){ var t=w.type||'WF', q=toQty(w.qty), k=t==='KGD'; return [t,w.stock,w.item,w.lot,q===null?w.qty:q,w.wf,k?'':wfCount(w.wf),k?'':(wCheck(w,t)?'不一致':'一致'),w.d]; });
+  return wafers.map(function(w){ var t=w.type||'WF', q=toQty(w.qty), k=t==='KGD'; return [t,w.stock,w.item,w.lot,q===null?w.qty:q,w.wf,k?'':wfCount(w.wf),k?'':(wCheck(w,t)?'不一致':'一致'),w.d,wEdNote(w)]; });
 }
 function fname(ext){ var d=new Date(); return (isWF()?'WAFER刷讀_':'掃描整理表_')+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds())+'.'+ext; }
 var STYLES='<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDDEBE5"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/></cellXfs></styleSheet>';
@@ -1219,6 +1308,7 @@ function xlsxBlob(){
   var raw=[hd(['序號','條碼內容','料號','批號','數量','標籤','ITEM NO','SERIES NO','條碼格式','掃描時間','備註'])];
   items.forEach(function(it,idx){
     var p=rec(it.t), note=!p.ok?'無法拆解,未計入整理表':p.kind==='item'?(p.pending?'銷貨退回,尚未輸入廠內料號':'銷貨退回,料號已換成廠內料號'):p.warn;
+    if(it.o) note=(note?note+';':'')+'手動修改過,原始條碼內容:'+it.o;
     raw.push([[idx+1,2],[it.t,2],[p.ok?p.part:'',2],[p.ok?p.lot:'',2],[p.ok?p.qty:null,2],[p.ok?(p.kind==='item'?'ITEM NO':'STOCK NO'):'',2],[p.itemNo||'',2],[p.series||'',2],[it.f,2],[it.d,2],[note,2]]);
   });
   return book([{name:'整理表',rows:rows,merges:merges},{name:'原始明細',rows:raw}]);
@@ -1258,7 +1348,7 @@ $('btnXlsx').onclick=function(){ ready(function(){ var n=fname('xlsx'); download
 })();
 
 /* 測試用掛勾 */
-window.__scan={hit:onHit,cfg:cfg,add:addItem,parse:parse,rec:rec,xlsx:xlsxBlob,dec:function(src,sx,sy,w,h,scale,alt,rot){ return wDecode(draw(src,sx,sy,w,h,scale,!!rot),alt); },ext:function(){return lastExt;},wframe:wFrame,wclass:wClass,wfnorm:wfNorm,
+window.__scan={hit:onHit,cfg:cfg,add:addItem,parse:parse,rec:rec,xlsx:xlsxBlob,dec:function(src,sx,sy,w,h,scale,alt,rot){ return wDecode(draw(src,sx,sy,w,h,scale,!!rot),alt); },ext:function(){return lastExt;},editGroup:editGroup,wframe:wFrame,wclass:wClass,wfnorm:wfNorm,
   sync:function(){readers={};syncChips();syncMain();render();},items:function(){return items;},wafers:function(){return wafers;},wcur:function(){return wcur;},rmap:function(){return rmap;},ms:function(){return lastMs;}};
 
 /* 離線快取:有網路時開過一次,之後沒網路也能開 */
