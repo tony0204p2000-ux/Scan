@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#12161b">
+<title>掃描模組測試</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;padding:calc(14px + env(safe-area-inset-top)) 14px calc(20px + env(safe-area-inset-bottom));background:#12161b;color:#e6eaee;font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;font-size:16px;line-height:1.5}
+h1{font-size:20px;margin:0 0 2px}
+.dim{color:#8b97a4;font-size:13px}
+.card{margin-top:14px;padding:14px;border:1px solid #2b343e;border-radius:12px;background:#1b2128}
+.card h2{font-size:16px;margin:0 0 2px}
+button{font:inherit;font-size:17px;font-weight:700;color:#fff;background:#1f6fa8;border:1px solid #1f6fa8;border-radius:10px;min-height:54px;width:100%;margin-top:10px}
+button:active{background:#2580c0}
+button.sub{background:#1b2128;border-color:#36414d;font-weight:400;font-size:15px;min-height:44px}
+.out{margin-top:10px;font-family:Consolas,Menlo,"Roboto Mono",monospace;font-size:15px;word-break:break-all;color:#9fd0f5;white-space:pre-wrap}
+.out:empty::before{content:"尚未掃描";color:#5c6773;font-family:inherit}
+form{display:flex;gap:8px;margin-top:10px}
+input{flex:1;min-width:0;font:inherit;font-size:17px;padding:10px 12px;background:#0c1014;color:#fff;border:1.5px solid #36414d;border-radius:8px}
+form button{width:auto;margin:0;padding:0 16px;min-height:48px}
+</style>
+</head>
+<body>
+<h1>掃描模組測試</h1>
+<div class="dim" id="ver"></div>
+
+<div class="card">
+  <h2>掃一筆</h2>
+  <div class="dim">讀到一張條碼就關閉,把內容帶回來。</div>
+  <button id="b1">掃一筆</button>
+  <div class="out" id="o1"></div>
+</div>
+
+<div class="card">
+  <h2>連續掃</h2>
+  <div class="dim">一直掃到按「完成」。同一張條碼要離開鏡頭 3 秒才會再加入。</div>
+  <button id="b2">連續掃</button>
+  <div class="out" id="o2"></div>
+  <button class="sub" id="c2">清空</button>
+</div>
+
+<div class="card">
+  <h2>當條碼槍用</h2>
+  <div class="dim">掃到的內容填進輸入框並送出 Enter,和條碼槍一樣。</div>
+  <form id="f3"><input id="i3" autocomplete="off" placeholder="條碼槍輸入框"><button type="button" id="b3">掃描</button></form>
+  <div class="out" id="o3"></div>
+</div>
+
+<script src="scanner.js"></script>
+<script>
+(function(){
+'use strict';
+var $=function(id){ return document.getElementById(id); };
+var list=[], sent=[];
+$('ver').textContent='共用掃描模組 v'+PhoneScan.version+' · 這一頁只用來確認相機掃描正常,資料不會儲存或上傳';
+$('b1').onclick=function(){
+  PhoneScan.open({title:'掃一筆',once:true,onScan:function(text,fmt){ $('o1').textContent=text+'\n('+fmt+')'; }});
+};
+$('b2').onclick=function(){
+  PhoneScan.open({title:'連續掃',onScan:function(text){ list.push(text); $('o2').textContent=list.map(function(t,i){ return (i+1)+'. '+t; }).join('\n'); }});
+};
+$('c2').onclick=function(){ list=[]; $('o2').textContent=''; };
+$('b3').onclick=function(){ PhoneScan.toInput($('i3'),{title:'當條碼槍用'}); };
+$('f3').addEventListener('submit',function(e){
+  e.preventDefault();
+  var v=$('i3').value.trim(); $('i3').value=''; if(!v) return;
+  sent.push(v); $('o3').textContent='已送出 '+sent.length+' 次,最後一次:\n'+v;
+});
+try{ if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){}
+})();
+</script>
+</body>
+</html>

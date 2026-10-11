@@ -1,6 +1,6 @@
-/* 手機條碼掃描:離線快取。有網路時優先拿最新版並更新快取;沒網路或太慢就用快取。 */
-var CACHE='scan-d3fd448706';
-var FILES=['./','./index.html','./manifest.webmanifest','./icon.png'];
+/* 手機工具:離線快取(掃描、儲位查詢與共用掃描模組 scanner.js)。有網路時優先拿最新版並更新快取;沒網路或太慢就用快取。 */
+var CACHE='scan-07c7ada21e';
+var FILES=['./','./index.html','./Location.html','./ScanTest.html','./scanner.js','./manifest.webmanifest','./icon.png'];
 self.addEventListener('install',function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(FILES); }).then(function(){ return self.skipWaiting(); }));
 });
@@ -12,7 +12,7 @@ self.addEventListener('fetch',function(e){
   if(req.method!=='GET' || new URL(req.url).origin!==self.location.origin) return;
   e.respondWith(new Promise(function(resolve){
     var done=false;
-    var fromCache=function(){ return caches.match(req,{ignoreSearch:true}).then(function(r){ return r || caches.match('./index.html'); }); };
+    var fromCache=function(){ return caches.match(req,{ignoreSearch:true}).then(function(r){ return r || (req.mode==='navigate'?caches.match('./index.html'):undefined); }); };
     /* 網路不穩:等超過 3 秒就先用快取,不讓畫面卡住 */
     var timer=setTimeout(function(){ if(!done){ fromCache().then(function(r){ if(r && !done){ done=true; resolve(r); } }); } },3000);
     fetch(req).then(function(res){
