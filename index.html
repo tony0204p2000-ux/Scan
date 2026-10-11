@@ -2,136 +2,234 @@
 <html lang="zh-Hant">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>手機條碼掃描(批次)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0b6b53">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="條碼掃描">
+<title>手機條碼掃描</title>
 <style>
 :root{
   --bg:#f3f4f1; --card:#ffffff; --ink:#16201c; --sub:#5d6964; --line:#d9ddd8;
-  --accent:#0b6b53; --accent-ink:#ffffff; --warn:#b45309; --bad:#b3261e; --ok:#0b6b53;
-  --soft:#e7efeb;
+  --accent:#0b6b53; --accent-ink:#ffffff; --warn:#b45309; --bad:#b3261e; --ok:#0b6b53; --soft:#e7efeb;
+  --mono:ui-monospace,Menlo,Consolas,"Roboto Mono",monospace;
 }
 @media (prefers-color-scheme: dark){
   :root{ --bg:#111614; --card:#1b2220; --ink:#e9eeeb; --sub:#9aa7a1; --line:#2e3835;
     --accent:#35b392; --accent-ink:#06231b; --warn:#f0a94a; --bad:#ff8a80; --ok:#35b392; --soft:#22302b; }
 }
-*{box-sizing:border-box}
-html,body{margin:0}
-body{background:var(--bg);color:var(--ink);font:16px/1.45 -apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;
-  padding:0 12px calc(150px + env(safe-area-inset-bottom));-webkit-text-size-adjust:100%}
-header{display:flex;align-items:baseline;justify-content:space-between;padding:14px 2px 10px}
-h1{font-size:19px;margin:0;letter-spacing:.02em}
-.count{font-variant-numeric:tabular-nums;color:var(--sub);font-size:14px}
-.count b{font-size:22px;color:var(--accent);margin-right:2px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
-button{font:inherit;color:inherit;border:1px solid var(--line);background:var(--card);border-radius:10px;
-  min-height:46px;padding:0 14px;cursor:pointer;touch-action:manipulation}
-button:active{transform:translateY(1px)}
-button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;overscroll-behavior:none}
+body{background:var(--bg);color:var(--ink);font:16px/1.4 -apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;-webkit-text-size-adjust:100%}
+button,select,input{font:inherit;color:inherit}
+button{border:1px solid var(--line);background:var(--card);border-radius:12px;min-height:48px;padding:0 14px;cursor:pointer;touch-action:manipulation;-webkit-user-select:none;user-select:none}
+button:active{filter:brightness(.92)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
 button.danger{color:var(--bad)}
-button:disabled{opacity:.45}
-.row{display:flex;gap:8px;flex-wrap:wrap}
-.row>*{flex:1 1 0;min-width:0}
-#viewWrap{position:relative;background:#000;border-radius:10px;overflow:hidden;aspect-ratio:4/3;display:none;margin-bottom:10px}
-#viewWrap.on{display:block}
-video{width:100%;height:100%;object-fit:cover;display:block}
-.frame{position:absolute;inset:14% 8%;border:2px solid rgba(255,255,255,.85);border-radius:10px;pointer-events:none;
-  box-shadow:0 0 0 2000px rgba(0,0,0,.28)}
-#btnShot{display:block;width:100%;margin-bottom:10px;min-height:60px;background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;font-size:17px}
-#btnShot.armed{background:#f0a94a;border-color:#f0a94a;color:#231503}
-.frame.hit{border-color:#4ade80;box-shadow:0 0 0 2000px rgba(16,120,70,.35)}
-#status{font-size:14px;color:var(--sub);min-height:21px;margin:8px 2px 0;overflow-wrap:anywhere}
-#status.ok{color:var(--ok)} #status.warn{color:var(--warn)} #status.bad{color:var(--bad)}
-#last{display:none;margin-top:10px;padding:10px 12px;border-radius:10px;background:var(--soft);font-family:ui-monospace,Menlo,Consolas,monospace;
-  font-size:15px;overflow-wrap:anywhere}
-#last.on{display:block}
-#last small{display:block;font-family:inherit;color:var(--sub);font-size:12px;margin-bottom:2px}
-input[type=text]{font:inherit;color:inherit;background:var(--bg);border:1px solid var(--line);border-radius:10px;min-height:46px;padding:0 12px;width:100%}
-details summary{cursor:pointer;font-weight:600;min-height:30px}
-.opt{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line);font-size:15px}
-.opt:first-of-type{margin-top:8px}
-.opt select,.opt input[type=text]{width:auto;min-height:38px;max-width:46%}
-.opt input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent)}
-.opt small{display:block;color:var(--sub);font-size:12.5px}
-h2{font-size:15px;margin:0 0 8px;color:var(--sub);font-weight:600}
-#list{list-style:none;margin:0;padding:0}
-#list li{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line)}
-#list li:first-child{border-top:0}
-.no{flex:0 0 auto;min-width:34px;text-align:right;color:var(--sub);font-variant-numeric:tabular-nums;font-size:13px}
-.txt{flex:1;min-width:0;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:14.5px;overflow-wrap:anywhere}
-.txt small{display:block;font-family:-apple-system,"PingFang TC",sans-serif;color:var(--sub);font-size:12px}
-.del{flex:0 0 auto;min-height:38px;width:40px;padding:0;color:var(--bad)}
-.empty{color:var(--sub);font-size:14px;padding:6px 0}
-#bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);
-  padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:grid;gap:8px}
-#bar .row button{padding:0 6px;font-size:15px}
 .hide{display:none!important}
+.num{font-variant-numeric:tabular-nums}
+
+#app{display:flex;flex-direction:column;height:100vh;height:100dvh}
+header{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;
+  padding:calc(8px + env(safe-area-inset-top)) 14px 8px;background:var(--card);border-bottom:1px solid var(--line)}
+header h1{font-size:16px;margin:0;white-space:nowrap}
+header h1 small{font-weight:400;color:var(--sub);font-size:12px;margin-left:4px}
+.tot{display:flex;gap:14px;font-size:12px;color:var(--sub);text-align:right}
+.tot b{display:block;font-size:19px;line-height:1.1;color:var(--accent)}
+
+.view{flex:1 1 auto;min-height:0;display:none;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.view.on{display:block}
+#vScan.on{display:flex;flex-direction:column;overflow:hidden}
+.pad{padding:12px 14px 20px}
+
+/* 掃描頁:相機在上,結果與主按鈕在拇指可及的下方 */
+#cam{position:relative;flex:1 1 auto;min-height:0;background:#000;overflow:hidden}
+#cam video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.frame{position:absolute;inset:25% 20%;border:2px solid rgba(255,255,255,.9);border-radius:10px;pointer-events:none;box-shadow:0 0 0 3000px rgba(0,0,0,.38);display:none}
+#cam.live .frame{display:block}
+.frame.hit{border-color:#4ade80;box-shadow:0 0 0 3000px rgba(16,120,70,.42)}
+.chips{position:absolute;left:10px;right:10px;top:10px;display:flex;gap:8px;flex-wrap:wrap;z-index:2}
+.chip{min-height:38px;border-radius:19px;padding:0 13px;font-size:14px;background:rgba(0,0,0,.55);color:#fff;border:1px solid rgba(255,255,255,.35)}
+.chip b{font-weight:700;margin-left:3px}
+.chip.on{background:#f0a94a;color:#231503;border-color:#f0a94a}
+#idle{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:60px 24px 16px;color:#cfd6d2;text-align:center;font-size:14px}
+#cam.live #idle{display:none}
+#idle button{background:transparent;color:#fff;border-color:rgba(255,255,255,.5);min-height:42px}
+#toast{position:absolute;left:10px;right:10px;bottom:10px;z-index:2;padding:10px 12px;border-radius:12px;background:rgba(0,0,0,.72);color:#fff;font-size:14px;overflow-wrap:anywhere}
+#toast.ok{background:rgba(11,107,83,.93)} #toast.warn{background:rgba(180,83,9,.95)} #toast.bad{background:rgba(179,38,30,.95)}
+
+#panel{flex:0 0 auto;background:var(--card);border-top:1px solid var(--line);padding:10px 14px 12px}
+#res{display:flex;align-items:stretch;gap:10px;min-height:74px}
+#resBody{flex:1;min-width:0}
+#resEmpty{color:var(--sub);font-size:14px;padding:6px 0}
+.rPart{font-family:var(--mono);font-size:19px;font-weight:700;overflow-wrap:anywhere;line-height:1.2}
+.rRow{display:flex;gap:16px;margin-top:3px;font-size:15px}
+.rRow span{color:var(--sub);font-size:12px;margin-right:4px}
+.rRow b{font-family:var(--mono)}
+.rSub{font-size:12.5px;color:var(--sub);margin-top:3px}
+.rSub b{color:var(--ink)}
+.rWarn{color:var(--warn);font-size:12.5px;margin-top:2px}
+#btnUndo{flex:0 0 auto;align-self:center;min-height:44px;padding:0 12px;font-size:14px}
+.act{display:flex;gap:10px;margin-top:10px}
+#btnMain{flex:1;min-height:64px;font-size:20px;border-radius:16px}
+#btnMain.armed{background:#f0a94a;border-color:#f0a94a;color:#231503}
+#btnMain.stop{background:var(--card);color:var(--ink);border-color:var(--line);font-weight:600}
+#btnManual{flex:0 0 78px;min-height:64px;border-radius:16px}
+
+/* 底部分頁 */
+nav{flex:0 0 auto;display:flex;background:var(--card);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;border:0;border-radius:0;background:transparent;min-height:54px;font-size:14px;color:var(--sub);border-top:3px solid transparent}
+nav button.on{color:var(--accent);font-weight:700;border-top-color:var(--accent)}
+nav button i{font-style:normal;display:inline-block;min-width:20px;margin-left:4px;padding:0 6px;border-radius:10px;background:var(--soft);font-size:12px;color:var(--ink)}
+
+/* 清單 */
+.seg{display:flex;background:var(--soft);border-radius:12px;padding:3px;margin-bottom:12px}
+.seg button{flex:1;border:0;background:transparent;min-height:40px;border-radius:10px;font-size:15px}
+.seg button.on{background:var(--card);font-weight:700;box-shadow:0 1px 2px rgba(0,0,0,.15)}
+.grp{background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden}
+.gHead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:10px 12px;background:var(--soft)}
+.gHead .p{font-family:var(--mono);font-weight:700;overflow-wrap:anywhere;min-width:0}
+.gHead .q{font-weight:700;font-size:18px;color:var(--accent);white-space:nowrap}
+.gRow{display:flex;justify-content:space-between;gap:10px;padding:9px 12px;border-top:1px solid var(--line);font-size:15px}
+.gRow .l{font-family:var(--mono);min-width:0;overflow-wrap:anywhere}
+.gRow .l small{font-family:-apple-system,"PingFang TC",sans-serif;color:var(--sub);font-size:12px;margin-left:6px}
+.gRow .q{white-space:nowrap}
+.it{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 8px 8px 12px;margin-bottom:8px}
+.it .n{flex:0 0 auto;min-width:28px;color:var(--sub);font-size:13px;text-align:right}
+.it .b{flex:1;min-width:0;font-family:var(--mono);font-size:14.5px;overflow-wrap:anywhere}
+.it .b small{display:block;font-family:-apple-system,"PingFang TC",sans-serif;color:var(--sub);font-size:12px}
+.it .b .bad{color:var(--warn)}
+.it button{flex:0 0 auto;min-height:44px;min-width:44px;padding:0 10px;color:var(--bad);font-size:14px}
+.it button.arm{background:var(--bad);color:#fff;border-color:var(--bad)}
+.empty{color:var(--sub);font-size:14px;text-align:center;padding:36px 10px}
+h2{font-size:13px;color:var(--sub);font-weight:600;margin:16px 2px 8px}
+
+/* 匯出、設定 */
+.stat{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+.stat div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:12.5px;color:var(--sub)}
+.stat b{display:block;font-size:22px;color:var(--ink);line-height:1.2}
+.stack{display:grid;gap:10px}
+.stack button{min-height:56px;font-size:17px;text-align:left;padding:0 16px}
+.stack button small{display:block;font-size:12.5px;font-weight:400;opacity:.8}
+.note{font-size:13px;color:var(--sub);margin:12px 2px}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:0 12px}
+.opt{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 0;border-top:1px solid var(--line);font-size:15px;min-height:56px}
+.opt:first-child{border-top:0}
+.opt small{display:block;color:var(--sub);font-size:12.5px}
+.opt select,.opt input[type=text]{background:var(--bg);border:1px solid var(--line);border-radius:10px;min-height:42px;padding:0 10px;max-width:48%;font-size:16px}
+.opt input[type=checkbox]{width:26px;height:26px;accent-color:var(--accent);flex:0 0 auto}
+
+/* 手動輸入(由下方滑出) */
+#sheet{position:fixed;inset:0;z-index:10;background:rgba(0,0,0,.5);display:none;align-items:flex-end}
+#sheet.on{display:flex}
+#sheetIn{width:100%;background:var(--card);border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom))}
+#sheetIn h3{margin:0 0 12px;font-size:17px}
+#sheetIn label{display:block;font-size:13px;color:var(--sub);margin-bottom:10px}
+#sheetIn input{display:block;width:100%;margin-top:4px;background:var(--bg);border:1px solid var(--line);border-radius:12px;min-height:50px;padding:0 12px;font-size:18px;font-family:var(--mono)}
+#sheetErr{color:var(--bad);font-size:13px;min-height:18px}
 </style>
 </head>
 <body>
-<header>
-  <h1>手機條碼掃描 <span style="font-weight:400;color:var(--sub);font-size:14px">批次模式 v1.2</span></h1>
-  <div class="count"><b id="cnt">0</b>筆</div>
-</header>
+<div id="app">
+  <header>
+    <h1>手機條碼掃描<small>v2.0</small></h1>
+    <div class="tot"><div><b class="num" id="tCnt">0</b>筆</div><div><b class="num" id="tQty">0</b>總數量</div></div>
+  </header>
 
-<div class="card">
-  <div id="viewWrap"><video id="video" playsinline muted autoplay></video><div class="frame" id="frame"></div></div>
-  <button id="btnShot" class="hide">按一下掃一筆</button>
-  <div class="row">
-    <button class="primary" id="btnCam">開始連續掃描</button>
-    <button id="btnPhoto">拍照掃描</button>
-    <button id="btnTorch" class="hide" style="flex:0 0 76px">手電筒</button>
-  </div>
-  <input type="file" id="photo" accept="image/*" capture="environment" class="hide">
-  <div id="status">按「開始連續掃描」;若相機無法啟動,請改用「拍照掃描」。</div>
-  <div id="last"><small id="lastMeta"></small><span id="lastTxt"></span></div>
+  <!-- 掃描 -->
+  <section class="view on" id="vScan">
+    <div id="cam">
+      <video id="video" playsinline muted autoplay></video>
+      <div class="frame" id="frame"></div>
+      <div class="chips">
+        <button class="chip" id="cMode">方式<b></b></button>
+        <button class="chip" id="cFrame">框<b></b></button>
+        <button class="chip" id="cTypes">類型<b></b></button>
+        <button class="chip hide" id="cTorch">手電筒</button>
+      </div>
+      <div id="idle">
+        <div id="idleMsg">按下方「啟動相機」開始掃描</div>
+        <button id="btnPhoto">相機打不開?改用拍照</button>
+      </div>
+      <div id="toast" class="hide"></div>
+    </div>
+    <div id="panel">
+      <div id="res">
+        <div id="resBody"><div id="resEmpty">尚未掃描。讀到的料號、批號、數量會顯示在這裡。</div></div>
+        <button id="btnUndo" class="hide">復原</button>
+      </div>
+      <div class="act">
+        <button class="primary" id="btnMain">啟動相機</button>
+        <button id="btnManual">手動<br>輸入</button>
+      </div>
+    </div>
+    <input type="file" id="photo" accept="image/*" capture="environment" class="hide">
+  </section>
+
+  <!-- 清單 -->
+  <section class="view" id="vList"><div class="pad">
+    <div class="seg"><button id="segSum" class="on">依料號彙總</button><button id="segDet">掃描明細</button></div>
+    <div id="listBody"></div>
+  </div></section>
+
+  <!-- 匯出 -->
+  <section class="view" id="vOut"><div class="pad">
+    <div class="stat">
+      <div><b class="num" id="sCnt">0</b>掃描筆數</div>
+      <div><b class="num" id="sQty">0</b>總數量</div>
+      <div><b class="num" id="sPart">0</b>料號數</div>
+      <div><b class="num" id="sLot">0</b>批號數</div>
+    </div>
+    <div class="stack">
+      <button class="primary" id="btnXlsx">匯出 Excel<small>整理表:料號/批號/數量/同批號總數/同料號總數</small></button>
+      <button id="btnShare" class="hide">分享 Excel<small>用手機的分享選單傳出去</small></button>
+      <button id="btnCsv">匯出 CSV</button>
+      <button id="btnCopy">複製表格<small>可直接貼到 Excel</small></button>
+    </div>
+    <div class="note" id="outMsg"></div>
+    <h2>清除資料</h2>
+    <div class="stack"><button class="danger" id="btnClear">清空全部</button></div>
+  </div></section>
+
+  <!-- 設定 -->
+  <section class="view" id="vSet"><div class="pad">
+    <h2 style="margin-top:0">掃描</h2>
+    <div class="box">
+      <label class="opt"><span>每筆間隔<small>自動掃描時,加入一筆後暫停多久</small></span>
+        <select id="optGap"><option value="500">0.5 秒</option><option value="1000">1 秒</option><option value="1500">1.5 秒</option><option value="2000">2 秒</option><option value="3000">3 秒</option></select></label>
+      <label class="opt"><span>同一條碼再次加入<small>需離開鏡頭多久才算新的一筆</small></span>
+        <select id="optHold"><option value="3000">3 秒</option><option value="5000">5 秒</option><option value="10000">10 秒</option></select></label>
+      <label class="opt"><span>內容完全相同的條碼<small>清單中已有相同內容時</small></span>
+        <select id="optDup"><option value="allow">照常加入</option><option value="skip">略過並提示</option></select></label>
+      <label class="opt"><span>提示音</span><input type="checkbox" id="optBeep"></label>
+      <label class="opt"><span>震動</span><input type="checkbox" id="optVib"></label>
+      <label class="opt"><span>掃描時螢幕保持開啟</span><input type="checkbox" id="optWake"></label>
+    </div>
+    <h2>條碼拆解</h2>
+    <div class="box">
+      <label class="opt"><span>分隔符號<small>料號?批號?數量?其他</small></span><input type="text" id="optSep" maxlength="3" style="width:70px;text-align:center"></label>
+      <label class="opt"><span>料號字首<small>不符時仍加入,但會標示提醒</small></span><input type="text" id="optPre" autocapitalize="characters" spellcheck="false"></label>
+      <label class="opt"><span>批號碼數<small>不符時仍加入,但會標示提醒;0 為不檢查</small></span><input type="text" id="optLotLen" inputmode="numeric" maxlength="2" style="width:70px;text-align:center"></label>
+    </div>
+    <div class="note">資料只存在這支手機的瀏覽器裡,不會上傳。清除瀏覽器資料會一併清掉,請記得先匯出。</div>
+  </div></section>
+
+  <nav>
+    <button data-v="vScan" class="on">掃描</button>
+    <button data-v="vList">清單<i class="num" id="navCnt">0</i></button>
+    <button data-v="vOut">匯出</button>
+    <button data-v="vSet">設定</button>
+  </nav>
 </div>
 
-<div class="card">
-  <div class="row">
-    <input type="text" id="manual" placeholder="掃不到時可手動輸入" autocomplete="off" autocapitalize="characters" spellcheck="false" style="flex:3 1 0">
-    <button id="btnAdd" style="flex:1 0 64px">加入</button>
-  </div>
-</div>
-
-<div class="card">
-  <details>
-    <summary>設定</summary>
-    <label class="opt"><span>掃描方式<small>一盒有多張條碼時建議用按鈕觸發</small></span>
-      <select id="optMode"><option value="auto">自動連續</option><option value="tap">按鈕觸發</option></select></label>
-    <label class="opt"><span>每筆間隔<small>自動連續時,加入一筆後暫停多久</small></span>
-      <select id="optGap"><option value="500">0.5 秒</option><option value="1000">1 秒</option><option value="1500">1.5 秒</option><option value="2000">2 秒</option><option value="3000">3 秒</option></select></label>
-    <label class="opt"><span>同一條碼再次加入<small>自動連續時,需離開鏡頭多久才算新的一筆</small></span>
-      <select id="optHold"><option value="3000">3 秒</option><option value="5000">5 秒</option><option value="10000">10 秒</option></select></label>
-    <label class="opt"><span>瞄準框大小<small>只讀框內;條碼要整張在框內才會讀</small></span>
-      <select id="optFrame"><option value="L">大</option><option value="M">中</option><option value="S">小</option><option value="B">橫條(一維條碼)</option></select></label>
-    <label class="opt"><span>條碼類型<small>只讀指定類型,其他一律忽略</small></span>
-      <select id="optTypes"><option value="all">全部</option><option value="qr">僅 QR Code</option><option value="2d">僅二維(QR/DataMatrix)</option><option value="1d">僅一維條碼</option></select></label>
-    <label class="opt"><span>重複條碼<small>清單中已有相同內容時</small></span>
-      <select id="optDup"><option value="allow">照常加入</option><option value="skip">略過並提示</option></select></label>
-    <label class="opt"><span>匯出時拆欄<small>依分隔符號把內容拆成多欄</small></span><input type="checkbox" id="optSplit"></label>
-    <label class="opt"><span>分隔符號</span><input type="text" id="optSep" maxlength="5" style="width:80px;text-align:center"></label>
-    <label class="opt"><span>提示音</span><input type="checkbox" id="optBeep"></label>
-    <label class="opt"><span>震動</span><input type="checkbox" id="optVib"></label>
-  </details>
-</div>
-
-<div class="card">
-  <h2>掃描清單(最新在上)</h2>
-  <ul id="list"></ul>
-</div>
-
-<div id="bar">
-  <div class="row">
-    <button class="primary" id="btnXlsx">匯出 Excel</button>
-    <button id="btnCsv">匯出 CSV</button>
-    <button id="btnShare" class="hide">分享</button>
-    <button id="btnCopy">複製</button>
-  </div>
-  <div class="row">
-    <button id="btnUndo">復原上一筆</button>
-    <button class="danger" id="btnClear">清空</button>
-  </div>
-</div>
+<div id="sheet"><div id="sheetIn">
+  <h3>手動輸入</h3>
+  <label>料號<input type="text" id="mPart" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="next"></label>
+  <label>批號<input type="text" id="mLot" autocomplete="off" autocapitalize="characters" spellcheck="false" enterkeyhint="next"></label>
+  <label>數量<input type="text" id="mQty" inputmode="numeric" autocomplete="off" enterkeyhint="done"></label>
+  <div id="sheetErr"></div>
+  <div class="act" style="margin-top:6px"><button id="mCancel" style="flex:1;min-height:56px">取消</button><button class="primary" id="mOk" style="flex:2;min-height:56px;font-size:18px">加入</button></div>
+</div></div>
 
 <canvas id="cv" class="hide"></canvas>
 
@@ -141,19 +239,19 @@ h2{font-size:15px;margin:0 0 8px;color:var(--sub);font-weight:600}
 'use strict';
 var $=function(id){return document.getElementById(id);};
 var KEY='phoneScanBatch.v1';
-var items=[], cfg={dup:'allow',split:true,sep:'?',beep:true,vib:true,mode:'auto',gap:1500,hold:5000,frame:'M',types:'all'};
-var memStore=null;
+var items=[], cfg={dup:'allow',sep:'?',beep:true,vib:true,wake:true,mode:'auto',gap:1500,hold:5000,frame:'M',types:'all',pre:'RTD,RTS,ALC,RTL',lotLen:7};
+var noStore=false;
 
 /* ---------- 儲存 ---------- */
 function load(){
   try{ var s=localStorage.getItem(KEY); if(s){ var o=JSON.parse(s); if(o&&Array.isArray(o.items)) items=o.items; if(o&&o.cfg) for(var k in cfg) if(k in o.cfg) cfg[k]=o.cfg[k]; } }catch(e){}
 }
-function save(){ try{ localStorage.setItem(KEY,JSON.stringify({items:items,cfg:cfg})); }catch(e){ memStore=true; } }
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify({items:items,cfg:cfg})); }catch(e){ noStore=true; } }
 
-/* ---------- 提示 ---------- */
+/* ---------- 小工具 ---------- */
 var actx=null;
 function beep(ok){
-  if(cfg.vib && navigator.vibrate){ try{ navigator.vibrate(ok?60:[80,60,80]); }catch(e){} }
+  if(cfg.vib && navigator.vibrate){ try{ navigator.vibrate(ok?70:[90,60,90]); }catch(e){} }
   if(!cfg.beep) return;
   try{
     actx=actx||new (window.AudioContext||window.webkitAudioContext)();
@@ -163,38 +261,115 @@ function beep(ok){
     o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime+(ok?.09:.28));
   }catch(e){}
 }
-function status(msg,cls){ var s=$('status'); s.textContent=msg; s.className=cls||''; }
+var toastT=0;
+function toast(msg,cls,keep){
+  var t=$('toast'); t.textContent=msg; t.className=cls||''; clearTimeout(toastT);
+  if(!keep) toastT=setTimeout(function(){ t.className='hide'; },2600);
+}
 function pad(n){return (n<10?'0':'')+n;}
 function stamp(d){ d=d||new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()); }
 function esc(s){ return String(s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+function fmtN(n){ var s=String(Math.round(n*1000)/1000).split('.'); s[0]=s[0].replace(/\B(?=(\d{3})+(?!\d))/g,','); return s.join('.'); }
 
-/* ---------- 清單 ---------- */
-var SHOW=300;
-function render(){
-  $('cnt').textContent=items.length;
-  var ul=$('list');
-  if(!items.length){ ul.innerHTML='<li class="empty">尚無資料</li>'; return; }
-  var h='', start=Math.max(0,items.length-SHOW);
-  for(var i=items.length-1;i>=start;i--){
-    var it=items[i];
-    h+='<li><span class="no">'+(i+1)+'</span><span class="txt">'+esc(it.t)+'<small>'+esc(it.f)+' · '+esc(it.d.slice(11))+'</small></span>'+
-       '<button class="del" data-i="'+i+'" aria-label="刪除第'+(i+1)+'筆">✕</button></li>';
+/* ---------- 條碼拆解:料號?批號?數量?其他 ---------- */
+function prefixes(){ return String(cfg.pre||'').toUpperCase().split(/[\s,、;]+/).filter(Boolean); }
+function isPart(s){ var p=prefixes(), u=s.toUpperCase(); if(!p.length) return true; for(var i=0;i<p.length;i++) if(u.indexOf(p[i])===0) return true; return false; }
+function isLot(s){ var n=+cfg.lotLen||0; return /^[A-Za-z0-9]+$/.test(s) && (!n || s.length===n); }
+function toQty(s){ s=String(s).replace(/,/g,'').trim(); return /^\d+(\.\d+)?$/.test(s)?+s:null; }
+function parse(t){
+  var f=String(t).split(cfg.sep||'?').map(function(x){return x.trim();});
+  var r={ok:false,part:'',lot:'',qty:null,warn:''};
+  /* 依位置:第 1 欄料號、第 2 欄批號、第 3 欄數量 */
+  var pos=(f.length>=3 && f[0] && f[1] && toQty(f[2])!==null);
+  if(pos && isPart(f[0]) && isLot(f[1])){ r.part=f[0]; r.lot=f[1]; r.qty=toQty(f[2]); r.ok=true; }
+  else{
+    /* 位置或格式對不上時,改用特徵辨認:字首找料號、碼數找批號、其餘第一個純數字為數量 */
+    var pi=-1, li=-1, i;
+    if(prefixes().length) for(i=0;i<f.length;i++) if(f[i] && isPart(f[i])){ pi=i; break; }
+    if(pi>=0 && (+cfg.lotLen||0)) for(i=0;i<f.length;i++) if(i!==pi && isLot(f[i])){ li=i; break; }
+    if(pi>=0 && li>=0) for(i=0;i<f.length;i++) if(i!==pi && i!==li && toQty(f[i])!==null){ r.part=f[pi]; r.lot=f[li]; r.qty=toQty(f[i]); r.ok=true; break; }
+    /* 仍認不出就照位置收下,並標示提醒 */
+    if(!r.ok && pos){ r.part=f[0]; r.lot=f[1]; r.qty=toQty(f[2]); r.ok=true; }
   }
-  if(start>0) h+='<li class="empty">較早的 '+start+' 筆未顯示,匯出時仍會包含。</li>';
-  ul.innerHTML=h;
+  if(r.ok){
+    var w=[]; if(!isPart(r.part)) w.push('料號字首不符'); if(!isLot(r.lot)) w.push('批號不是 '+cfg.lotLen+' 碼英數');
+    r.warn=w.join('、');
+  }
+  return r;
 }
+/* 彙總:料號 → 批號 */
+function stats(){
+  var m={}, order=[], qty=0, bad=0, lots=0;
+  items.forEach(function(it,idx){
+    var p=parse(it.t); if(!p.ok){ bad++; return; }
+    qty+=p.qty;
+    var g=m[p.part]; if(!g){ g=m[p.part]={part:p.part,total:0,count:0,lots:{},lotOrder:[]}; order.push(p.part); }
+    g.total+=p.qty; g.count++;
+    var l=g.lots[p.lot]; if(!l){ l=g.lots[p.lot]={lot:p.lot,total:0,count:0,rows:[]}; g.lotOrder.push(p.lot); lots++; }
+    l.total+=p.qty; l.count++; l.rows.push({idx:idx,qty:p.qty});
+  });
+  order.sort();
+  return {parts:order.map(function(k){ var g=m[k]; g.lotOrder.sort(); g.lotList=g.lotOrder.map(function(x){return g.lots[x];}); return g; }),qty:qty,bad:bad,lots:lots,map:m};
+}
+
+/* ---------- 畫面更新 ---------- */
+var view='vScan', listMode='sum', lastIdx=-1;
+function renderHead(st){
+  $('tCnt').textContent=fmtN(items.length); $('tQty').textContent=fmtN(st.qty); $('navCnt').textContent=items.length;
+  $('sCnt').textContent=fmtN(items.length); $('sQty').textContent=fmtN(st.qty); $('sPart').textContent=st.parts.length; $('sLot').textContent=st.lots;
+}
+function renderRes(st){
+  var b=$('resBody'), it=items[lastIdx];
+  $('btnUndo').classList.toggle('hide',!items.length);
+  if(!it){ b.innerHTML='<div id="resEmpty">'+(items.length?'已有 '+items.length+' 筆資料,可繼續掃描。':'尚未掃描。讀到的料號、批號、數量會顯示在這裡。')+'</div>'; return; }
+  var p=parse(it.t), h;
+  if(p.ok){
+    var g=st.map[p.part], l=g.lots[p.lot];
+    h='<div class="rPart">'+esc(p.part)+'</div>'+
+      '<div class="rRow"><div><span>批號</span><b>'+esc(p.lot)+'</b></div><div><span>數量</span><b class="num">'+fmtN(p.qty)+'</b></div></div>'+
+      '<div class="rSub num">同批號 <b>'+fmtN(l.total)+'</b>('+l.count+' 筆) · 同料號 <b>'+fmtN(g.total)+'</b></div>'+
+      (p.warn?'<div class="rWarn">'+esc(p.warn)+'</div>':'');
+  }else{
+    h='<div class="rPart" style="font-size:15px">'+esc(it.t)+'</div><div class="rWarn">無法拆解成料號/批號/數量,已保留在原始明細,不計入總數。</div>';
+  }
+  b.innerHTML=h;
+}
+function renderList(st){
+  var el=$('listBody'), h='';
+  if(!items.length){ el.innerHTML='<div class="empty">還沒有資料。到「掃描」開始刷讀。</div>'; return; }
+  if(listMode==='sum'){
+    st.parts.forEach(function(g){
+      h+='<div class="grp"><div class="gHead"><span class="p">'+esc(g.part)+'</span><span class="q num">'+fmtN(g.total)+'</span></div>';
+      g.lotList.forEach(function(l){ h+='<div class="gRow"><span class="l">'+esc(l.lot)+'<small>'+l.count+' 筆</small></span><span class="q num">'+fmtN(l.total)+'</span></div>'; });
+      h+='</div>';
+    });
+    if(st.bad) h+='<div class="note">另有 '+st.bad+' 筆無法拆解,未計入。可到「掃描明細」查看或刪除。</div>';
+    if(!st.parts.length) h='<div class="empty">目前的資料都無法拆解成料號/批號/數量。請到「掃描明細」查看內容,或到「設定」確認分隔符號。</div>';
+  }else{
+    for(var i=items.length-1;i>=0;i--){
+      var it=items[i], p=parse(it.t);
+      h+='<div class="it"><span class="n num">'+(i+1)+'</span><span class="b">'+
+        (p.ok?esc(p.part)+'<small>批號 '+esc(p.lot)+' · 數量 '+fmtN(p.qty)+' · '+esc(it.d.slice(11))+(p.warn?' · <span class="bad">'+esc(p.warn)+'</span>':'')+'</small>'
+             :esc(it.t)+'<small><span class="bad">無法拆解</span> · '+esc(it.d.slice(11))+'</small>')+
+        '</span><button data-i="'+i+'">刪除</button></div>';
+    }
+  }
+  el.innerHTML=h;
+}
+function render(){ var st=stats(); renderHead(st); renderRes(st); if(view==='vList') renderList(st); }
+
 function addItem(text,fmt){
   text=String(text).replace(/[\r\n]+$/,'');
   if(!text) return false;
   if(cfg.dup==='skip'){
-    for(var i=0;i<items.length;i++) if(items[i].t===text){
-      beep(false); status('重複,已略過:'+text+'(第 '+(i+1)+' 筆)','warn'); return false;
-    }
+    for(var i=0;i<items.length;i++) if(items[i].t===text){ beep(false); toast('內容相同,已略過(與第 '+(i+1)+' 筆相同)','warn'); return false; }
   }
-  items.push({t:text,f:fmt||'',d:stamp()});
-  save(); render(); beep(true);
-  $('last').classList.add('on'); $('lastMeta').textContent='第 '+items.length+' 筆 · '+(fmt||''); $('lastTxt').textContent=text;
-  status('已加入第 '+items.length+' 筆','ok');
+  var same=0; for(var j=0;j<items.length;j++) if(items[j].t===text) same++;
+  items.push({t:text,f:fmt||'',d:stamp()}); lastIdx=items.length-1;
+  save(); render();
+  var p=parse(text);
+  if(p.ok){ beep(true); toast('已加入第 '+items.length+' 筆'+(same?'(相同內容共 '+(same+1)+' 筆)':'')+(p.warn?' · '+p.warn:''),p.warn||same?'warn':'ok'); }
+  else{ beep(false); toast('已加入,但無法拆解成料號/批號/數量','warn'); }
   return true;
 }
 
@@ -203,10 +378,9 @@ var ZX=window.ZXing, zreader=null;
 var FMT_ALL=['QR_CODE','DATA_MATRIX','CODE_128','CODE_39','CODE_93','EAN_13','EAN_8','UPC_A','ITF','CODABAR','PDF_417','AZTEC'];
 var FMT_SET={all:FMT_ALL,qr:['QR_CODE'],'2d':['QR_CODE','DATA_MATRIX'],'1d':['CODE_128','CODE_39','CODE_93','EAN_13','EAN_8','UPC_A','ITF','CODABAR']};
 function allowed(){ return FMT_SET[cfg.types]||FMT_ALL; }
-/* 瞄準框佔可見畫面的比例 [寬, 高] */
-var FRAMES={L:[.84,.72],M:[.6,.5],S:[.4,.34],B:[.84,.2]};
+/* 瞄準框佔相機畫面的比例 [寬, 高] */
+var FRAMES={L:[.86,.7],M:[.62,.5],S:[.42,.32],B:[.86,.2]};
 function frameSize(){ return FRAMES[cfg.frame]||FRAMES.M; }
-function applyFrame(){ var f=frameSize(); $('frame').style.inset=((1-f[1])*50)+'% '+((1-f[0])*50)+'%'; }
 function zx(){
   if(zreader) return zreader;
   var hints=new Map(), fm=[];
@@ -223,8 +397,7 @@ function decodeCanvas(cv){
     return {text:r.getText(),fmt:String(ZX.BarcodeFormat[r.getBarcodeFormat()]||'')};
   }catch(e){ return null; }
 }
-/* 把來源畫到 canvas:scale 縮放、rot 是否旋轉 90 度(直放的一維條碼) */
-function draw(src,sw,sh,sx,sy,cw,ch,scale,rot){
+function draw(src,sx,sy,cw,ch,scale,rot){
   var cv=$('cv'), w=Math.max(1,Math.round(cw*scale)), h=Math.max(1,Math.round(ch*scale));
   cv.width=rot?h:w; cv.height=rot?w:h;
   var c=cv.getContext('2d',{willReadFrequently:true});
@@ -235,25 +408,23 @@ function draw(src,sw,sh,sx,sy,cw,ch,scale,rot){
   return cv;
 }
 
-/* ---------- 相機連續掃描 ---------- */
-var stream=null, running=false, native=null, tickN=0;
-var seen={}, lastAdd=0, armed=0;
+/* ---------- 相機 ---------- */
+var stream=null, running=false, native=null, tickN=0, seen={}, lastAdd=0, armed=0, torchOn=false, wake=null, wantCam=false;
 var NATIVE_NAME={qr_code:'QR_CODE',data_matrix:'DATA_MATRIX',code_128:'CODE_128',code_39:'CODE_39',code_93:'CODE_93',ean_13:'EAN_13',ean_8:'EAN_8',upc_a:'UPC_A',itf:'ITF',codabar:'CODABAR',pdf417:'PDF_417',aztec:'AZTEC'};
 function initNative(){
-  if(!('BarcodeDetector' in window)) return Promise.resolve();
-  return window.BarcodeDetector.getSupportedFormats().then(function(fs){
+  if(!('BarcodeDetector' in window)) return;
+  window.BarcodeDetector.getSupportedFormats().then(function(fs){
     var need=['qr_code','data_matrix','code_128','code_39'];
     if(need.every(function(n){return fs.indexOf(n)>=0;})) native=new window.BarcodeDetector({formats:fs.filter(function(f){return NATIVE_NAME[f];})});
   }).catch(function(){});
 }
 function flash(){ var f=$('frame'); f.classList.add('hit'); setTimeout(function(){f.classList.remove('hit');},350); }
-function disarm(){ armed=0; var b=$('btnShot'); b.classList.remove('armed'); b.textContent='按一下掃一筆'; }
-/* 每張條碼各自記錄最後入鏡時間:多張條碼同時入鏡、輪流被讀到時也不會重複加入 */
+/* 每張條碼各自記錄最後入鏡時間,多張輪流被讀到時不會重複加入 */
 function onHit(text,fmt,now){
   now=now||Date.now();
   if(cfg.mode==='tap'){
     if(!armed) return false;
-    disarm(); flash(); addItem(text,fmt); return true;
+    armed=0; syncMain(); flash(); addItem(text,fmt); return true;
   }
   var prev=seen[text];
   if(prev && now-prev<cfg.hold){ seen[text]=now; return false; }
@@ -262,9 +433,9 @@ function onHit(text,fmt,now){
   for(var k in seen) if(now-seen[k]>60000) delete seen[k];
   flash(); addItem(text,fmt); return true;
 }
-/* 畫面上瞄準框對應到影像的範圍,只解碼框內 */
+/* 畫面上的瞄準框對應到影像的範圍,只解碼框內 */
 function region(v){
-  var vw=v.videoWidth, vh=v.videoHeight, wr=$('viewWrap'), a=(wr.clientWidth/wr.clientHeight)||4/3;
+  var vw=v.videoWidth, vh=v.videoHeight, wr=$('cam'), a=(wr.clientWidth/wr.clientHeight)||4/3;
   var visW=vw, visH=vh; if(vw/vh>a) visW=vh*a; else visH=vw/a;
   var f=frameSize(), cw=Math.round(visW*f[0]), ch=Math.round(visH*f[1]);
   return {sx:Math.round((vw-cw)/2), sy:Math.round((vh-ch)/2), cw:cw, ch:ch};
@@ -273,19 +444,17 @@ function tick(){
   if(!running) return;
   var v=$('video');
   var next=function(){ if(running) setTimeout(tick,90); };
-  if(armed && Date.now()-armed>6000){ disarm(); beep(false); status('沒讀到條碼,請對準框內再按一次。','warn'); }
+  if(armed && Date.now()-armed>6000){ armed=0; syncMain(); beep(false); toast('沒讀到條碼,請把條碼整張放進框內再按一次','warn'); }
   if(cfg.mode==='tap' && !armed){ next(); return; }
   if(v.readyState<2 || !v.videoWidth){ next(); return; }
   var g=region(v), scale=Math.min(1,1100/Math.max(g.cw,g.ch));
   tickN++;
-  var rot=!native && tickN%3===2;
-  var cv=draw(v,v.videoWidth,v.videoHeight,g.sx,g.sy,g.cw,g.ch,scale,rot);
+  var cv=draw(v,g.sx,g.sy,g.cw,g.ch,scale,!native && tickN%3===2);
   if(native){
     native.detect(cv).then(function(rs){
       if(!rs||!rs.length) return;
-      var cx=cv.width/2, cy=cv.height/2;
+      var cx=cv.width/2, cy=cv.height/2, ok=allowed();
       var d=function(r){ var b=r.boundingBox; return b?Math.abs(b.x+b.width/2-cx)+Math.abs(b.y+b.height/2-cy):0; };
-      var ok=allowed();
       rs=Array.prototype.slice.call(rs).filter(function(r){return ok.indexOf(NATIVE_NAME[r.format])>=0;}).sort(function(p,q){return d(p)-d(q);});
       for(var i=0;i<rs.length;i++){ onHit(rs[i].rawValue,NATIVE_NAME[rs[i].format]||rs[i].format); if(cfg.mode==='tap') break; }
     }).catch(function(){}).then(next);
@@ -295,134 +464,176 @@ function tick(){
   if(r) onHit(r.text,r.fmt);
   next();
 }
-function applyMode(){
-  disarm();
-  $('btnShot').classList.toggle('hide',cfg.mode!=='tap'||!running);
-  if(running) status(cfg.mode==='tap'?'把要讀的條碼放在框內,按「按一下掃一筆」。':'對準條碼,讀到會自動加入;加入後會暫停 '+(cfg.gap/1000)+' 秒。');
+function setWake(on){
+  try{
+    if(on && cfg.wake && navigator.wakeLock && !wake) navigator.wakeLock.request('screen').then(function(w){ wake=w; w.addEventListener('release',function(){ wake=null; }); }).catch(function(){});
+    if(!on && wake){ wake.release().catch(function(){}); wake=null; }
+  }catch(e){}
 }
 function stopCam(){
-  running=false;
+  running=false; armed=0; torchOn=false;
   if(stream){ stream.getTracks().forEach(function(t){t.stop();}); stream=null; }
-  $('video').srcObject=null;
-  $('viewWrap').classList.remove('on'); $('btnTorch').classList.add('hide');
-  $('btnCam').textContent='開始連續掃描'; torchOn=false; disarm(); $('btnShot').classList.add('hide');
+  $('video').srcObject=null; $('cam').classList.remove('live'); $('cTorch').classList.add('hide'); $('cTorch').classList.remove('on');
+  setWake(false); syncMain();
 }
-var torchOn=false;
 function startCam(){
+  if(running) return;
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-    status('此瀏覽器在目前的開啟方式下無法使用即時相機,請改用「拍照掃描」。','warn'); return;
+    $('idleMsg').textContent='這個開啟方式無法使用即時相機。請用 https 網址開啟,或改用拍照。'; return;
   }
-  status('啟動相機中…');
+  $('idleMsg').textContent='啟動相機中…';
   navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}})
   .then(function(s){
-    stream=s; var v=$('video'); v.srcObject=s;
-    $('viewWrap').classList.add('on'); $('btnCam').textContent='停止掃描';
+    stream=s; var v=$('video'); v.srcObject=s; $('cam').classList.add('live');
     var p=v.play(); if(p&&p.catch) p.catch(function(){});
-    running=true; seen={}; lastAdd=0; applyMode();
+    running=true; seen={}; lastAdd=0; armed=0; setWake(true); syncMain();
+    toast(cfg.mode==='tap'?'把條碼整張放進框內,按「掃一筆」':'把條碼整張放進框內,讀到會自動加入');
     try{
       var tr=s.getVideoTracks()[0], cap=tr.getCapabilities?tr.getCapabilities():{};
-      if(cap.torch) $('btnTorch').classList.remove('hide');
+      if(cap.torch) $('cTorch').classList.remove('hide');
       if(cap.focusMode && cap.focusMode.indexOf('continuous')>=0) tr.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(function(){});
     }catch(e){}
     tick();
   }).catch(function(e){
-    stopCam();
-    var why=(e&&e.name==='NotAllowedError')?'相機權限被拒絕':(e&&e.name==='NotFoundError')?'找不到相機':'相機無法啟動('+((e&&e.name)||'未知')+')';
-    status(why+',請改用「拍照掃描」。','warn');
+    stopCam(); wantCam=false;
+    var why=(e&&e.name==='NotAllowedError')?'相機權限被拒絕。請到瀏覽器的網站設定把相機改成允許。':(e&&e.name==='NotFoundError')?'找不到相機。':'相機無法啟動('+((e&&e.name)||'未知')+')。';
+    $('idleMsg').textContent=why;
   });
 }
-$('btnCam').onclick=function(){ running?(stopCam(),status('已停止。')):startCam(); };
-$('btnShot').onclick=function(){ if(!running) return; armed=Date.now(); this.classList.add('armed'); this.textContent='讀取中…'; };
-$('btnTorch').onclick=function(){
-  if(!stream) return; torchOn=!torchOn;
-  stream.getVideoTracks()[0].applyConstraints({advanced:[{torch:torchOn}]}).catch(function(){ torchOn=false; });
+/* 主按鈕:依狀態只做一件事 */
+function syncMain(){
+  var b=$('btnMain'); b.className='primary';
+  if(!running){ b.textContent='啟動相機'; return; }
+  if(cfg.mode==='tap'){ if(armed){ b.textContent='讀取中…'; b.classList.add('armed'); } else b.textContent='掃一筆'; }
+  else{ b.textContent='暫停掃描'; b.classList.add('stop'); }
+}
+$('btnMain').onclick=function(){
+  if(!running){ wantCam=true; startCam(); return; }
+  if(cfg.mode==='tap'){ armed=Date.now(); syncMain(); return; }
+  wantCam=false; stopCam(); $('idleMsg').textContent='已暫停。按下方「啟動相機」繼續。';
 };
-document.addEventListener('visibilitychange',function(){ if(document.hidden && running){ stopCam(); status('已停止(頁面切到背景)。'); } });
+$('cTorch').onclick=function(){
+  if(!stream) return; torchOn=!torchOn; var c=this;
+  stream.getVideoTracks()[0].applyConstraints({advanced:[{torch:torchOn}]}).then(function(){ c.classList.toggle('on',torchOn); },function(){ torchOn=false; });
+};
+document.addEventListener('visibilitychange',function(){
+  if(document.hidden){ if(running) stopCam(); }
+  else if(wantCam && view==='vScan') startCam();
+});
 
-/* ---------- 拍照掃描 ---------- */
+/* 相機上的快速切換 */
+var MODE_L={auto:'自動',tap:'按鈕'}, FRAME_L={L:'大',M:'中',S:'小',B:'橫條'}, TYPE_L={all:'全部',qr:'QR','2d':'二維','1d':'一維'};
+function cycle(obj,cur){ var k=Object.keys(obj), i=k.indexOf(cur); return k[(i+1)%k.length]; }
+function syncChips(){
+  $('cMode').lastChild.textContent=MODE_L[cfg.mode]||''; $('cFrame').lastChild.textContent=FRAME_L[cfg.frame]||''; $('cTypes').lastChild.textContent=TYPE_L[cfg.types]||'';
+  var f=frameSize(); $('frame').style.inset=((1-f[1])*50)+'% '+((1-f[0])*50)+'%';
+}
+$('cMode').onclick=function(){ cfg.mode=cycle(MODE_L,cfg.mode); armed=0; save(); syncChips(); syncMain(); toast(cfg.mode==='tap'?'按鈕觸發:按「掃一筆」才會讀':'自動掃描:讀到就加入'); };
+$('cFrame').onclick=function(){ cfg.frame=cycle(FRAME_L,cfg.frame); save(); syncChips(); };
+$('cTypes').onclick=function(){ cfg.types=cycle(TYPE_L,cfg.types); zreader=null; save(); syncChips(); toast({all:'讀取所有類型的條碼',qr:'只讀 QR Code','2d':'只讀二維條碼(QR/DataMatrix)','1d':'只讀一維條碼'}[cfg.types]); };
+
+/* ---------- 拍照掃描(相機打不開時的備援) ---------- */
 $('btnPhoto').onclick=function(){ $('photo').value=''; $('photo').click(); };
 $('photo').onchange=function(){
   var f=this.files&&this.files[0]; if(!f) return;
-  status('解碼中…');
+  toast('解碼中…','',true);
   var url=URL.createObjectURL(f), img=new Image();
   img.onload=function(){
     var w=img.naturalWidth, h=img.naturalHeight, m=Math.max(w,h), r=null;
     var tries=[[1600,false],[1000,false],[1600,true],[640,false],[2400,false],[1000,true]];
-    for(var i=0;i<tries.length&&!r;i++){
-      r=decodeCanvas(draw(img,w,h,0,0,w,h,Math.min(1,tries[i][0]/m),tries[i][1]));
-    }
+    for(var i=0;i<tries.length&&!r;i++) r=decodeCanvas(draw(img,0,0,w,h,Math.min(1,tries[i][0]/m),tries[i][1]));
     URL.revokeObjectURL(url);
-    if(r) addItem(r.text,r.fmt);
-    else{ beep(false); status('這張照片讀不到條碼。請靠近一點、避免反光,讓條碼佔畫面一半以上再拍一次。','bad'); }
+    if(r) addItem(r.text,r.fmt); else{ beep(false); toast('這張照片讀不到條碼。請靠近一點、避免反光再拍一次','bad'); }
   };
-  img.onerror=function(){ URL.revokeObjectURL(url); status('無法讀取這張照片。','bad'); };
+  img.onerror=function(){ URL.revokeObjectURL(url); toast('無法讀取這張照片','bad'); };
   img.src=url;
 };
 
 /* ---------- 手動輸入 ---------- */
-function addManual(){ var el=$('manual'), v=el.value.trim(); if(!v) return; addItem(v,'手動輸入'); el.value=''; }
-$('btnAdd').onclick=addManual;
-$('manual').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); addManual(); } });
+function sheet(on){ $('sheet').classList.toggle('on',on); if(on){ $('sheetErr').textContent=''; $('mPart').value=''; $('mLot').value=''; $('mQty').value=''; setTimeout(function(){ $('mPart').focus(); },60); } }
+$('btnManual').onclick=function(){ sheet(true); };
+$('mCancel').onclick=function(){ sheet(false); };
+$('sheet').addEventListener('click',function(e){ if(e.target===this) sheet(false); });
+function manualOk(){
+  var p=$('mPart').value.trim().toUpperCase(), l=$('mLot').value.trim().toUpperCase(), q=$('mQty').value.trim(), s=cfg.sep||'?';
+  if(!p||!l||toQty(q)===null){ $('sheetErr').textContent='料號、批號都要填,數量要是數字。'; return; }
+  if((p+l).indexOf(s)>=0){ $('sheetErr').textContent='料號和批號不能含有分隔符號「'+s+'」。'; return; }
+  sheet(false); addItem(p+s+l+s+q.replace(/,/g,''),'手動輸入');
+}
+$('mOk').onclick=manualOk;
+$('mPart').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); $('mLot').focus(); } });
+$('mLot').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); $('mQty').focus(); } });
+$('mQty').addEventListener('keydown',function(e){ if(e.key==='Enter'){ e.preventDefault(); manualOk(); } });
 
 /* ---------- 清單操作 ---------- */
-$('list').addEventListener('click',function(e){
-  var b=e.target.closest?e.target.closest('.del'):null; if(!b) return;
-  var i=+b.getAttribute('data-i'), it=items[i]; if(!it) return;
-  items.splice(i,1); save(); render(); status('已刪除:'+it.t);
-});
 $('btnUndo').onclick=function(){
-  if(!items.length){ status('清單是空的。'); return; }
-  var it=items.pop(); save(); render(); delete seen[it.t]; status('已復原(移除):'+it.t);
+  if(!items.length) return;
+  var it=items.pop(); delete seen[it.t]; lastIdx=-1; save(); render(); toast('已復原,移除第 '+(items.length+1)+' 筆');
 };
+$('segSum').onclick=function(){ listMode='sum'; this.classList.add('on'); $('segDet').classList.remove('on'); render(); };
+$('segDet').onclick=function(){ listMode='det'; this.classList.add('on'); $('segSum').classList.remove('on'); render(); };
+$('listBody').addEventListener('click',function(e){
+  var b=e.target.closest?e.target.closest('button[data-i]'):null; if(!b) return;
+  if(!b.classList.contains('arm')){ b.classList.add('arm'); b.textContent='確定刪除'; setTimeout(function(){ b.classList.remove('arm'); b.textContent='刪除'; },3000); return; }
+  var i=+b.getAttribute('data-i'); if(!items[i]) return;
+  items.splice(i,1); lastIdx=-1; save(); render();
+});
 var clearArm=0;
 $('btnClear').onclick=function(){
   var b=this;
-  if(!items.length){ status('清單是空的。'); return; }
-  if(Date.now()-clearArm<3000){
-    items=[]; save(); render(); $('last').classList.remove('on'); clearArm=0; b.textContent='清空'; status('已清空。'); return;
-  }
-  clearArm=Date.now(); b.textContent='再按一次確認清空';
-  setTimeout(function(){ if(clearArm && Date.now()-clearArm>=3000){ clearArm=0; b.textContent='清空'; } },3100);
+  if(!items.length){ $('outMsg').textContent='清單是空的。'; return; }
+  if(Date.now()-clearArm<3000){ items=[]; lastIdx=-1; seen={}; save(); render(); clearArm=0; b.textContent='清空全部'; $('outMsg').textContent='已清空。'; return; }
+  clearArm=Date.now(); b.textContent='再按一次確認清空 '+items.length+' 筆';
+  setTimeout(function(){ if(clearArm && Date.now()-clearArm>=3000){ clearArm=0; b.textContent='清空全部'; } },3100);
 };
+
+/* ---------- 分頁 ---------- */
+Array.prototype.forEach.call(document.querySelectorAll('nav button'),function(b){
+  b.onclick=function(){
+    view=b.getAttribute('data-v');
+    Array.prototype.forEach.call(document.querySelectorAll('nav button'),function(x){ x.classList.toggle('on',x===b); });
+    Array.prototype.forEach.call(document.querySelectorAll('.view'),function(x){ x.classList.toggle('on',x.id===view); });
+    if(view==='vScan'){ if(wantCam) startCam(); } else if(running) stopCam();
+    $('outMsg').textContent='';
+    render();
+  };
+});
 
 /* ---------- 設定 ---------- */
 function bindCfg(){
-  $('optDup').value=cfg.dup; $('optSplit').checked=!!cfg.split; $('optSep').value=cfg.sep; $('optBeep').checked=!!cfg.beep; $('optVib').checked=!!cfg.vib;
-  $('optMode').value=cfg.mode; $('optGap').value=String(cfg.gap); $('optHold').value=String(cfg.hold);
-  $('optMode').onchange=function(){cfg.mode=this.value;save();applyMode();};
+  $('optGap').value=String(cfg.gap); $('optHold').value=String(cfg.hold); $('optDup').value=cfg.dup;
+  $('optBeep').checked=!!cfg.beep; $('optVib').checked=!!cfg.vib; $('optWake').checked=!!cfg.wake;
+  $('optSep').value=cfg.sep; $('optPre').value=cfg.pre; $('optLotLen').value=String(cfg.lotLen);
   $('optGap').onchange=function(){cfg.gap=+this.value;save();};
   $('optHold').onchange=function(){cfg.hold=+this.value;save();};
-  $('optFrame').value=cfg.frame; $('optTypes').value=cfg.types;
-  $('optFrame').onchange=function(){cfg.frame=this.value;save();applyFrame();};
-  $('optTypes').onchange=function(){cfg.types=this.value;zreader=null;save();};
   $('optDup').onchange=function(){cfg.dup=this.value;save();};
-  $('optSplit').onchange=function(){cfg.split=this.checked;save();};
-  $('optSep').oninput=function(){cfg.sep=this.value;save();};
   $('optBeep').onchange=function(){cfg.beep=this.checked;save();};
   $('optVib').onchange=function(){cfg.vib=this.checked;save();};
+  $('optWake').onchange=function(){cfg.wake=this.checked;save();};
+  $('optSep').oninput=function(){cfg.sep=this.value||'?';save();};
+  $('optPre').oninput=function(){cfg.pre=this.value;save();};
+  $('optLotLen').oninput=function(){var n=parseInt(this.value,10);cfg.lotLen=isNaN(n)?0:n;save();};
 }
 
 /* ---------- 匯出 ---------- */
-function table(){
-  var split=cfg.split && cfg.sep, n=0, parts=[];
-  if(split){ items.forEach(function(it,i){ parts[i]=it.t.split(cfg.sep); if(parts[i].length>n) n=parts[i].length; }); if(n<2) split=false; }
-  var head=['序號','條碼內容'], i;
-  if(split) for(i=1;i<=n;i++) head.push('欄位'+i);
-  head.push('條碼格式','掃描時間');
-  var rows=[head];
-  items.forEach(function(it,idx){
-    var r=[idx+1,it.t];
-    if(split) for(var j=0;j<n;j++) r.push(parts[idx][j]===undefined?'':parts[idx][j]);
-    r.push(it.f,it.d); rows.push(r);
-  });
-  return rows;
+/* 整理表:依料號、批號排序,每筆一列 */
+function tidy(){
+  var st=stats(), rows=[];
+  st.parts.forEach(function(g){ g.lotList.forEach(function(l){ l.rows.forEach(function(r){ rows.push({part:g.part,lot:l.lot,qty:r.qty,lotTotal:l.total,partTotal:g.total}); }); }); });
+  return {rows:rows,st:st};
 }
-function fname(ext){ var d=new Date(); return '掃描清單_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds())+'.'+ext; }
+var HEAD=['料號','批號','數量','同批號總數','同料號總數'];
+function fname(ext){ var d=new Date(); return '掃描整理表_'+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds())+'.'+ext; }
+function flat(sepCh,q){
+  var t=tidy(), out=[HEAD.join(sepCh)];
+  t.rows.forEach(function(r){ out.push([r.part,r.lot,r.qty,r.lotTotal,r.partTotal].map(q).join(sepCh)); });
+  return out;
+}
 function csvBlob(){
-  var s=table().map(function(r){ return r.map(function(c){ c=String(c); return /[",\r\n]/.test(c)||/^[\s]|[\s]$/.test(c)?'"'+c.replace(/"/g,'""')+'"':c; }).join(','); }).join('\r\n');
-  return new Blob(['﻿'+s],{type:'text/csv;charset=utf-8'});
+  var q=function(c){ c=String(c); return /[",\r\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c; };
+  return new Blob(['﻿'+flat(',',q).join('\r\n')],{type:'text/csv;charset=utf-8'});
 }
-/* 極簡 xlsx 產生器(不壓縮的 zip),所有內容以文字儲存,避免前導 0 或長數字被 Excel 改掉 */
+/* 極簡 xlsx 產生器(不壓縮的 zip) */
 var CRC=(function(){ var t=[],c,n,k; for(n=0;n<256;n++){ c=n; for(k=0;k<8;k++) c=c&1?0xEDB88320^(c>>>1):c>>>1; t[n]=c>>>0; } return t; })();
 function crc32(u8){ var c=0xFFFFFFFF; for(var i=0;i<u8.length;i++) c=CRC[(c^u8[i])&255]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
 function zip(files){
@@ -441,28 +652,51 @@ function zip(files){
 }
 function xesc(s){ return String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function colName(i){ var s=''; i++; while(i>0){ var m=(i-1)%26; s=String.fromCharCode(65+m)+s; i=(i-m-1)/26; } return s; }
-function xlsxBlob(){
-  var rows=table(), nc=rows[0].length, x='', widths=[];
+/* rows: 每格為 [值, 樣式];數字寫成數值,其餘寫成文字(保留前導 0) */
+function sheetXml(rows,merges){
+  var x='', widths=[];
   rows.forEach(function(r,ri){
     x+='<row r="'+(ri+1)+'">';
     r.forEach(function(c,ci){
-      var ref=colName(ci)+(ri+1), s=String(c), len=0;
-      for(var k=0;k<s.length;k++) len+=s.charCodeAt(k)>255?2:1;
-      widths[ci]=Math.min(60,Math.max(widths[ci]||6,len+2));
-      if(ri>0&&ci===0) x+='<c r="'+ref+'"><v>'+c+'</v></c>';
-      else x+='<c r="'+ref+'" t="inlineStr"'+(ri===0?' s="1"':'')+'><is><t xml:space="preserve">'+xesc(s)+'</t></is></c>';
+      var v=c[0], s=c[1]||0, ref=colName(ci)+(ri+1), str=v===null||v===undefined?'':String(v), len=0;
+      for(var k=0;k<str.length;k++) len+=str.charCodeAt(k)>255?2:1;
+      widths[ci]=Math.min(60,Math.max(widths[ci]||8,len+3));
+      if(str==='') x+='<c r="'+ref+'" s="'+s+'"/>';
+      else if(typeof v==='number') x+='<c r="'+ref+'" s="'+s+'"><v>'+v+'</v></c>';
+      else x+='<c r="'+ref+'" s="'+s+'" t="inlineStr"><is><t xml:space="preserve">'+xesc(str)+'</t></is></c>';
     });
     x+='</row>';
   });
-  var cols=''; for(var i=0;i<nc;i++) cols+='<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+widths[i]+'" customWidth="1"/>';
-  var H='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+  var cols=''; for(var i=0;i<widths.length;i++) cols+='<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+widths[i]+'" customWidth="1"/>';
+  var mg=merges&&merges.length?'<mergeCells count="'+merges.length+'">'+merges.map(function(m){return '<mergeCell ref="'+m+'"/>';}).join('')+'</mergeCells>':'';
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>'+cols+'</cols><sheetData>'+x+'</sheetData>'+mg+'</worksheet>';
+}
+function xlsxBlob(){
+  /* 樣式:1 表頭、2 一般格、3 合併的總數格(粗體、垂直置中)、4 總計列 */
+  var t=tidy(), rows=[HEAD.map(function(h){return [h,1];})], merges=[], i=0, n=t.rows.length;
+  while(i<n){
+    var j=i; while(j<n && t.rows[j].part===t.rows[i].part) j++;
+    var a=i; while(a<j){
+      var b=a; while(b<j && t.rows[b].lot===t.rows[a].lot) b++;
+      for(var k=a;k<b;k++) rows.push([[t.rows[k].part,2],[t.rows[k].lot,2],[t.rows[k].qty,2],[k===a?t.rows[k].lotTotal:null,3],[k===i?t.rows[k].partTotal:null,3]]);
+      if(b-a>1) merges.push('D'+(a+2)+':D'+(b+1));
+      a=b;
+    }
+    if(j-i>1) merges.push('E'+(i+2)+':E'+(j+1));
+    i=j;
+  }
+  rows.push([['總計',4],[t.st.parts.length+' 個料號 / '+t.st.lots+' 個批號',4],[t.st.qty,4],[null,4],[null,4]]);
+  var raw=[['序號','條碼內容','料號','批號','數量','條碼格式','掃描時間','備註'].map(function(h){return [h,1];})];
+  items.forEach(function(it,idx){ var p=parse(it.t); raw.push([[idx+1,2],[it.t,2],[p.ok?p.part:'',2],[p.ok?p.lot:'',2],[p.ok?p.qty:null,2],[it.f,2],[it.d,2],[p.ok?p.warn:'無法拆解,未計入整理表',2]]); });
+  var H='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n', W='application/vnd.openxmlformats-officedocument.spreadsheetml.';
   return zip([
-    ['[Content_Types].xml',H+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'],
+    ['[Content_Types].xml',H+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="'+W+'sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="'+W+'worksheet+xml"/><Override PartName="/xl/worksheets/sheet2.xml" ContentType="'+W+'worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="'+W+'styles+xml"/></Types>'],
     ['_rels/.rels',H+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'],
-    ['xl/workbook.xml',H+'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="掃描清單" sheetId="1" r:id="rId1"/></sheets></workbook>'],
-    ['xl/_rels/workbook.xml.rels',H+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
-    ['xl/styles.xml',H+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs></styleSheet>'],
-    ['xl/worksheets/sheet1.xml',H+'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><cols>'+cols+'</cols><sheetData>'+x+'</sheetData></worksheet>']
+    ['xl/workbook.xml',H+'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="整理表" sheetId="1" r:id="rId1"/><sheet name="原始明細" sheetId="2" r:id="rId2"/></sheets></workbook>'],
+    ['xl/_rels/workbook.xml.rels',H+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'],
+    ['xl/styles.xml',H+'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDDEBE5"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/></cellXfs></styleSheet>'],
+    ['xl/worksheets/sheet1.xml',sheetXml(rows,merges)],
+    ['xl/worksheets/sheet2.xml',sheetXml(raw,null)]
   ]);
 }
 function download(blob,name){
@@ -470,17 +704,21 @@ function download(blob,name){
   a.href=url; a.download=name; document.body.appendChild(a); a.click();
   setTimeout(function(){ a.remove(); URL.revokeObjectURL(url); },4000);
 }
-function need(){ if(items.length) return true; status('清單是空的,沒有可匯出的資料。','warn'); return false; }
-$('btnXlsx').onclick=function(){ if(!need()) return; var n=fname('xlsx'); download(xlsxBlob(),n); status('已匯出 '+n+'('+items.length+' 筆)','ok'); };
-$('btnCsv').onclick=function(){ if(!need()) return; var n=fname('csv'); download(csvBlob(),n); status('已匯出 '+n+'('+items.length+' 筆)','ok'); };
+function need(){
+  if(!items.length){ $('outMsg').textContent='清單是空的,沒有可匯出的資料。'; return false; }
+  return true;
+}
+function outNote(n){ var bad=stats().bad; $('outMsg').textContent='已匯出 '+n+(bad?'。有 '+bad+' 筆無法拆解,只列在「原始明細」。':'。'); }
+$('btnXlsx').onclick=function(){ if(!need()) return; var n=fname('xlsx'); download(xlsxBlob(),n); outNote(n); };
+$('btnCsv').onclick=function(){ if(!need()) return; var n=fname('csv'); download(csvBlob(),n); outNote(n); };
 $('btnCopy').onclick=function(){
   if(!need()) return;
-  var txt=items.map(function(it){return it.t;}).join('\n');
-  var done=function(){ status('已複製 '+items.length+' 筆條碼內容(每筆一行)。','ok'); };
+  var txt=flat('\t',function(c){return String(c).replace(/[\t\r\n]/g,' ');}).join('\n');
+  var done=function(){ $('outMsg').textContent='已複製表格,可直接貼到 Excel。'; };
   var fallback=function(){
     var ta=document.createElement('textarea'); ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select();
     var ok=false; try{ ok=document.execCommand('copy'); }catch(e){} ta.remove();
-    ok?done():status('此瀏覽器不允許複製,請改用匯出。','warn');
+    ok?done():($('outMsg').textContent='這個瀏覽器不允許複製,請改用匯出。');
   };
   if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done,fallback); else fallback();
 };
@@ -489,20 +727,18 @@ $('btnCopy').onclick=function(){
     var probe=new File(['x'],'a.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
     if(navigator.canShare && navigator.canShare({files:[probe]})){
       $('btnShare').classList.remove('hide');
-      $('btnShare').onclick=function(){
-        if(!need()) return;
-        var f=new File([xlsxBlob()],fname('xlsx'),{type:probe.type});
-        navigator.share({files:[f],title:'掃描清單'}).catch(function(){});
-      };
+      $('btnShare').onclick=function(){ if(!need()) return; navigator.share({files:[new File([xlsxBlob()],fname('xlsx'),{type:probe.type})],title:'掃描整理表'}).catch(function(){}); };
     }
   }catch(e){}
 })();
 
 /* 測試用掛勾 */
-window.__scan={hit:onHit,cfg:cfg,add:addItem,xlsx:xlsxBlob,csv:csvBlob,items:function(){return items;}};
+window.__scan={hit:onHit,cfg:cfg,add:addItem,parse:parse,xlsx:xlsxBlob,csv:csvBlob,sync:function(){zreader=null;syncChips();syncMain();},items:function(){return items;}};
 
-load(); bindCfg(); applyFrame(); applyMode(); render(); initNative();
-if(memStore) status('此瀏覽器無法暫存資料,關閉頁面前請先匯出。','warn');
+load(); bindCfg(); syncChips(); syncMain(); render(); initNative();
+if(noStore) toast('這個瀏覽器無法暫存資料,關閉頁面前請先匯出','warn',true);
+/* 之前已允許相機的話,開啟就直接啟動 */
+try{ if(navigator.permissions && navigator.permissions.query) navigator.permissions.query({name:'camera'}).then(function(p){ if(p.state==='granted' && view==='vScan' && !document.hidden){ wantCam=true; startCam(); } }).catch(function(){}); }catch(e){}
 })();
 </script>
 </body>
