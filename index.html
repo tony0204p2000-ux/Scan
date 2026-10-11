@@ -173,6 +173,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
 .chipSeg{display:flex;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.35);border-radius:19px;padding:2px}
 .chipSeg button{border:0;background:transparent;color:#fff;min-height:34px;min-width:52px;padding:0 10px;border-radius:17px;font-size:14px;font-weight:600}
 .chipSeg button.on{background:#f0a94a;color:#231503}
+#wQtyBtn{display:block;width:100%;margin-top:6px;min-height:42px;font-size:14px;border-color:var(--warn);color:var(--warn)}
 </style>
 </head>
 <body>
@@ -180,7 +181,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
   <header>
     <div style="display:flex;align-items:center">
       <div class="modeSeg"><button id="mIC">IC</button><button id="mWF">WAFER</button></div>
-      <span class="ver">v3.2</span>
+      <span class="ver">v3.3</span>
     </div>
     <div class="tot"><div><b class="num" id="tCnt">0</b><span id="tCntL">筆</span></div><div><b class="num" id="tQty">0</b><span id="tQtyL">總數量</span></div></div>
   </header>
@@ -212,6 +213,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
       <div id="wPanel" class="hide">
         <div id="wRows"></div>
         <div id="wHint"></div>
+        <button id="wQtyBtn" class="hide"></button>
       </div>
       <div class="act">
         <button class="primary" id="btnMain">啟動相機</button>
@@ -575,8 +577,9 @@ function mkReader(names){
 }
 function fine2d(){ return allowed().filter(function(n){return n==='QR_CODE'||n==='DATA_MATRIX'||n==='AZTEC';}); }
 /* 細掃只找二維條碼:逐列找一維條碼在高解析度下太慢 */
+var only1d=false;
 function zx(){
-  var names=fine?fine2d():allowed(), k=names.join(',');
+  var names=fine?fine2d():(only1d?allowed().filter(function(n){return !is2D(n);}):allowed()), k=names.join(',');
   return readers[k]||(readers[k]=mkReader(names));
 }
 function decodeWith(cv,B){
@@ -730,6 +733,8 @@ function renderW(){
     if(wcur.v.stock===null && wcur.v.item===null) need=['STOCK NO 或 ITEM NO(讀到一個即可)'].concat(m.filter(function(k){return k!=='stock'&&k!=='item';}).map(wLabel));
     hint.className=''; hint.textContent='還缺:'+need.join('、')+'。請靠近對準沒讀到的條碼。';
   }
+  var qb=$('wQtyBtn'), canQ=!wcur.done && wcur.type!=='KGD' && wcur.v.qty===null && wcur.v.wf!==null;
+  qb.classList.toggle('hide',!canQ); if(canQ) qb.textContent='QTY 讀不到?用 WF ID 的片數 '+wfCount(wcur.v.wf)+' 帶入';
   var b=$('btnManual'); if(!dropArm) b.innerHTML='放棄<br>這張'; b.disabled=!wAny() || wcur.done;
   Array.prototype.forEach.call(document.querySelectorAll('#cW button'),function(x){ x.classList.toggle('on',x.getAttribute('data-t')===wType()); });
 }
@@ -808,6 +813,12 @@ $('wRows').addEventListener('click',function(e){
       renderW();
     });
 });
+$('wQtyBtn').onclick=function(){
+  if(wcur.done || wcur.v.wf===null || wcur.v.qty!==null) return;
+  wcur.v.qty=String(wfCount(wcur.v.wf)); wcur.src.qty='copy'; save();
+  if(!wMissing().length){ wComplete(); return; }
+  renderW();
+};
 function setWType(t){
   if(cfg.wtype===t) return;
   var had=wAny() && !wcur.done;
@@ -815,14 +826,16 @@ function setWType(t){
   toast('種類:'+t+(had?'。剛才沒刷完的那張已清掉,請重新讀取':''),had?'warn':'');
 }
 /* 把畫面中的條碼全部解出來 */
+var lastExt=[], wRotPref=false;
 function wDecode(cv,alt){
-  var out=[];
+  var out=[]; lastExt=[];
   for(var n=0;n<10;n++){
     /* 四個一維加一個二維都到齊就不用再找,省下最後一次落空的掃描 */
     if(out.filter(function(x){return !x.two;}).length>=4 && out.some(function(x){return x.two;})) break;
     var r=decodeCanvas(cv,alt); if(!r||!r.pts.length) break;
     var two=is2D(r.fmt); if(!two) r.ext=barExtent(cv,r);
     out.push({text:r.text,two:two});
+    lastExt.push([r.text.slice(0,8),r.ext?Math.round(r.ext.top):null,r.ext?Math.round(r.ext.bottom):null,Math.round(r.pts[0][1])]);
     if(!maskHit(cv,r)) break;
   }
   return out;
@@ -874,12 +887,21 @@ function tick(){
   if(native) useHi=true;
   else if(wf) useHi=canHi && (tickN%2===1);          /* WAFER 的一維條碼很細,細掃也要找一維 */
   else useHi=canHi && fine2d().length>0 && (ph===1||ph===3);
-  var cv=draw(v,g.sx,g.sy,g.cw,g.ch,useHi?hi:lo,!native && (wf?(tickN%8)>=4:ph===2));
+  var rot=wf?(tickN%4===3?!wRotPref:wRotPref):ph===2;
+  var cv=draw(v,g.sx,g.sy,g.cw,g.ch,useHi?hi:lo,rot && (wf || !native));
   if(native){
     native.detect(cv).then(function(rs){
       rs=Array.prototype.slice.call(rs||[]);
       var ok=allowed(); rs=rs.filter(function(r){return ok.indexOf(NATIVE_NAME[r.format])>=0;});
-      if(wf){ wFrame(rs.map(function(r){ return {text:r.rawValue,two:is2D(NATIVE_NAME[r.format])}; })); return; }
+      if(wf){
+        wFrame(rs.map(function(r){ return {text:r.rawValue,two:is2D(NATIVE_NAME[r.format])}; }));
+        /* 手機內建的辨識對很短的一維條碼(例如 QTY)常常漏掉:還缺一維的格子時,用另一套解碼器補讀 */
+        if(!wcur.done && wMissing().some(function(k){return k!=='wf';})){
+          only1d=true; var extra=wDecode(cv,tickN%2?false:'g'); only1d=false;
+          if(extra.length){ wRotPref=rot; wFrame(extra); }
+        }
+        lastMs=Date.now()-t0; return;
+      }
       if(!rs.length) return;
       var cx=cv.width/2, cy=cv.height/2;
       var d=function(r){ var b=r.boundingBox; return b?Math.abs(b.x+b.width/2-cx)+Math.abs(b.y+b.height/2-cy):0; };
@@ -891,7 +913,7 @@ function tick(){
     }).catch(function(){}).then(next);
     return;
   }
-  if(wf){ wFrame(wDecode(cv,tickN%4<2?false:'g')); lastMs=Date.now()-t0; next(); return; }
+  if(wf){ var wd=wDecode(cv,tickN%2?'g':false); if(wd.some(function(d){return !d.two;})) wRotPref=rot; wFrame(wd); lastMs=Date.now()-t0; next(); return; }
   /* 細掃時兩種門檻輪流用,避免單次運算太久 */
   fine=useHi; var a=decodeAll(cv,useHi?(ph===3?'g':false):true); fine=false;
   if(a.hit) onHit(a.hit.text,a.hit.fmt); else noteSkipped(a.skipped,a.itemSkip);
@@ -1232,7 +1254,7 @@ $('btnCopy').onclick=function(){ ready(function(){
 })();
 
 /* 測試用掛勾 */
-window.__scan={hit:onHit,cfg:cfg,add:addItem,parse:parse,rec:rec,xlsx:xlsxBlob,csv:csvBlob,wframe:wFrame,wclass:wClass,wfnorm:wfNorm,
+window.__scan={hit:onHit,cfg:cfg,add:addItem,parse:parse,rec:rec,xlsx:xlsxBlob,csv:csvBlob,dec:function(src,sx,sy,w,h,scale,alt,rot){ return wDecode(draw(src,sx,sy,w,h,scale,!!rot),alt); },ext:function(){return lastExt;},wframe:wFrame,wclass:wClass,wfnorm:wfNorm,
   sync:function(){readers={};syncChips();syncMain();render();},items:function(){return items;},wafers:function(){return wafers;},wcur:function(){return wcur;},rmap:function(){return rmap;},ms:function(){return lastMs;}};
 
 load(); if(!wcur || !wcur.type) wcur=wNew();
