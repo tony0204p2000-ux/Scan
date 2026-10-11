@@ -8,6 +8,9 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="條碼掃描">
 <title>手機條碼掃描</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.png">
+<link rel="apple-touch-icon" href="icon.png">
 <style>
 :root{
   --bg:#f3f4f1; --card:#ffffff; --ink:#16201c; --sub:#5d6964; --line:#d9ddd8;
@@ -174,6 +177,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
 .chipSeg button{border:0;background:transparent;color:#fff;min-height:34px;min-width:52px;padding:0 10px;border-radius:17px;font-size:14px;font-weight:600}
 .chipSeg button.on{background:#f0a94a;color:#231503}
 #wQtyBtn{display:block;width:100%;margin-top:6px;min-height:42px;font-size:14px;border-color:var(--warn);color:var(--warn)}
+.note.okc{color:var(--ok);font-weight:600}
 </style>
 </head>
 <body>
@@ -181,7 +185,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
   <header>
     <div style="display:flex;align-items:center">
       <div class="modeSeg"><button id="mIC">IC</button><button id="mWF">WAFER</button></div>
-      <span class="ver">v3.3</span>
+      <span class="ver">v3.4</span>
     </div>
     <div class="tot"><div><b class="num" id="tCnt">0</b><span id="tCntL">筆</span></div><div><b class="num" id="tQty">0</b><span id="tQtyL">總數量</span></div></div>
   </header>
@@ -240,8 +244,6 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
     <div class="stack">
       <button class="primary" id="btnXlsx">匯出 Excel<small id="xlsxSub"></small></button>
       <button id="btnShare" class="hide">分享 Excel<small>用手機的分享選單傳出去</small></button>
-      <button id="btnCsv">匯出 CSV</button>
-      <button id="btnCopy">複製表格<small>可直接貼到 Excel</small></button>
     </div>
     <div class="note" id="outMsg"></div>
     <h2>清除資料</h2>
@@ -273,6 +275,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
       <label class="opt"><span>相機解析度<small>高:小的條碼也讀得到;畫面卡頓時改標準</small></span>
         <select id="optRes"><option value="hi">高</option><option value="std">標準</option></select></label>
     </div>
+    <div class="note" id="offMsg">離線開啟:檢查中…</div>
     <div class="note">資料只存在這支手機的瀏覽器裡,不會上傳。清除瀏覽器資料會一併清掉,請記得先匯出。</div>
   </div></section>
 
@@ -1158,16 +1161,6 @@ function wRowsOut(){
   return wafers.map(function(w){ var t=w.type||'WF', q=toQty(w.qty), k=t==='KGD'; return [t,w.stock,w.item,w.lot,q===null?w.qty:q,w.wf,k?'':wfCount(w.wf),k?'':(wCheck(w,t)?'不一致':'一致'),w.d]; });
 }
 function fname(ext){ var d=new Date(); return (isWF()?'WAFER刷讀_':'掃描整理表_')+d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes())+pad(d.getSeconds())+'.'+ext; }
-function flat(sepCh,q){
-  if(isWF()) return [WHEAD.join(sepCh)].concat(wRowsOut().map(function(r){ return r.map(q).join(sepCh); }));
-  var t=tidy(), out=[HEAD.join(sepCh)];
-  t.rows.forEach(function(r){ out.push([r.part,r.lot,r.qty,r.lotTotal,r.partTotal].map(q).join(sepCh)); });
-  return out;
-}
-function csvBlob(){
-  var q=function(c){ c=String(c); return /[",\r\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c; };
-  return new Blob(['﻿'+flat(',',q).join('\r\n')],{type:'text/csv;charset=utf-8'});
-}
 var STYLES='<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDDEBE5"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color auto="1"/></left><right style="thin"><color auto="1"/></right><top style="thin"><color auto="1"/></top><bottom style="thin"><color auto="1"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="5"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf><xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf><xf numFmtId="0" fontId="1" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/></cellXfs></styleSheet>';
 function book(sheets){
   var H='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n', W='application/vnd.openxmlformats-officedocument.spreadsheetml.', R='http://schemas.openxmlformats.org/officeDocument/2006/relationships';
@@ -1232,31 +1225,35 @@ function outNote(n){
   $('outMsg').textContent=msg;
 }
 $('btnXlsx').onclick=function(){ ready(function(){ var n=fname('xlsx'); download(xlsxBlob(),n); outNote(n); }); };
-$('btnCsv').onclick=function(){ ready(function(){ var n=fname('csv'); download(csvBlob(),n); outNote(n); }); };
-$('btnCopy').onclick=function(){ ready(function(){
-  var txt=flat('\t',function(c){return String(c).replace(/[\t\r\n]/g,' ');}).join('\n');
-  var done=function(){ $('outMsg').textContent='已複製表格,可直接貼到 Excel。'; };
-  var fallback=function(){
-    var ta=document.createElement('textarea'); ta.value=txt; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select();
-    var ok=false; try{ ok=document.execCommand('copy'); }catch(e){} ta.remove();
-    ok?done():($('outMsg').textContent='這個瀏覽器不允許複製,請改用匯出。');
-  };
-  if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done,fallback); else fallback();
-}); };
+/* 分享:部分手機(多數 Android 的 Chrome)不允許網頁直接分享 Excel 檔,被拒絕時改成下載並說明 */
 (function(){
   try{
-    var probe=new File(['x'],'a.xlsx',{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    var type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', probe=new File(['x'],'a.xlsx',{type:type});
     if(navigator.canShare && navigator.canShare({files:[probe]})){
       $('btnShare').classList.remove('hide');
-      $('btnShare').onclick=function(){ ready(function(){ navigator.share({files:[new File([xlsxBlob()],fname('xlsx'),{type:probe.type})],title:'掃描整理表'}).catch(function(){}); }); };
+      $('btnShare').onclick=function(){ ready(function(){
+        var n=fname('xlsx'), blob=xlsxBlob();
+        navigator.share({files:[new File([blob],n,{type:type})],title:n}).then(function(){ $('outMsg').textContent='已開啟分享。'; },function(e){
+          if(e && e.name==='AbortError'){ $('outMsg').textContent='已取消分享。'; return; }
+          download(blob,n); $('outMsg').textContent='這支手機不允許網頁直接分享 Excel 檔,已改為下載 '+n+'。請從下載通知或「檔案」App 開啟後再分享。';
+        });
+      }); };
     }
   }catch(e){}
 })();
 
 /* 測試用掛勾 */
-window.__scan={hit:onHit,cfg:cfg,add:addItem,parse:parse,rec:rec,xlsx:xlsxBlob,csv:csvBlob,dec:function(src,sx,sy,w,h,scale,alt,rot){ return wDecode(draw(src,sx,sy,w,h,scale,!!rot),alt); },ext:function(){return lastExt;},wframe:wFrame,wclass:wClass,wfnorm:wfNorm,
+window.__scan={hit:onHit,cfg:cfg,add:addItem,parse:parse,rec:rec,xlsx:xlsxBlob,dec:function(src,sx,sy,w,h,scale,alt,rot){ return wDecode(draw(src,sx,sy,w,h,scale,!!rot),alt); },ext:function(){return lastExt;},wframe:wFrame,wclass:wClass,wfnorm:wfNorm,
   sync:function(){readers={};syncChips();syncMain();render();},items:function(){return items;},wafers:function(){return wafers;},wcur:function(){return wcur;},rmap:function(){return rmap;},ms:function(){return lastMs;}};
 
+/* 離線快取:有網路時開過一次,之後沒網路也能開 */
+function offState(msg,cls){ var e=$('offMsg'); if(e){ e.textContent=msg; e.className='note'+(cls?' '+cls:''); } }
+(function(){
+  if(!('serviceWorker' in navigator) || !/^https:$|^http:$/.test(location.protocol) || (location.protocol==='http:' && location.hostname!=='localhost' && location.hostname!=='127.0.0.1')){ offState('離線開啟:這個開啟方式不支援。'); return; }
+  navigator.serviceWorker.register('sw.js').then(function(){ return navigator.serviceWorker.ready; }).then(function(){ offState('離線開啟:已就緒。沒有網路時也能打開這個頁面。','okc'); })
+    .catch(function(){ offState('離線開啟:尚未啟用(找不到 sw.js,請確認已一起上傳)。'); });
+  window.addEventListener('offline',function(){ toast('目前沒有網路,掃描和匯出不受影響','',false); });
+})();
 load(); if(!wcur || !wcur.type) wcur=wNew();
 bindCfg(); syncChips(); syncMain(); render(); initNative();
 if(noStore) toast('這個瀏覽器無法暫存資料,關閉頁面前請先匯出','warn',true);
