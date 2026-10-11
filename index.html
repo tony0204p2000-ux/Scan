@@ -132,7 +132,7 @@ h2{font-size:13px;color:var(--sub);font-weight:600;margin:16px 2px 8px}
 <body>
 <div id="app">
   <header>
-    <h1>手機條碼掃描<small>v2.0</small></h1>
+    <h1>手機條碼掃描<small>v2.1</small></h1>
     <div class="tot"><div><b class="num" id="tCnt">0</b>筆</div><div><b class="num" id="tQty">0</b>總數量</div></div>
   </header>
 
@@ -207,6 +207,7 @@ h2{font-size:13px;color:var(--sub);font-weight:600;margin:16px 2px 8px}
     </div>
     <h2>條碼拆解</h2>
     <div class="box">
+      <label class="opt"><span>只收可拆解的條碼<small>框內的條碼全部讀取,只留下能拆成料號/批號/數量的,其他自動忽略</small></span><input type="checkbox" id="optOnly"></label>
       <label class="opt"><span>分隔符號<small>料號?批號?數量?其他</small></span><input type="text" id="optSep" maxlength="3" style="width:70px;text-align:center"></label>
       <label class="opt"><span>料號字首<small>不符時仍加入,但會標示提醒</small></span><input type="text" id="optPre" autocapitalize="characters" spellcheck="false"></label>
       <label class="opt"><span>批號碼數<small>不符時仍加入,但會標示提醒;0 為不檢查</small></span><input type="text" id="optLotLen" inputmode="numeric" maxlength="2" style="width:70px;text-align:center"></label>
@@ -239,7 +240,7 @@ h2{font-size:13px;color:var(--sub);font-weight:600;margin:16px 2px 8px}
 'use strict';
 var $=function(id){return document.getElementById(id);};
 var KEY='phoneScanBatch.v1';
-var items=[], cfg={dup:'allow',sep:'?',beep:true,vib:true,wake:true,mode:'auto',gap:1500,hold:5000,frame:'M',types:'all',pre:'RTD,RTS,ALC,RTL',lotLen:7};
+var items=[], cfg={dup:'allow',sep:'?',beep:true,vib:true,wake:true,only:true,mode:'auto',gap:1500,hold:5000,frame:'M',types:'all',pre:'RTD,RTS,ALC,RTL',lotLen:7};
 var noStore=false;
 
 /* ---------- 儲存 ---------- */
@@ -394,8 +395,38 @@ function decodeCanvas(cv){
   try{
     var lum=new ZX.HTMLCanvasElementLuminanceSource(cv);
     var r=zx().decodeWithState(new ZX.BinaryBitmap(new ZX.HybridBinarizer(lum)));
-    return {text:r.getText(),fmt:String(ZX.BarcodeFormat[r.getBarcodeFormat()]||'')};
+    var pts=(r.getResultPoints()||[]).filter(Boolean).map(function(p){return [p.getX(),p.getY()];});
+    return {text:r.getText(),fmt:String(ZX.BarcodeFormat[r.getBarcodeFormat()]||''),pts:pts};
   }catch(e){ return null; }
+}
+/* 把已讀到的條碼塗白,讓解碼器能繼續找畫面中的下一張 */
+function maskHit(cv,r){
+  if(!r.pts||!r.pts.length) return false;
+  var x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  r.pts.forEach(function(p){ x0=Math.min(x0,p[0]); x1=Math.max(x1,p[0]); y0=Math.min(y0,p[1]); y1=Math.max(y1,p[1]); });
+  var w=x1-x0, h=y1-y0, px, py;
+  if(/QR|MATRIX|AZTEC|PDF/.test(r.fmt)){ px=py=Math.max(w,h)*.35+6; }
+  else{ px=w*.06+10; py=Math.max(cv.height*.06,12); }
+  var c=cv.getContext('2d'); c.fillStyle='#fff'; c.fillRect(x0-px,y0-py,w+2*px,h+2*py);
+  return true;
+}
+function wanted(text){ return !cfg.only || parse(text).ok; }
+/* 回傳 {hit: 要收下的那張 或 null, skipped: 被忽略的張數} */
+function decodeAll(cv){
+  var skipped=0, seenT={};
+  for(var n=0;n<8;n++){
+    var r=decodeCanvas(cv);
+    if(!r) break;
+    if(wanted(r.text)) return {hit:r,skipped:skipped};
+    if(!seenT[r.text]){ seenT[r.text]=1; skipped++; }
+    if(!maskHit(cv,r)) break;
+  }
+  return {hit:null,skipped:skipped};
+}
+var skipT=0;
+function noteSkipped(n){
+  if(!n || Date.now()-skipT<3500) return; skipT=Date.now();
+  toast('框內有 '+n+' 張條碼不是「料號'+(cfg.sep||'?')+'批號'+(cfg.sep||'?')+'數量」格式,已忽略','');
 }
 function draw(src,sx,sy,cw,ch,scale,rot){
   var cv=$('cv'), w=Math.max(1,Math.round(cw*scale)), h=Math.max(1,Math.round(ch*scale));
@@ -444,7 +475,7 @@ function tick(){
   if(!running) return;
   var v=$('video');
   var next=function(){ if(running) setTimeout(tick,90); };
-  if(armed && Date.now()-armed>6000){ armed=0; syncMain(); beep(false); toast('沒讀到條碼,請把條碼整張放進框內再按一次','warn'); }
+  if(armed && Date.now()-armed>6000){ armed=0; syncMain(); beep(false); toast(cfg.only?'沒讀到可拆解的條碼,請把整張標籤放進框內再按一次':'沒讀到條碼,請把條碼整張放進框內再按一次','warn'); }
   if(cfg.mode==='tap' && !armed){ next(); return; }
   if(v.readyState<2 || !v.videoWidth){ next(); return; }
   var g=region(v), scale=Math.min(1,1100/Math.max(g.cw,g.ch));
@@ -456,12 +487,14 @@ function tick(){
       var cx=cv.width/2, cy=cv.height/2, ok=allowed();
       var d=function(r){ var b=r.boundingBox; return b?Math.abs(b.x+b.width/2-cx)+Math.abs(b.y+b.height/2-cy):0; };
       rs=Array.prototype.slice.call(rs).filter(function(r){return ok.indexOf(NATIVE_NAME[r.format])>=0;}).sort(function(p,q){return d(p)-d(q);});
+      var all=rs.length; rs=rs.filter(function(r){return wanted(r.rawValue);});
+      if(!rs.length){ noteSkipped(all); return; }
       for(var i=0;i<rs.length;i++){ onHit(rs[i].rawValue,NATIVE_NAME[rs[i].format]||rs[i].format); if(cfg.mode==='tap') break; }
     }).catch(function(){}).then(next);
     return;
   }
-  var r=decodeCanvas(cv);
-  if(r) onHit(r.text,r.fmt);
+  var a=decodeAll(cv);
+  if(a.hit) onHit(a.hit.text,a.hit.fmt); else noteSkipped(a.skipped);
   next();
 }
 function setWake(on){
@@ -476,15 +509,16 @@ function stopCam(){
   $('video').srcObject=null; $('cam').classList.remove('live'); $('cTorch').classList.add('hide'); $('cTorch').classList.remove('on');
   setWake(false); syncMain();
 }
+var starting=false;
 function startCam(){
-  if(running) return;
+  if(running||starting) return;
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
     $('idleMsg').textContent='這個開啟方式無法使用即時相機。請用 https 網址開啟,或改用拍照。'; return;
   }
-  $('idleMsg').textContent='啟動相機中…';
+  $('idleMsg').textContent='啟動相機中…'; starting=true;
   navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}})
   .then(function(s){
-    stream=s; var v=$('video'); v.srcObject=s; $('cam').classList.add('live');
+    starting=false; stream=s; var v=$('video'); v.srcObject=s; $('cam').classList.add('live');
     var p=v.play(); if(p&&p.catch) p.catch(function(){});
     running=true; seen={}; lastAdd=0; armed=0; setWake(true); syncMain();
     toast(cfg.mode==='tap'?'把條碼整張放進框內,按「掃一筆」':'把條碼整張放進框內,讀到會自動加入');
@@ -495,7 +529,7 @@ function startCam(){
     }catch(e){}
     tick();
   }).catch(function(e){
-    stopCam(); wantCam=false;
+    starting=false; stopCam(); wantCam=false;
     var why=(e&&e.name==='NotAllowedError')?'相機權限被拒絕。請到瀏覽器的網站設定把相機改成允許。':(e&&e.name==='NotFoundError')?'找不到相機。':'相機無法啟動('+((e&&e.name)||'未知')+')。';
     $('idleMsg').textContent=why;
   });
@@ -541,9 +575,10 @@ $('photo').onchange=function(){
   img.onload=function(){
     var w=img.naturalWidth, h=img.naturalHeight, m=Math.max(w,h), r=null;
     var tries=[[1600,false],[1000,false],[1600,true],[640,false],[2400,false],[1000,true]];
-    for(var i=0;i<tries.length&&!r;i++) r=decodeCanvas(draw(img,0,0,w,h,Math.min(1,tries[i][0]/m),tries[i][1]));
+    var sk=0;
+    for(var i=0;i<tries.length&&!r;i++){ var a=decodeAll(draw(img,0,0,w,h,Math.min(1,tries[i][0]/m),tries[i][1])); r=a.hit; sk=Math.max(sk,a.skipped); }
     URL.revokeObjectURL(url);
-    if(r) addItem(r.text,r.fmt); else{ beep(false); toast('這張照片讀不到條碼。請靠近一點、避免反光再拍一次','bad'); }
+    if(r) addItem(r.text,r.fmt); else{ beep(false); toast(sk?'照片裡的 '+sk+' 張條碼都無法拆解成料號/批號/數量':'這張照片讀不到條碼。請靠近一點、避免反光再拍一次','bad'); }
   };
   img.onerror=function(){ URL.revokeObjectURL(url); toast('無法讀取這張照片','bad'); };
   img.src=url;
@@ -610,6 +645,7 @@ function bindCfg(){
   $('optBeep').onchange=function(){cfg.beep=this.checked;save();};
   $('optVib').onchange=function(){cfg.vib=this.checked;save();};
   $('optWake').onchange=function(){cfg.wake=this.checked;save();};
+  $('optOnly').checked=!!cfg.only; $('optOnly').onchange=function(){cfg.only=this.checked;save();};
   $('optSep').oninput=function(){cfg.sep=this.value||'?';save();};
   $('optPre').oninput=function(){cfg.pre=this.value;save();};
   $('optLotLen').oninput=function(){var n=parseInt(this.value,10);cfg.lotLen=isNaN(n)?0:n;save();};
