@@ -171,6 +171,32 @@ details.card[open] summary{margin-bottom:10px}
 #hand .acts button{min-height:56px;font-size:17px}
 #hand .acts .pri{flex:2}
 #hUndo{width:100%;margin-top:8px;min-height:44px;font-size:14px;color:#ff7b72}
+.dock .row{display:flex;gap:8px}
+.dock .row #scanBtn{flex:2;width:auto}
+#ocrBtn{flex:1;min-height:62px;font-size:17px;border-radius:14px;background:#2b343e;border-color:#4b5866;color:#fff;font-weight:700;box-shadow:0 6px 20px rgba(0,0,0,.45)}
+/* 文字辨識 */
+#ocr{position:fixed;inset:0;z-index:40;background:#000;display:flex;flex-direction:column}
+#ocr .ob{position:relative;flex:1;overflow:hidden}
+#ocr video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#ocr .ofr{position:absolute;left:5%;right:5%;top:12%;bottom:12%;border:3px solid rgba(255,255,255,.9);border-radius:12px;box-shadow:0 0 0 2000px rgba(0,0,0,.45)}
+#ocr .ofr.busy{border-color:#4da3e0;animation:ocrp 1s infinite}
+@keyframes ocrp{50%{border-color:rgba(77,163,224,.35)}}
+#ocr .otop{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;background:linear-gradient(rgba(0,0,0,.7),rgba(0,0,0,0))}
+#ocr .otop b{flex:1;font-size:17px}
+#ocr .otop button{min-height:40px;background:rgba(0,0,0,.45);border-color:rgba(255,255,255,.35);color:#fff}
+#ocr .ohint{position:absolute;left:0;right:0;top:calc(12% - 30px);text-align:center;font-size:13px;color:#ddd;text-shadow:0 1px 3px #000}
+#ocr .opan{background:#12161b;padding:12px 12px calc(12px + env(safe-area-inset-bottom));border-top:1px solid #2b343e}
+#oMsg{border-radius:12px;padding:10px 12px;margin-bottom:10px;background:#1b2128;border:1.5px solid #2b343e;min-height:58px}
+#oMsg .t{font-size:19px;font-weight:700}
+#oMsg .d{font-size:14px;color:#c9d1d9;margin-top:2px;white-space:pre-line;word-break:break-all}
+#oMsg .d .mono{font-size:17px;color:#fff}
+#oMsg.ok{background:#12301d;border-color:#2ea043}#oMsg.ok .t{color:#56d364}
+#oMsg.bad{background:#341a1b;border-color:#da3633}#oMsg.bad .t{color:#ff7b72}
+#oMsg.warn{background:#33290f;border-color:#bb8009}#oMsg.warn .t{color:#f2cc60}
+#ocr .oacts{display:flex;gap:8px}
+#ocr .oacts button{min-height:60px;font-size:19px;border-radius:14px}
+#oShot{flex:1}
+#oClose2{flex:none;width:30%}
 .toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top));transform:translateX(-50%);z-index:30;background:#2b343e;color:#fff;padding:8px 16px;border-radius:20px;font-size:14px;max-width:90vw;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.4)}
 </style>
 </head>
@@ -203,6 +229,7 @@ details.card[open] summary{margin-bottom:10px}
         <li><b>華邦電</b><span>二維碼 [)&gt; 格式 → 1T（LOT NO）、15Q（PLQTY）</span></li>
         <li><b>LG</b><span>條碼「Lot 空格 Qty 空格 其他」→ 第 1、2 段</span></li>
         <li><b>其他</b><span>先掃 Lot No 條碼，再掃 Qty 條碼</span></li>
+        <li><b>純文字</b><span>按「🔤 辨識文字」拍標籤，自動找批號與數量（如聯強）</span></li>
         <li><b>無條碼</b><span>在核對清單點該筆 → 對照實物 → 確認相符</span></li>
       </ul>
     </div>
@@ -225,7 +252,7 @@ details.card[open] summary{margin-bottom:10px}
 
     <div id="result">
       <div class="rt">準備好了</div>
-      <div class="rd dim">按下方「開始掃描」，對準廠商標籤上的 QR Code 或條碼。</div>
+      <div class="rd dim">按下方「掃描條碼」，對準廠商標籤上的 QR Code 或條碼。</div>
     </div>
 
     <div class="card">
@@ -285,7 +312,7 @@ details.card[open] summary{margin-bottom:10px}
 
 <div class="dock" id="dock" hidden>
   <div class="pend" id="pendHint" hidden></div>
-  <button class="pri" id="scanBtn">📷 開始掃描</button>
+  <div class="row"><button class="pri" id="scanBtn">📷 掃描條碼</button><button id="ocrBtn">🔤 辨識文字</button></div>
 </div>
 
 <div class="modal" id="modal" hidden>
@@ -305,6 +332,19 @@ details.card[open] summary{margin-bottom:10px}
     <div class="hnote" id="hNote"></div>
     <div class="acts"><button id="hCancel">取消</button><button class="pri" id="hOk">✅ 確認相符</button></div>
     <button id="hUndo" hidden>↩ 改回未核對</button>
+  </div>
+</div>
+
+<div id="ocr" hidden>
+  <div class="ob">
+    <video id="oVid" playsinline muted></video>
+    <div class="ohint">把批號和數量框進白框內，拿穩再按辨識</div>
+    <div class="ofr" id="oFr"></div>
+    <div class="otop"><b>🔤 辨識文字（試用）</b><button id="oTorch" hidden>🔦</button><button id="oClose">✕ 關閉</button></div>
+  </div>
+  <div class="opan">
+    <div id="oMsg"><div class="t">準備中…</div></div>
+    <div class="oacts"><button id="oClose2" hidden>關閉</button><button class="pri" id="oShot" disabled>🔤 辨識</button></div>
   </div>
 </div>
 
@@ -592,7 +632,7 @@ function loadFiles(list){
     recs=out; headers=hs; order=[]; exlog=[]; pending=-1; files=good.map(function(g){ return g.name; });
     buildIndex(); filter='all'; query=''; $('search').value=''; setChips();
     $('loadMsg').textContent='';
-    showResult({cls:'',title:'已載入 '+recs.length+' 筆',detail:(good.length>1?'已合併 '+good.length+' 個檔案。':'')+(skip?'略過 '+skip+' 筆缺欄位的資料。':'')+'\n按下方「開始掃描」開始核對。'});
+    showResult({cls:'',title:'已載入 '+recs.length+' 筆',detail:(good.length>1?'已合併 '+good.length+' 個檔案。':'')+(skip?'略過 '+skip+' 筆缺欄位的資料。':'')+'\n按下方「掃描條碼」開始核對。'});
     if(bad.length) modal('部分檔案略過','以下檔案讀取失敗，已略過：\n'+bad.map(function(b){ return b.name+'：'+b.msg; }).join('\n'));
     showWork(); save(); render();
   });
@@ -647,6 +687,138 @@ function startScan(){
     }
   });
 }
+
+/* ---------- 文字辨識(純文字標籤,如聯強) ----------
+   辨識程式放在 ocr/ 資料夾,全部在手機上運算,照片不會上傳 */
+var OCR={worker:null,loading:null,stream:null,busy:false};
+function loadScript(src){ return new Promise(function(ok,no){ var s=document.createElement('script'); s.src=src; s.onload=ok; s.onerror=function(){ no(new Error('載入失敗：'+src)); }; document.head.appendChild(s); }); }
+function ocrWorker(){
+  if(OCR.worker) return Promise.resolve(OCR.worker);
+  if(!OCR.loading){
+    OCR.loading=(window.Tesseract?Promise.resolve():loadScript('ocr/tesseract.min.js')).then(function(){
+      var base=new URL('ocr/',location.href).href;
+      return Tesseract.createWorker('eng',1,{workerPath:base+'worker.min.js',corePath:base,langPath:base,gzip:true,workerBlobURL:false});
+    }).then(function(w){
+      return w.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'}).then(function(){ OCR.worker=w; return w; });
+    }).catch(function(e){ OCR.loading=null; throw e; });
+  }
+  return OCR.loading;
+}
+/* 容易認錯的字當成同一個字:O/Q→0、I/L/|→1、S→5、B→8、Z→2、G→6 */
+function canon(s){ return String(s).toUpperCase().replace(/[^A-Z0-9|]/g,'').replace(/[OQ]/g,'0').replace(/[IL|]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2').replace(/G/g,'6'); }
+function numsIn(line){
+  /* 只把「大部分是數字」的字串當數量,O/I/S/B 等誤認字才換成數字;避免批號裡的字母被當成數字 */
+  var out=[];
+  String(line).toUpperCase().split(/[\s:：;；=]+/).forEach(function(t){
+    t=t.replace(/([0-9OQ])[,，.](?=[0-9OQ]{3}([^0-9OQ]|$))/g,'$1').replace(/^[^0-9A-Z|]+|[^0-9A-Z|]+$/g,'');
+    if(!t || !/^[0-9OQILSB|]+$/.test(t)) return;
+    var d=(t.match(/\d/g)||[]).length;
+    if(d*2<t.length) return;
+    out.push(Number(t.replace(/[OQ]/g,'0').replace(/[IL|]/g,'1').replace(/S/g,'5').replace(/B/g,'8')));
+  });
+  return out;
+}
+function matchOcr(text){
+  var lines=String(text).split(/\n+/).filter(function(l){ return l.trim(); });
+  var cl=lines.map(canon), best=null;
+  recs.forEach(function(r,i){
+    var k=canon(normLot(r.lot)); if(k.length<4) return;
+    for(var j=0;j<cl.length;j++){
+      if(cl[j].indexOf(k)>=0){ if(!best || k.length>best.k.length) best={i:i,k:k}; break; }
+    }
+  });
+  var nums=[]; lines.forEach(function(l){ nums=nums.concat(numsIn(l)); });
+  if(!best) return {found:false,nums:nums,lines:lines};
+  var r=recs[best.i];
+  return {found:true,i:best.i,qtyOk:nums.indexOf(normQty(r.qty))>=0,nums:nums,lines:lines};
+}
+function oMsg(cls,title,detail){
+  var el=$('oMsg'); el.className=cls||'';
+  el.innerHTML='<div class="t">'+title+'</div>'+(detail?'<div class="d">'+detail+'</div>':'');
+}
+function oFail(title,detail){
+  oMsg('bad',title,detail+'\n要再辨識一次嗎？');
+  $('oShot').textContent='🔁 再次辨識'; $('oClose2').hidden=false;
+  try{ if(navigator.vibrate) navigator.vibrate([120,80,120]); }catch(e){}
+}
+function openOcr(){
+  if(!recs.length) return;
+  $('ocr').hidden=false; $('oShot').disabled=true; $('oShot').textContent='🔤 辨識'; $('oClose2').hidden=true;
+  oMsg('','準備中…','開啟相機、載入辨識程式（第一次約 10 MB，之後會留在手機上）');
+  var cam=navigator.mediaDevices&&navigator.mediaDevices.getUserMedia?navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}}):Promise.reject(new Error('這個瀏覽器不支援相機（需用 https 網址開啟）'));
+  cam.then(function(st){
+    OCR.stream=st; var v=$('oVid'); v.srcObject=st; v.play();
+    var tr=st.getVideoTracks()[0], cap=tr.getCapabilities?tr.getCapabilities():{};
+    try{ if(cap.focusMode && cap.focusMode.indexOf('continuous')>=0) tr.applyConstraints({advanced:[{focusMode:'continuous'}]}); }catch(e){}
+    $('oTorch').hidden=!cap.torch; OCR.torch=false;
+    return ocrWorker();
+  }).then(function(){
+    if($('ocr').hidden) return;
+    $('oShot').disabled=false; oMsg('','對準標籤後按「辨識」','白框內只要有批號和數量就可以，其他文字不影響。');
+  }).catch(function(e){ oMsg('bad','無法開始',esc(e&&e.message?e.message:e)); $('oClose2').hidden=false; });
+}
+function closeOcr(){
+  $('ocr').hidden=true;
+  if(OCR.stream){ OCR.stream.getTracks().forEach(function(t){ t.stop(); }); OCR.stream=null; }
+  $('oVid').srcObject=null;
+}
+/* 只取白框內的畫面,轉灰階、放大 */
+function grabFrame(){
+  var v=$('oVid'), fr=$('oFr'), vw=v.videoWidth, vh=v.videoHeight;
+  if(!vw) return null;
+  var box=v.getBoundingClientRect(), f=fr.getBoundingClientRect();
+  var sc=Math.max(box.width/vw,box.height/vh), ox=(vw*sc-box.width)/2, oy=(vh*sc-box.height)/2;
+  var sx=(f.left-box.left+ox)/sc, sy=(f.top-box.top+oy)/sc, sw=f.width/sc, sh=f.height/sc;
+  var k=Math.min(2,1600/sw), c=document.createElement('canvas');
+  c.width=Math.round(sw*k); c.height=Math.round(sh*k);
+  var g=c.getContext('2d'); g.filter='grayscale(1) contrast(1.4)';
+  g.drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);
+  return c;
+}
+function ocrRun(img){
+  var t0=Date.now();
+  return ocrWorker().then(function(w){ return w.recognize(img); }).then(function(res){
+    var sec=((Date.now()-t0)/1000).toFixed(1), text=res.data.text||'', m=matchOcr(text);
+    m.sec=sec; m.text=text; return m;
+  });
+}
+function ocrShow(m){
+  var sec='（'+m.sec+' 秒）';
+  if(!m.found){
+    var peek=m.lines.join(' ').replace(/\s+/g,' ').slice(0,80);
+    oFail('❌ 比對失敗：找不到清單中的批號'+sec,'讀到：'+esc(peek||'（沒有讀到文字）'));
+    return;
+  }
+  var r=recs[m.i];
+  if(r.status==='ok'){
+    oMsg('warn','⚠️ 這個 Lot 已核對過'+sec,'<span class="mono">'+esc(r.lot)+'</span>');
+    $('oShot').textContent='🔤 辨識下一張'; $('oClose2').hidden=false; return;
+  }
+  if(!m.qtyOk){
+    oFail('❌ 比對失敗：數量不符'+sec,'Lot <span class="mono">'+esc(r.lot)+'</span>\n應為 <span class="mono">'+esc(fmtQty(r.qty))+'</span>，標籤上沒讀到這個數量'+(m.nums.length?'\n讀到的數字：'+esc(m.nums.slice(0,8).join('、')):''));
+    return;
+  }
+  var res=check(r.lot,r.qty,'文字辨識'); showResult(res); save(); render();
+  var s=stats();
+  oMsg('ok','✅ 比對成功'+sec,'<span class="mono">'+esc(r.lot)+' × '+esc(fmtQty(r.qty))+'</span>\n已核對 '+(s.ok+s.bad)+' / '+recs.length);
+  $('oShot').textContent='🔤 辨識下一張'; $('oClose2').hidden=true;
+  try{ if(navigator.vibrate) navigator.vibrate(80); }catch(e){}
+}
+function ocrShot(){
+  if(OCR.busy) return;
+  var img=grabFrame(); if(!img){ oMsg('warn','相機還沒準備好','請稍等一下再按。'); return; }
+  OCR.busy=true; $('oShot').disabled=true; $('oFr').classList.add('busy'); oMsg('','辨識中…','請稍候');
+  ocrRun(img).then(ocrShow).catch(function(e){ oFail('❌ 辨識發生錯誤',esc(e&&e.message?e.message:e)); })
+  .then(function(){ OCR.busy=false; $('oShot').disabled=false; $('oFr').classList.remove('busy'); });
+}
+$('ocrBtn').onclick=openOcr;
+$('oShot').onclick=ocrShot;
+$('oClose').onclick=closeOcr; $('oClose2').onclick=closeOcr;
+$('oTorch').onclick=function(){
+  if(!OCR.stream) return; OCR.torch=!OCR.torch;
+  OCR.stream.getVideoTracks()[0].applyConstraints({advanced:[{torch:OCR.torch}]}).catch(function(){});
+  this.style.background=OCR.torch?'#bb8009':'';
+};
 
 /* ---------- 匯出 ---------- */
 function download(blob,name){
@@ -725,7 +897,7 @@ if(restore()){ showWork(); render(); showResult({cls:'',title:'已恢復上次�
 try{ if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){}
 
 /* 給測試用 */
-window.__rcv={parseLabel:parseLabel,handle:handle,wanted:wanted};
+window.__rcv={parseLabel:parseLabel,handle:handle,wanted:wanted,matchOcr:matchOcr,ocrRun:ocrRun,ocrShow:ocrShow};
 })();
 </script>
 </body>
