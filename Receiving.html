@@ -153,7 +153,25 @@ details.card[open] summary{margin-bottom:10px}
 .modal p{margin:0 0 16px;font-size:15px;color:#c9d1d9;white-space:pre-line;line-height:1.6}
 .modal .acts{display:flex;gap:8px}
 .modal .acts button{flex:1;min-height:50px}
-.toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:30;background:#2b343e;color:#fff;padding:8px 16px;border-radius:20px;font-size:14px;max-width:90vw;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+/* 人工核對 */
+.list li.tap{cursor:pointer}
+.list li.tap:active{background:#252d36}
+.list .go{flex:none;align-self:center;color:#5c6773;font-size:20px;margin-left:-4px}
+#hand .box{padding-top:14px}
+.hk{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+.hk h3{margin:0}
+.hk .tag{font-size:13px;border-radius:8px;padding:2px 8px;background:#252d36;color:#c9d1d9}
+.hk .tag.ok{background:#12301d;color:#56d364}.hk .tag.bad{background:#5a1d1d;color:#ffb3ad}
+.hv{background:#0c1014;border:1px solid #2b343e;border-radius:12px;padding:8px 12px 10px;margin-bottom:10px}
+.hv span{display:block;font-size:13px;color:#8b97a4;letter-spacing:1px}
+.hv b{display:block;font-family:Consolas,Menlo,"Roboto Mono",monospace;font-weight:700;color:#fff;line-height:1.15;white-space:nowrap;overflow:hidden;letter-spacing:1px}
+.hv.q b{color:#f2cc60}
+.hpn{font-size:13px;color:#8b97a4;margin:0 2px 12px;word-break:break-all}
+.hnote{font-size:13px;margin:-4px 2px 12px}
+#hand .acts button{min-height:56px;font-size:17px}
+#hand .acts .pri{flex:2}
+#hUndo{width:100%;margin-top:8px;min-height:44px;font-size:14px;color:#ff7b72}
+.toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top));transform:translateX(-50%);z-index:30;background:#2b343e;color:#fff;padding:8px 16px;border-radius:20px;font-size:14px;max-width:90vw;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.4)}
 </style>
 </head>
 <body>
@@ -185,6 +203,7 @@ details.card[open] summary{margin-bottom:10px}
         <li><b>華邦電</b><span>二維碼 [)&gt; 格式 → 1T（LOT NO）、15Q（PLQTY）</span></li>
         <li><b>LG</b><span>條碼「Lot 空格 Qty 空格 其他」→ 第 1、2 段</span></li>
         <li><b>其他</b><span>先掃 Lot No 條碼，再掃 Qty 條碼</span></li>
+        <li><b>無條碼</b><span>在核對清單點該筆 → 對照實物 → 確認相符</span></li>
       </ul>
     </div>
   </section>
@@ -227,13 +246,14 @@ details.card[open] summary{margin-bottom:10px}
         <button data-f="order">📑 刷讀順序</button>
       </div>
       <input id="search" type="search" placeholder="搜尋 Lot No / Part No">
+      <div class="dim" style="margin:0 2px 4px;font-size:12px">💡 條碼受損或純文字標籤：點項目可人工核對</div>
       <ul class="list" id="list"></ul>
       <button class="more" id="moreBtn" hidden>顯示更多</button>
     </div>
 
     <details class="card ex" id="exBox">
       <summary>⚠️ 刷讀異常紀錄 <span class="pill" id="exN">0</span></summary>
-      <div class="dim" style="margin-bottom:6px">找不到資料、重複掃描、Qty 不符的紀錄，刷完可回頭確認。</div>
+      <div class="dim" style="margin-bottom:6px">找不到資料、重複掃描、Qty 不符、人工核對的紀錄，刷完可回頭確認。</div>
       <ul class="list" id="exList"></ul>
     </details>
 
@@ -257,6 +277,7 @@ details.card[open] summary{margin-bottom:10px}
         <li><b>華邦電</b><span>二維碼：1T、15Q</span></li>
         <li><b>LG</b><span>條碼第 1 段 Lot、第 2 段 Qty</span></li>
         <li><b>其他</b><span>先掃 Lot No，再掃 Qty</span></li>
+        <li><b>無條碼</b><span>點清單項目人工核對</span></li>
       </ul>
     </details>
   </section>
@@ -272,6 +293,18 @@ details.card[open] summary{margin-bottom:10px}
     <h3 id="mTitle"></h3>
     <p id="mMsg"></p>
     <div class="acts"><button id="mCancel">取消</button><button class="pri" id="mOk">確定</button></div>
+  </div>
+</div>
+
+<div class="modal" id="hand" hidden>
+  <div class="box">
+    <div class="hk"><h3>人工核對</h3><span class="tag" id="hTag"></span></div>
+    <div class="hv"><span>C_LOT</span><b id="hLot"></b></div>
+    <div class="hv q"><span>GOOD_DIE_QTY</span><b id="hQty"></b></div>
+    <div class="hpn" id="hPart"></div>
+    <div class="hnote" id="hNote"></div>
+    <div class="acts"><button id="hCancel">取消</button><button class="pri" id="hOk">✅ 確認相符</button></div>
+    <button id="hUndo" hidden>↩ 改回未核對</button>
   </div>
 </div>
 
@@ -465,17 +498,59 @@ function renderList(){
   var html=items.slice(0,shown).map(function(r){
     var ic=r.status==='ok'?'✅':r.status==='fail'?'❌':'⏳';
     var seq=order.indexOf(recs.indexOf(r));
-    return '<li class="'+(r.status==='fail'?'fail':'')+'"><span class="st">'+ic+'</span><div class="bd">'+
+    return '<li class="tap'+(r.status==='fail'?' fail':'')+'" data-i="'+recs.indexOf(r)+'"><span class="st">'+ic+'</span><div class="bd">'+
       '<div class="lot">'+esc(r.lot)+(seq>=0?'<span class="seq">#'+(seq+1)+'</span>':'')+'</div>'+
       '<div class="pn">'+esc(r.part)+(r.vendor?' · '+esc(r.vendor):'')+'</div>'+
       (r.note&&r.status!=='ok'?'<div class="nt '+(r.status==='fail'?'c-bad':'c-warn')+'">'+esc(r.note)+'</div>':'')+
-      '</div><div class="q">'+esc(fmtQty(r.qty))+'<small>Qty</small></div></li>';
+      '</div><div class="q">'+esc(fmtQty(r.qty))+'<small>Qty</small></div><span class="go">›</span></li>';
   }).join('');
   $('list').innerHTML=html;
   $('moreBtn').hidden=items.length<=shown;
   $('moreBtn').textContent='顯示更多（還有 '+(items.length-shown)+' 筆）';
 }
-var EXT={notfound:['找不到資料','bad'],duplicate:['重複掃描','warn'],qtymismatch:['Qty 不符','bad']};
+var EXT={notfound:['找不到資料','bad'],duplicate:['重複掃描','warn'],qtymismatch:['Qty 不符','bad'],manual:['人工核對','warn'],undo:['取消核對','warn']};
+
+/* ---------- 人工核對(條碼受損/不完整、純文字標籤) ---------- */
+var handI=-1;
+function fitText(el,max){
+  /* 依字數縮放，讓一行放得下 */
+  var w=el.parentNode.clientWidth-24, n=Math.max(el.textContent.length,1);
+  el.style.fontSize=Math.max(22,Math.min(max,Math.floor(w/(n*0.62))))+'px';
+}
+function openHand(i){
+  var r=recs[i]; if(!r) return; handI=i;
+  $('hLot').textContent=r.lot; $('hQty').textContent=fmtQty(r.qty);
+  $('hPart').textContent=r.part?'DEVICE_NO：'+r.part:'';
+  var tag=$('hTag'), note=$('hNote');
+  tag.className='tag'+(r.status==='ok'?' ok':r.status==='fail'?' bad':'');
+  tag.textContent=r.status==='ok'?'✅ 已核對':r.status==='fail'?'❌ 不符':'⏳ 未核對';
+  note.className='hnote '+(r.status==='fail'?'c-bad':'dim');
+  note.textContent=r.status==='ok'?(r.note||'')+(r.vendor&&(r.note||'').indexOf(r.vendor)<0?'（'+r.vendor+'）':''):r.status==='fail'?r.note:'請對照實物標籤上的批號與數量，相符再按確認。';
+  $('hOk').hidden=r.status==='ok'; $('hUndo').hidden=r.status==='pending';
+  $('hCancel').textContent=r.status==='ok'?'關閉':'取消';
+  $('hand').hidden=false;
+  fitText($('hLot'),64); fitText($('hQty'),64);
+}
+function closeHand(){ $('hand').hidden=true; handI=-1; }
+function confirmHand(i){
+  var r=recs[i]; if(!r || r.status==='ok') return;
+  var was=r.status;
+  r.status='ok'; r.vendor='人工核對'; r.scanLot=r.lot;
+  r.note=was==='fail'?'人工核對（原為 '+r.note+'）':'人工核對';
+  logEx('manual',r.lot,r.qty,'人工核對',was==='fail'?'原掃描 Qty 不符，人工確認相符':'條碼無法讀取，人工確認相符');
+  if(order.indexOf(i)<0) order.push(i);
+  if(pending===i) pending=-1;
+  showResult({cls:'ok',title:'✅ 人工核對完成',vendor:'人工核對',rec:r,scanLot:r.lot,scanQty:r.qty});
+  save(); render();
+}
+function undoHand(i){
+  var r=recs[i]; if(!r) return;
+  logEx('undo',r.lot,r.qty,r.vendor,'改回未核對（原狀態：'+(r.status==='ok'?'正確':'不符')+'）');
+  r.status='pending'; r.note=''; r.vendor=''; r.scanLot='';
+  var k=order.indexOf(i); if(k>=0) order.splice(k,1);
+  showResult({cls:'',title:'已改回未核對',detail:r.lot});
+  save(); render();
+}
 function renderEx(){
   $('exN').textContent=exlog.length; $('exN').className='pill'+(exlog.length?' hot':'');
   if(!exlog.length){ $('exList').innerHTML='<li class="empty">目前沒有異常紀錄</li>'; return; }
@@ -630,6 +705,11 @@ function setChips(){ Array.prototype.forEach.call($('chips').children,function(b
 $('chips').onclick=function(e){ var b=e.target.closest('button'); if(!b) return; filter=b.dataset.f; shown=PAGE; setChips(); renderList(); };
 $('search').oninput=function(){ query=this.value.trim(); shown=PAGE; renderList(); };
 $('moreBtn').onclick=function(){ shown+=PAGE; renderList(); };
+$('list').onclick=function(e){ var li=e.target.closest('li[data-i]'); if(li) openHand(+li.dataset.i); };
+$('hCancel').onclick=closeHand;
+$('hand').onclick=function(e){ if(e.target===this) closeHand(); };
+$('hOk').onclick=function(){ var i=handI; closeHand(); confirmHand(i); toast('✅ 已人工核對：'+recs[i].lot); };
+$('hUndo').onclick=function(){ var i=handI; closeHand(); modal('改回未核對？',recs[i].lot+'\n會從刷讀順序中移除。',function(){ undoHand(i); },'改回未核對'); };
 $('fileInput').onchange=function(){ loadFiles(this.files); };
 $('scanBtn').onclick=startScan;
 $('manForm').onsubmit=function(e){
