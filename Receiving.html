@@ -228,7 +228,7 @@ details.card[open] summary{margin-bottom:10px}
         <li><b>旺宏</b><span>二維碼 → 1T（批號）、Q（數量）</span></li>
         <li><b>華邦電</b><span>二維碼 [)&gt; 格式 → 1T（LOT NO）、15Q（PLQTY）</span></li>
         <li><b>LG</b><span>條碼「Lot 空格 Qty 空格 其他」→ 第 1、2 段</span></li>
-        <li><b>其他</b><span>先掃 Lot No 條碼，再掃 Qty 條碼</span></li>
+        <li><b>其他</b><span>Lot No 與 Qty 分開的條碼（如弘憶）：鏡頭掃過兩個條碼即可，順序不拘，片數、日期等其他數字條碼會自動略過</span></li>
         <li><b>純文字</b><span>按「🔤 辨識文字」拍標籤，自動找批號與數量（如聯強）</span></li>
         <li><b>無條碼</b><span>在核對清單點該筆 → 對照實物 → 確認相符</span></li>
       </ul>
@@ -303,7 +303,7 @@ details.card[open] summary{margin-bottom:10px}
         <li><b>旺宏</b><span>二維碼：1T、Q</span></li>
         <li><b>華邦電</b><span>二維碼：1T、15Q</span></li>
         <li><b>LG</b><span>條碼第 1 段 Lot、第 2 段 Qty</span></li>
-        <li><b>其他</b><span>先掃 Lot No，再掃 Qty</span></li>
+        <li><b>其他</b><span>Lot、Qty 分開的條碼，順序不拘</span></li>
         <li><b>無條碼</b><span>點清單項目人工核對</span></li>
       </ul>
     </details>
@@ -464,7 +464,10 @@ function handle(raw,fromCamera){
   if(!p){ res={cls:'warn',title:'⚠️ 無法辨識這個條碼',detail:'掃到的內容：'+raw,short:'無法辨識'}; }
   else if(p.single!==undefined){
     var v=p.single, i=idx[normLot(v)];
-    if(i!==undefined){
+    if(i!==undefined && fromCamera && seenNum(normQty(recs[i].qty))){
+      pending=-1;
+      res=check(recs[i].lot,recs[i].qty,'分開掃描');
+    }else if(i!==undefined){
       pending=i;
       res={cls:'info',title:'已讀到 Lot No，請接著掃 Qty',rec:recs[i],scanLot:v,vendor:'分開掃描',short:'Lot '+recs[i].lot+'，請掃 Qty'};
     }else if(pending>=0 && /^\d[\d,]*$/.test(v)){
@@ -491,6 +494,22 @@ function wanted(text){
   if(p.single===undefined) return true;
   if(idx[normLot(p.single)]!==undefined) return true;
   return pending>=0 && /^\d[\d,]*$/.test(p.single);
+}
+/* 相機分開掃描:同一張標籤常有好幾個數字條碼(片數、日期…)。
+   先記下鏡頭看過的數字,只收「等於應收數量」的那一個,Lot 和 Qty 誰先讀到都可以 */
+var seen={};
+function seenNum(n){ var t=seen[n]; return t && Date.now()-t<15000; }
+function camWanted(text){
+  var p=parseLabel(text);
+  if(p && p.single!==undefined && /^\d[\d,]*$/.test(p.single)){
+    var n=normQty(p.single); seen[n]=Date.now();
+    if(pending>=0) return n===normQty(recs[pending].qty);
+    return false;
+  }
+  return wanted(text);
+}
+function seenList(){
+  var now=Date.now(); return Object.keys(seen).filter(function(k){ return now-seen[k]<15000; }).map(function(k){ return Number(k).toLocaleString('en-US'); });
 }
 
 /* ---------- 畫面 ---------- */
@@ -669,12 +688,22 @@ function clearAll(){
 }
 
 /* ---------- 相機掃描 ---------- */
+var hintT=0;
 function startScan(){
+  seen={};
   if(!window.PhoneScan){ modal('掃描模組沒有載入','請從 GitHub 網址開啟這一頁（需與 scanner.js 放在同一個資料夾）。\n也可以先用「手動輸入」或藍牙條碼槍。'); return; }
   var h=PhoneScan.open({
     title:'收料核對', frame:'L',
-    hint:'對準標籤上的 QR Code／二維碼；其他條碼會自動略過',
-    accept:function(text){ return wanted(text); },
+    hint:'對準 QR Code，或 Lot 與 Qty 條碼（順序不拘）；其他條碼自動略過',
+    accept:function(text){
+      var ok=camWanted(text);
+      /* 等 Qty 時讀到不相符的數字:提示讀到什麼,但不算錯(可能是片數、日期條碼) */
+      if(!ok && pending>=0 && Date.now()-hintT>1500 && /^\d[\d,]*$/.test(String(text).trim())){
+        hintT=Date.now(); var msg='👉 '+recs[pending].lot+' 等 Qty '+fmtQty(recs[pending].qty)+'｜讀到 '+seenList().join('、')+'，不是';
+        setTimeout(function(){ h.say(msg,'warn'); },0);
+      }
+      return ok;
+    },
     onScan:function(text){
       var r=handle(text,true), s=stats(), tail='（'+(s.ok+s.bad)+'/'+recs.length+'）';
       if(r.cls==='ok' || r.cls==='info'){
@@ -704,8 +733,8 @@ function ocrWorker(){
   }
   return OCR.loading;
 }
-/* 容易認錯的字當成同一個字:O/Q→0、I/L/|→1、S→5、B→8、Z→2、G→6 */
-function canon(s){ return String(s).toUpperCase().replace(/[^A-Z0-9|]/g,'').replace(/[OQ]/g,'0').replace(/[IL|]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2').replace(/G/g,'6'); }
+/* 容易認錯的字當成同一個字:O/Q/D→0、I/L/|→1、S→5、B→8、Z→2、G→6 */
+function canon(s){ return String(s).toUpperCase().replace(/[^A-Z0-9|]/g,'').replace(/[OQD]/g,'0').replace(/[IL|]/g,'1').replace(/S/g,'5').replace(/B/g,'8').replace(/Z/g,'2').replace(/G/g,'6'); }
 function numsIn(line){
   /* 只把「大部分是數字」的字串當數量,O/I/S/B 等誤認字才換成數字;避免批號裡的字母被當成數字 */
   var out=[];
@@ -769,7 +798,7 @@ function grabFrame(){
   var box=v.getBoundingClientRect(), f=fr.getBoundingClientRect();
   var sc=Math.max(box.width/vw,box.height/vh), ox=(vw*sc-box.width)/2, oy=(vh*sc-box.height)/2;
   var sx=(f.left-box.left+ox)/sc, sy=(f.top-box.top+oy)/sc, sw=f.width/sc, sh=f.height/sc;
-  var k=Math.min(2,1600/sw), c=document.createElement('canvas');
+  var k=Math.min(4,1600/sw), c=document.createElement('canvas');
   c.width=Math.round(sw*k); c.height=Math.round(sh*k);
   var g=c.getContext('2d'); g.filter='grayscale(1) contrast(1.4)';
   g.drawImage(v,sx,sy,sw,sh,0,0,c.width,c.height);
@@ -897,7 +926,7 @@ if(restore()){ showWork(); render(); showResult({cls:'',title:'已恢復上次�
 try{ if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){}
 
 /* 給測試用 */
-window.__rcv={parseLabel:parseLabel,handle:handle,wanted:wanted,matchOcr:matchOcr,ocrRun:ocrRun,ocrShow:ocrShow};
+window.__rcv={camWanted:camWanted,parseLabel:parseLabel,handle:handle,wanted:wanted,matchOcr:matchOcr,ocrRun:ocrRun,ocrShow:ocrShow};
 })();
 </script>
 </body>

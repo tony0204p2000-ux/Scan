@@ -1,5 +1,5 @@
 /* 手機工具:離線快取(掃描、儲位查詢、收料核對與共用掃描模組 scanner.js)。有網路時優先拿最新版並更新快取;沒網路或太慢就用快取。 */
-var CACHE='scan-rcv-20261015c';
+var CACHE='scan-rcv-20261015e';
 var FILES=['./','./index.html','./Location.html','./Receiving.html','./ScanTest.html','./scanner.js','./manifest.webmanifest','./icon.png'];
 self.addEventListener('install',function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(FILES); }).then(function(){ return self.skipWaiting(); }));
