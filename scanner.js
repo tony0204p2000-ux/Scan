@@ -22,7 +22,7 @@
 (function(root){
 'use strict';
 var ZX=root.ZXing, doc=root.document;
-var VERSION='1.0.0';
+var VERSION='1.1.0';
 
 var F2D=['QR_CODE','DATA_MATRIX','AZTEC','PDF_417'];
 var LINEAR=['CODE_128','CODE_39','CODE_93','EAN_13','EAN_8','UPC_A','UPC_E','ITF','CODABAR'];
@@ -397,6 +397,8 @@ function create(o){
      once     true:掃到一筆就關閉;false(預設):連續掃,按「完成」才關
      formats  'all'(預設)| '1d' | '2d' | 類型名稱陣列
      frame    一開始的瞄準框:'L' 大 'M' 中 'S' 小 'R' 長方(預設) 'B' 橫條 'V' 直條
+     frames   「框」按鈕可切換的框,例如 ['S','R'](不給 = 全部;只有一種時隱藏按鈕)
+     onFrameChange function(框代號):使用者切換框時通知(可用來記住上次用的框)
      accept   function(text, fmt) → 是否為要的條碼(不要的直接忽略,繼續找框內其他條碼)
      onScan   function(text, fmt) → 不回傳或回傳 true:收下
                                     回傳 false:不收;回傳文字:不收並顯示這段文字
@@ -435,7 +437,7 @@ function open(o){
   o=o||{};
   if(opened) opened.close();
   if(!cssDone){ var st=el('style'); st.textContent=CSS; doc.head.appendChild(st); cssDone=true; }
-  var once=!!o.once, got=[], frameName=FRAMES[o.frame]?o.frame:'R', closed=false, pass=gate({hold:o.hold===undefined?3000:o.hold,gap:o.gap===undefined?800:o.gap}), fb={sound:o.sound,vib:o.vib}, msgT=0, flashT=0;
+  var once=!!o.once, got=[], frames=(o.frames||[]).filter(function(k){ return FRAMES[k]; }), frameName=FRAMES[o.frame]?o.frame:'R', closed=false, pass=gate({hold:o.hold===undefined?3000:o.hold,gap:o.gap===undefined?800:o.gap}), fb={sound:o.sound,vib:o.vib}, msgT=0, flashT=0;
   var wrap=el('div','psx'), top=el('div','psx-top'), title=el('b','',o.title||'掃描條碼'), bX=el('button','','關閉');
   var cam=el('div','psx-cam'), video=el('video'), frame=el('div','psx-frame'), chips=el('div','psx-chips'), msg=el('div','psx-msg');
   var cFrame=el('button','',''), cTorch=el('button','','手電筒'), cZoom=el('button','','放大 1x');
@@ -498,7 +500,13 @@ function open(o){
     if(o.onClose){ try{ o.onClose(got); }catch(e){} }
   }
   bX.onclick=close; bDone.onclick=close;
-  cFrame.onclick=function(){ var k=Object.keys(FRAMES); frameName=k[(k.indexOf(frameName)+1)%k.length]; layout(); };
+  if(!frames.length) frames=Object.keys(FRAMES);
+  if(frames.indexOf(frameName)<0) frameName=frames[0];
+  cFrame.hidden=frames.length<2;
+  cFrame.onclick=function(){
+    frameName=frames[(frames.indexOf(frameName)+1)%frames.length]; layout();
+    if(o.onFrameChange){ try{ o.onFrameChange(frameName); }catch(e){} }
+  };
   cTorch.onclick=function(){ sc.torch().then(function(on){ cTorch.className=on?'on':''; }); };
   cZoom.onclick=function(){
     var c=sc.caps().zoom; if(!c) return;

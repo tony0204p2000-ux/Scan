@@ -178,12 +178,14 @@ details.card[open] summary{margin-bottom:10px}
 #ocr{position:fixed;inset:0;z-index:40;background:#000;display:flex;flex-direction:column}
 #ocr .ob{position:relative;flex:1;overflow:hidden}
 #ocr video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-#ocr .ofr{position:absolute;left:5%;right:5%;top:12%;bottom:12%;border:3px solid rgba(255,255,255,.9);border-radius:12px;box-shadow:0 0 0 2000px rgba(0,0,0,.45)}
+#ocr .ofr{position:absolute;left:5%;right:5%;top:12%;bottom:12%;transition:all .15s;border:3px solid rgba(255,255,255,.9);border-radius:12px;box-shadow:0 0 0 2000px rgba(0,0,0,.45)}
 #ocr .ofr.busy{border-color:#4da3e0;animation:ocrp 1s infinite}
 @keyframes ocrp{50%{border-color:rgba(77,163,224,.35)}}
 #ocr .otop{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;background:linear-gradient(rgba(0,0,0,.7),rgba(0,0,0,0))}
 #ocr .otop b{flex:1;font-size:17px}
 #ocr .otop button{min-height:40px;background:rgba(0,0,0,.45);border-color:rgba(255,255,255,.35);color:#fff}
+#ocr .ofr.M{left:14%;right:14%;top:24%;bottom:24%}
+#ocr .ofr.S{left:24%;right:24%;top:33%;bottom:33%}
 #ocr .ohint{position:absolute;left:0;right:0;top:calc(12% - 30px);text-align:center;font-size:13px;color:#ddd;text-shadow:0 1px 3px #000}
 #ocr .opan{background:#12161b;padding:12px 12px calc(12px + env(safe-area-inset-bottom));border-top:1px solid #2b343e}
 #oMsg{border-radius:12px;padding:10px 12px;margin-bottom:10px;background:#1b2128;border:1.5px solid #2b343e;min-height:58px}
@@ -197,6 +199,12 @@ details.card[open] summary{margin-bottom:10px}
 #ocr .oacts button{min-height:60px;font-size:19px;border-radius:14px}
 #oShot{flex:1}
 #oClose2{flex:none;width:30%}
+.setg{font-size:14px;font-weight:700;margin:4px 0 8px}
+.setg small{font-weight:400;color:#8b97a4;font-size:12px;margin-left:6px}
+.opts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.opts label{display:flex;align-items:center;justify-content:center;gap:6px;min-height:44px;border:1px solid #36414d;border-radius:10px;background:#161b21;font-size:15px}
+.opts label:has(input:checked){border-color:#4da3e0;background:#17354d;color:#9fd0f5}
+.opts input{width:18px;height:18px;margin:0;accent-color:#1f6fa8}
 .toast{position:fixed;left:50%;top:calc(64px + env(safe-area-inset-top));transform:translateX(-50%);z-index:30;background:#2b343e;color:#fff;padding:8px 16px;border-radius:20px;font-size:14px;max-width:90vw;text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.4)}
 </style>
 </head>
@@ -295,6 +303,26 @@ details.card[open] summary{margin-bottom:10px}
         <button id="expEx"><span class="tx">⚠️ 刷讀異常紀錄 CSV</span></button>
       </div>
     </div>
+
+    <details class="card" id="setBox">
+      <summary>⚙️ 設定</summary>
+      <div class="setg">條碼掃描框<small>掃描畫面的「框」按鈕可切換勾選的框，至少一種</small></div>
+      <div class="opts" id="setFrames">
+        <label><input type="checkbox" value="L">大</label>
+        <label><input type="checkbox" value="M">中</label>
+        <label><input type="checkbox" value="S">小</label>
+        <label><input type="checkbox" value="R">長方</label>
+        <label><input type="checkbox" value="B">橫條</label>
+        <label><input type="checkbox" value="V">直條</label>
+      </div>
+      <div class="setg">文字辨識框</div>
+      <div class="opts" id="setOcr">
+        <label><input type="radio" name="ocrf" value="L">大</label>
+        <label><input type="radio" name="ocrf" value="M">中</label>
+        <label><input type="radio" name="ocrf" value="S">小</label>
+      </div>
+      <button id="setReset" style="width:100%;min-height:40px;font-size:14px">恢復預設（條碼：小、長方；文字：大）</button>
+    </details>
 
     <details class="card">
       <summary>會自動辨識的廠商標籤</summary>
@@ -711,6 +739,35 @@ function clearAll(){
 }
 
 /* ---------- 相機掃描 ---------- */
+/* ---------- 設定(存在這支手機) ---------- */
+var SKEY='rcvcheck.set', FORDER=['L','M','S','R','B','V'];
+var DEF={frames:['S','R'],last:'S',ocr:'L'}, SET=loadSet();
+function loadSet(){
+  var d={frames:DEF.frames.slice(),last:DEF.last,ocr:DEF.ocr};
+  try{
+    var v=JSON.parse(localStorage.getItem(SKEY)||'null');
+    if(v){
+      if(Array.isArray(v.frames)){ var f=FORDER.filter(function(k){ return v.frames.indexOf(k)>=0; }); if(f.length) d.frames=f; }
+      if(FORDER.indexOf(v.last)>=0) d.last=v.last;
+      if(['L','M','S'].indexOf(v.ocr)>=0) d.ocr=v.ocr;
+    }
+  }catch(e){}
+  return d;
+}
+function saveSet(){ try{ localStorage.setItem(SKEY,JSON.stringify(SET)); }catch(e){} }
+function showSet(){
+  Array.prototype.forEach.call($('setFrames').querySelectorAll('input'),function(i){ i.checked=SET.frames.indexOf(i.value)>=0; });
+  Array.prototype.forEach.call($('setOcr').querySelectorAll('input'),function(i){ i.checked=i.value===SET.ocr; });
+}
+$('setFrames').onchange=function(e){
+  var f=FORDER.filter(function(k){ var i=$('setFrames').querySelector('input[value="'+k+'"]'); return i&&i.checked; });
+  if(!f.length){ e.target.checked=true; toast('至少要保留一種掃描框'); return; }
+  SET.frames=f; if(f.indexOf(SET.last)<0) SET.last=f[0]; saveSet();
+};
+$('setOcr').onchange=function(e){ SET.ocr=e.target.value; saveSet(); };
+$('setReset').onclick=function(){ SET={frames:DEF.frames.slice(),last:DEF.last,ocr:DEF.ocr}; saveSet(); showSet(); toast('已恢復預設'); };
+showSet();
+
 var hintT=0, lastRead=0, idleT=0;
 /* ---------- 依平台調整 ----------
    Android(Chrome):手機內建條碼辨識,速度快,全部類型都找。
@@ -730,7 +787,9 @@ function startScan(){
   seen={}; seenLot={}; lastRead=Date.now(); clearInterval(idleT);
   if(!window.PhoneScan){ modal('掃描模組沒有載入','請從 GitHub 網址開啟這一頁（需與 scanner.js 放在同一個資料夾）。\n也可以先用「手動輸入」或藍牙條碼槍。'); return; }
   var h=PhoneScan.open({
-    title:'收料核對', frame:'L', formats:camFormats,
+    title:'收料核對', formats:camFormats,
+    frames:SET.frames, frame:SET.frames.indexOf(SET.last)>=0?SET.last:SET.frames[0],
+    onFrameChange:function(k){ SET.last=k; saveSet(); },
     hint:'對準 QR Code，或 Lot 與 Qty 條碼（順序不拘）；其他條碼自動略過',
     accept:function(text){
       var ok=camWanted(text); lastRead=Date.now();
@@ -825,6 +884,8 @@ function oFail(title,detail){
 }
 function openOcr(){
   if(!recs.length) return;
+  $('oFr').className='ofr '+(SET.ocr==='L'?'':SET.ocr);
+  $('ocr').querySelector('.ohint').style.top='calc('+({L:12,M:24,S:33})[SET.ocr]+'% - 30px)';
   $('ocr').hidden=false; $('oShot').disabled=true; $('oShot').textContent='🔤 辨識'; $('oClose2').hidden=true;
   oMsg('','準備中…','開啟相機、載入辨識程式（第一次約 10 MB，之後會留在手機上）');
   var cam=navigator.mediaDevices&&navigator.mediaDevices.getUserMedia?navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}}):Promise.reject(new Error('這個瀏覽器不支援相機（需用 https 網址開啟）'));
@@ -979,7 +1040,7 @@ if(restore()){ showWork(); render(); showResult({cls:'',title:'已恢復上次�
 try{ if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){}
 
 /* 給測試用 */
-window.__rcv={camFormats:camFormats,camWanted:camWanted,parseLabel:parseLabel,handle:handle,wanted:wanted,matchOcr:matchOcr,ocrRun:ocrRun,ocrShow:ocrShow};
+window.__rcv={getSet:function(){ return SET; },camFormats:camFormats,camWanted:camWanted,parseLabel:parseLabel,handle:handle,wanted:wanted,matchOcr:matchOcr,ocrRun:ocrRun,ocrShow:ocrShow};
 })();
 </script>
 </body>
