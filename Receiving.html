@@ -688,15 +688,34 @@ function clearAll(){
 }
 
 /* ---------- 相機掃描 ---------- */
-var hintT=0;
+var hintT=0, lastRead=0, idleT=0;
+/* ---------- 依平台調整 ----------
+   Android(Chrome):手機內建條碼辨識,速度快,全部類型都找。
+   iPhone(Safari):沒有內建辨識,改用內嵌解碼器,每多找一種類型就慢一些。
+     廠商標籤實際用到:QR(鈺創/晶豪科)、DataMatrix(旺宏/華邦電)、Code128(晶豪科/弘憶)、Code39(LG)。
+     每格先找前三種,Code39 每三格找一次;一旦掃過 Code39 標籤就每格都找。拍照讀取一律全部找。 */
+var NATIVE=(function(){ try{ return 'BarcodeDetector' in window; }catch(e){ return false; } })();
+var F3=['QR_CODE','DATA_MATRIX','CODE_128'], F4=['QR_CODE','DATA_MATRIX','CODE_128','CODE_39'];
+var use39=false, fmtN=0, photoUntil=0;
+function camFormats(){
+  if(NATIVE || use39 || Date.now()<photoUntil) return F4;
+  return (++fmtN%3===0)?F4:F3;
+}
+document.addEventListener('change',function(e){ if(e.target && e.target.closest && e.target.closest('.psx')) photoUntil=Date.now()+20000; },true);
+document.addEventListener('click',function(e){ var b=e.target&&e.target.closest&&e.target.closest('.psx button'); if(b && /拍照/.test(b.textContent)) photoUntil=Date.now()+60000; },true);
 function startScan(){
-  seen={};
+  seen={}; lastRead=Date.now(); clearInterval(idleT);
   if(!window.PhoneScan){ modal('掃描模組沒有載入','請從 GitHub 網址開啟這一頁（需與 scanner.js 放在同一個資料夾）。\n也可以先用「手動輸入」或藍牙條碼槍。'); return; }
   var h=PhoneScan.open({
-    title:'收料核對', frame:'L',
+    title:'收料核對', frame:'L', formats:camFormats,
     hint:'對準 QR Code，或 Lot 與 Qty 條碼（順序不拘）；其他條碼自動略過',
     accept:function(text){
-      var ok=camWanted(text);
+      var ok=camWanted(text); lastRead=Date.now();
+      /* 讀到但略過的條碼:簡短提示,讓人知道相機有在讀 */
+      if(!ok && pending<0 && Date.now()-hintT>2000){
+        hintT=Date.now(); var sk=String(text).replace(/\s+/g,' ').trim(); if(sk.length>24) sk=sk.slice(0,24)+'…';
+        setTimeout(function(){ h.say('略過：'+sk+'（不是清單的 Lot No）',''); },0);
+      }
       /* 等 Qty 時讀到不相符的數字:提示讀到什麼,但不算錯(可能是片數、日期條碼) */
       if(!ok && pending>=0 && Date.now()-hintT>1500 && /^\d[\d,]*$/.test(String(text).trim())){
         hintT=Date.now(); var msg='👉 '+recs[pending].lot+' 等 Qty '+fmtQty(recs[pending].qty)+'｜讀到 '+seenList().join('、')+'，不是';
@@ -704,7 +723,8 @@ function startScan(){
       }
       return ok;
     },
-    onScan:function(text){
+    onScan:function(text,fmt){
+      if(fmt==='CODE_39') use39=true;
       var r=handle(text,true), s=stats(), tail='（'+(s.ok+s.bad)+'/'+recs.length+'）';
       if(r.cls==='ok' || r.cls==='info'){
         setTimeout(function(){ h.say((r.cls==='ok'?'✅ ':'👉 ')+r.short+' '+tail,'ok'); },0);
@@ -713,8 +733,18 @@ function startScan(){
       setTimeout(function(){ h.say((r.cls==='bad'?'❌ ':'⚠️ ')+r.short+' '+tail,r.cls==='bad'?'bad':'warn'); },0);
       try{ if(r.cls==='bad' && navigator.vibrate) navigator.vibrate([120,80,120,80,200]); }catch(e){}
       return r.short;
-    }
+    },
+    onClose:function(){ clearInterval(idleT); }
   });
+  /* 一直沒讀到任何條碼:提示靠近/放大/拍照讀取 */
+  idleT=setInterval(function(){
+    var wait=NATIVE?7000:5000;
+    if(Date.now()-lastRead>wait && Date.now()-hintT>wait){
+      hintT=Date.now();
+      h.say(NATIVE?'讀不到？靠近一點讓 QR Code 在框內變大，或按上方「放大」；還是不行就按下方「拍照讀取」'
+                  :'讀不到？靠近一點讓 QR Code／二維碼在框內變大；字很密的建議直接按下方「拍照讀取」（用完整畫質解碼）','warn');
+    }
+  },1000);
 }
 
 /* ---------- 文字辨識(純文字標籤,如聯強) ----------
@@ -926,7 +956,7 @@ if(restore()){ showWork(); render(); showResult({cls:'',title:'已恢復上次�
 try{ if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){}
 
 /* 給測試用 */
-window.__rcv={camWanted:camWanted,parseLabel:parseLabel,handle:handle,wanted:wanted,matchOcr:matchOcr,ocrRun:ocrRun,ocrShow:ocrShow};
+window.__rcv={camFormats:camFormats,camWanted:camWanted,parseLabel:parseLabel,handle:handle,wanted:wanted,matchOcr:matchOcr,ocrRun:ocrRun,ocrShow:ocrShow};
 })();
 </script>
 </body>
