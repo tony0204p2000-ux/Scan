@@ -237,6 +237,7 @@ details.card[open] summary{margin-bottom:10px}
         <li><b>華邦電</b><span>二維碼 [)&gt; 格式 → 1T（LOT NO）、15Q（PLQTY）</span></li>
         <li><b>LG</b><span>條碼「Lot 空格 Qty 空格 其他」→ 第 1、2 段</span></li>
         <li><b>新創誠</b><span>QR Code 以「&amp;」分隔 → 第 3 欄 Lot No、第 5 欄 Good Die</span></li>
+        <li><b>愛普</b><span>(1T)LOT 與 (Q)QTY 兩個條碼，順序不拘；LOT 尾端的 AAA 會自動忽略</span></li>
         <li><b>其他</b><span>Lot No 與 Qty 分開的條碼（如弘憶）：鏡頭掃過兩個條碼即可，順序不拘，片數、日期等其他數字條碼會自動略過</span></li>
         <li><b>純文字</b><span>按「🔤 辨識文字」拍標籤，自動找批號與數量（如聯強）</span></li>
         <li><b>無條碼</b><span>在核對清單點該筆 → 對照實物 → 確認相符</span></li>
@@ -333,6 +334,7 @@ details.card[open] summary{margin-bottom:10px}
         <li><b>華邦電</b><span>二維碼：1T、15Q</span></li>
         <li><b>LG</b><span>條碼第 1 段 Lot、第 2 段 Qty</span></li>
         <li><b>新創誠</b><span>QR：第 3 欄 Lot、第 5 欄 Good Die</span></li>
+        <li><b>愛普</b><span>(1T)LOT ＋ (Q)QTY 條碼</span></li>
         <li><b>其他</b><span>Lot、Qty 分開的條碼，順序不拘</span></li>
         <li><b>無條碼</b><span>點清單項目人工核對</span></li>
       </ul>
@@ -391,6 +393,13 @@ function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,
 function normText(v){ return String(v==null?'':v).trim().toUpperCase(); }
 /* Lot No 比對忽略小數點：6606A9000.05 = 6606A900005 */
 function normLot(v){ return normText(v).replace(/\./g,''); }
+/* 找 Lot No 在清單的位置。找不到時:批號尾端多了 1~3 個英文字母的(如愛普 MWN984000AAA → MWN984000),去掉再找一次 */
+function lotIdx(v){
+  var k=normLot(v), i=idx[k];
+  if(i!==undefined) return i;
+  var m=/^(.{5,}\d)([A-Z]{1,3})$/.exec(k);
+  return m?idx[m[1]]:undefined;
+}
 function normQty(v){ var s=String(v==null?'':v).replace(/[^0-9.-]/g,''); return s===''?NaN:Number(s); }
 function fmtQty(v){ var n=normQty(v); return isNaN(n)?String(v):n.toLocaleString('en-US'); }
 function today(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
@@ -466,7 +475,7 @@ function logEx(type,lot,qty,vendor,note){
   exlog.unshift({type:type,lot:String(lot),qty:String(qty),vendor:vendor||'',time:new Date().toISOString(),note:note});
 }
 function check(lot,qty,vendor,part){
-  var i=idx[normLot(lot)];
+  var i=lotIdx(lot);
   var base={vendor:vendor,scanLot:lot,scanQty:qty};
   if(i===undefined){
     logEx('notfound',lot,qty,vendor,'此批號不在收料資料中');
@@ -480,7 +489,7 @@ function check(lot,qty,vendor,part){
   }
   var res;
   if(normQty(r.qty)===normQty(qty)){
-    r.status='ok'; r.note='核對正確';
+    r.status='ok'; r.note='核對正確'; okAt[i]=Date.now();
     res=mix(base,{cls:'ok',title:'✅ 核對正確',short:'正確 '+r.lot+' × '+fmtQty(r.qty)});
   }else{
     r.status='fail'; r.note='Qty 不符：應為 '+fmtQty(r.qty)+'，掃到 '+fmtQty(qty);
@@ -498,7 +507,7 @@ function handle(raw,fromCamera){
   var p=parseLabel(raw), res;
   if(!p){ res={cls:'warn',title:'⚠️ 無法辨識這個條碼',detail:'掃到的內容：'+raw,short:'無法辨識'}; }
   else if(p.single!==undefined){
-    var v=p.single, i=idx[normLot(v)];
+    var v=p.single, i=lotIdx(v);
     if(i!==undefined && fromCamera && seenNum(normQty(recs[i].qty))){
       pending=-1;
       res=check(recs[i].lot,recs[i].qty,'分開掃描');
@@ -527,7 +536,7 @@ function wanted(text){
   var p=parseLabel(text);
   if(!p) return false;
   if(p.single===undefined) return true;
-  if(idx[normLot(p.single)]!==undefined) return true;
+  if(lotIdx(p.single)!==undefined) return true;
   return pending>=0 && /^\d[\d,]*$/.test(p.single);
 }
 /* 相機分開掃描:同一張標籤常有好幾個數字條碼(片數、日期…)。
@@ -537,7 +546,7 @@ function seenNum(n){ var t=seen[n]; return t && Date.now()-t<15000; }
 /* 同一張標籤若同時有「整張的 QR/二維碼」和「單獨的 Lot 條碼」,優先用 QR(一次核對完):
    單獨 Lot 條碼第一次看到先記著不收,0.8 秒後還在鏡頭裡才收;拍照讀取時就會繼續找到 QR。
    沒有 QR 的標籤(如弘憶):看到 Lot 後再看到相符的數量條碼,直接配對完成 */
-var seenLot={};
+var seenLot={}, okAt={};
 function camWanted(text){
   var p=parseLabel(text), now=Date.now();
   if(p && p.single!==undefined && /^\d[\d,]*$/.test(p.single)){
@@ -549,7 +558,9 @@ function camWanted(text){
     return false;
   }
   if(p && p.single!==undefined && pending<0){
-    var i=idx[normLot(p.single)];
+    var i=lotIdx(p.single);
+    /* 分開掃描剛完成:同一張標籤的 Lot 條碼還在鏡頭裡,10 秒內不要再跳「已核對過」 */
+    if(i!==undefined && recs[i].status==='ok' && okAt[i] && now-okAt[i]<10000) return false;
     if(i!==undefined){
       if(seenNum(normQty(recs[i].qty))) return true;
       var t=seenLot[i];
@@ -1040,7 +1051,7 @@ if(restore()){ showWork(); render(); showResult({cls:'',title:'已恢復上次�
 try{ if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){}
 
 /* 給測試用 */
-window.__rcv={getSet:function(){ return SET; },camFormats:camFormats,camWanted:camWanted,parseLabel:parseLabel,handle:handle,wanted:wanted,matchOcr:matchOcr,ocrRun:ocrRun,ocrShow:ocrShow};
+window.__rcv={lotIdx:lotIdx,getSet:function(){ return SET; },camFormats:camFormats,camWanted:camWanted,parseLabel:parseLabel,handle:handle,wanted:wanted,matchOcr:matchOcr,ocrRun:ocrRun,ocrShow:ocrShow};
 })();
 </script>
 </body>
