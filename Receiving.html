@@ -228,6 +228,7 @@ details.card[open] summary{margin-bottom:10px}
         <li><b>旺宏</b><span>二維碼 → 1T（批號）、Q（數量）</span></li>
         <li><b>華邦電</b><span>二維碼 [)&gt; 格式 → 1T（LOT NO）、15Q（PLQTY）</span></li>
         <li><b>LG</b><span>條碼「Lot 空格 Qty 空格 其他」→ 第 1、2 段</span></li>
+        <li><b>新創誠</b><span>QR Code 以「&amp;」分隔 → 第 3 欄 Lot No、第 5 欄 Good Die</span></li>
         <li><b>其他</b><span>Lot No 與 Qty 分開的條碼（如弘憶）：鏡頭掃過兩個條碼即可，順序不拘，片數、日期等其他數字條碼會自動略過</span></li>
         <li><b>純文字</b><span>按「🔤 辨識文字」拍標籤，自動找批號與數量（如聯強）</span></li>
         <li><b>無條碼</b><span>在核對清單點該筆 → 對照實物 → 確認相符</span></li>
@@ -303,6 +304,7 @@ details.card[open] summary{margin-bottom:10px}
         <li><b>旺宏</b><span>二維碼：1T、Q</span></li>
         <li><b>華邦電</b><span>二維碼：1T、15Q</span></li>
         <li><b>LG</b><span>條碼第 1 段 Lot、第 2 段 Qty</span></li>
+        <li><b>新創誠</b><span>QR：第 3 欄 Lot、第 5 欄 Good Die</span></li>
         <li><b>其他</b><span>Lot、Qty 分開的條碼，順序不拘</span></li>
         <li><b>無條碼</b><span>點清單項目人工核對</span></li>
       </ul>
@@ -408,6 +410,11 @@ function parseLabel(raw){
     if(!(di['1T'] && di['Q'])) di=diMap(t.split(/[\s\x1C\x1D\x1E\x04]+/));
     if(di['1T'] && di['Q']) return {vendor:'旺宏',lot:di['1T'],qty:di['Q'],part:di['P']||''};
   }
+  /* 新創誠(PUYA):P/N&片數&Lot&Wafer ID&Good Die&Gross Die&日期&… */
+  if(t.indexOf('&')>=0){
+    f=t.split('&').map(function(x){ return x.trim(); });
+    if(f.length>=5 && /^[A-Za-z0-9.\-_]+$/.test(f[2]) && /^\d[\d,]*$/.test(f[4])) return {vendor:'新創誠',lot:f[2],qty:f[4],part:f[0]};
+  }
   /* 鈺創:P/N;CUST P/N;CUST PO;Wafer Qty;Good Die Qty;Lot No */
   if(t.indexOf(';')>=0){
     f=t.split(';').map(function(x){ return x.trim(); });
@@ -499,12 +506,28 @@ function wanted(text){
    先記下鏡頭看過的數字,只收「等於應收數量」的那一個,Lot 和 Qty 誰先讀到都可以 */
 var seen={};
 function seenNum(n){ var t=seen[n]; return t && Date.now()-t<15000; }
+/* 同一張標籤若同時有「整張的 QR/二維碼」和「單獨的 Lot 條碼」,優先用 QR(一次核對完):
+   單獨 Lot 條碼第一次看到先記著不收,0.8 秒後還在鏡頭裡才收;拍照讀取時就會繼續找到 QR。
+   沒有 QR 的標籤(如弘憶):看到 Lot 後再看到相符的數量條碼,直接配對完成 */
+var seenLot={};
 function camWanted(text){
-  var p=parseLabel(text);
+  var p=parseLabel(text), now=Date.now();
   if(p && p.single!==undefined && /^\d[\d,]*$/.test(p.single)){
-    var n=normQty(p.single); seen[n]=Date.now();
+    var n=normQty(p.single); seen[n]=now;
     if(pending>=0) return n===normQty(recs[pending].qty);
+    for(var k in seenLot){
+      if(now-seenLot[k]<15000 && recs[k] && recs[k].status!=='ok' && normQty(recs[k].qty)===n){ pending=+k; return true; }
+    }
     return false;
+  }
+  if(p && p.single!==undefined && pending<0){
+    var i=idx[normLot(p.single)];
+    if(i!==undefined){
+      if(seenNum(normQty(recs[i].qty))) return true;
+      var t=seenLot[i];
+      if(!t || now-t>15000){ seenLot[i]=now; return false; }
+      return now-t>800;
+    }
   }
   return wanted(text);
 }
@@ -704,7 +727,7 @@ function camFormats(){
 document.addEventListener('change',function(e){ if(e.target && e.target.closest && e.target.closest('.psx')) photoUntil=Date.now()+20000; },true);
 document.addEventListener('click',function(e){ var b=e.target&&e.target.closest&&e.target.closest('.psx button'); if(b && /拍照/.test(b.textContent)) photoUntil=Date.now()+60000; },true);
 function startScan(){
-  seen={}; lastRead=Date.now(); clearInterval(idleT);
+  seen={}; seenLot={}; lastRead=Date.now(); clearInterval(idleT);
   if(!window.PhoneScan){ modal('掃描模組沒有載入','請從 GitHub 網址開啟這一頁（需與 scanner.js 放在同一個資料夾）。\n也可以先用「手動輸入」或藍牙條碼槍。'); return; }
   var h=PhoneScan.open({
     title:'收料核對', frame:'L', formats:camFormats,
