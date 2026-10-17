@@ -239,7 +239,7 @@ details.card[open] summary{margin-bottom:10px}
         <li><b>新創誠</b><span>QR Code 以「&amp;」分隔 → 第 3 欄 Lot No、第 5 欄 Good Die</span></li>
         <li><b>愛普</b><span>(1T)LOT 與 (Q)QTY 兩個條碼，順序不拘；LOT 尾端的 AAA 會自動忽略</span></li>
         <li><b>其他</b><span>Lot No 與 Qty 分開的條碼（如弘憶）：鏡頭掃過兩個條碼即可，順序不拘，片數、日期等其他數字條碼會自動略過</span></li>
-        <li><b>純文字</b><span>按「🔤 辨識文字」拍標籤，自動找批號與數量（如聯強）</span></li>
+        <li><b>純文字</b><span>沒有條碼的標籤（如聯強、艾睿、光菱）：在核對清單點該筆人工核對</span></li>
         <li><b>無條碼</b><span>在核對清單點該筆 → 對照實物 → 確認相符</span></li>
       </ul>
     </div>
@@ -316,13 +316,15 @@ details.card[open] summary{margin-bottom:10px}
         <label><input type="checkbox" value="B">橫條</label>
         <label><input type="checkbox" value="V">直條</label>
       </div>
-      <div class="setg">文字辨識框</div>
+      <div class="setg">文字辨識<small>測試中的功能，預設關閉</small></div>
+      <label class="sw" style="padding-top:0"><input type="checkbox" id="setOcrOn"><span>開啟「🔤 辨識文字」按鈕（純文字標籤用，辨識結果仍在測試）</span></label>
+      <div class="setg" id="setOcrT">文字辨識框</div>
       <div class="opts" id="setOcr">
         <label><input type="radio" name="ocrf" value="L">大</label>
         <label><input type="radio" name="ocrf" value="M">中</label>
         <label><input type="radio" name="ocrf" value="S">小</label>
       </div>
-      <button id="setReset" style="width:100%;min-height:40px;font-size:14px">恢復預設（條碼：小、長方；文字：大）</button>
+      <button id="setReset" style="width:100%;min-height:40px;font-size:14px">恢復預設（條碼框：小、長方；文字辨識：關閉）</button>
     </details>
 
     <details class="card">
@@ -344,7 +346,7 @@ details.card[open] summary{margin-bottom:10px}
 
 <div class="dock" id="dock" hidden>
   <div class="pend" id="pendHint" hidden></div>
-  <div class="row"><button class="pri" id="scanBtn">📷 掃描條碼</button><button id="ocrBtn">🔤 辨識文字</button></div>
+  <div class="row"><button class="pri" id="scanBtn">📷 掃描條碼</button><button id="ocrBtn" hidden>🔤 辨識文字</button></div>
 </div>
 
 <div class="modal" id="modal" hidden>
@@ -752,15 +754,16 @@ function clearAll(){
 /* ---------- 相機掃描 ---------- */
 /* ---------- 設定(存在這支手機) ---------- */
 var SKEY='rcvcheck.set', FORDER=['L','M','S','R','B','V'];
-var DEF={frames:['S','R'],last:'S',ocr:'L'}, SET=loadSet();
+var DEF={frames:['S','R'],last:'S',ocr:'L',ocrOn:false}, SET=loadSet();
 function loadSet(){
-  var d={frames:DEF.frames.slice(),last:DEF.last,ocr:DEF.ocr};
+  var d={frames:DEF.frames.slice(),last:DEF.last,ocr:DEF.ocr,ocrOn:DEF.ocrOn};
   try{
     var v=JSON.parse(localStorage.getItem(SKEY)||'null');
     if(v){
       if(Array.isArray(v.frames)){ var f=FORDER.filter(function(k){ return v.frames.indexOf(k)>=0; }); if(f.length) d.frames=f; }
       if(FORDER.indexOf(v.last)>=0) d.last=v.last;
       if(['L','M','S'].indexOf(v.ocr)>=0) d.ocr=v.ocr;
+      d.ocrOn=v.ocrOn===true;
     }
   }catch(e){}
   return d;
@@ -769,6 +772,8 @@ function saveSet(){ try{ localStorage.setItem(SKEY,JSON.stringify(SET)); }catch(
 function showSet(){
   Array.prototype.forEach.call($('setFrames').querySelectorAll('input'),function(i){ i.checked=SET.frames.indexOf(i.value)>=0; });
   Array.prototype.forEach.call($('setOcr').querySelectorAll('input'),function(i){ i.checked=i.value===SET.ocr; });
+  $('setOcrOn').checked=SET.ocrOn; $('setOcr').hidden=$('setOcrT').hidden=!SET.ocrOn;
+  $('ocrBtn').hidden=!SET.ocrOn;
 }
 $('setFrames').onchange=function(e){
   var f=FORDER.filter(function(k){ var i=$('setFrames').querySelector('input[value="'+k+'"]'); return i&&i.checked; });
@@ -776,7 +781,8 @@ $('setFrames').onchange=function(e){
   SET.frames=f; if(f.indexOf(SET.last)<0) SET.last=f[0]; saveSet();
 };
 $('setOcr').onchange=function(e){ SET.ocr=e.target.value; saveSet(); };
-$('setReset').onclick=function(){ SET={frames:DEF.frames.slice(),last:DEF.last,ocr:DEF.ocr}; saveSet(); showSet(); toast('已恢復預設'); };
+$('setOcrOn').onchange=function(){ SET.ocrOn=this.checked; saveSet(); showSet(); toast(SET.ocrOn?'已開啟「辨識文字」按鈕':'已關閉「辨識文字」按鈕'); };
+$('setReset').onclick=function(){ SET={frames:DEF.frames.slice(),last:DEF.last,ocr:DEF.ocr,ocrOn:DEF.ocrOn}; saveSet(); showSet(); toast('已恢復預設'); };
 showSet();
 
 var hintT=0, lastRead=0, idleT=0;
