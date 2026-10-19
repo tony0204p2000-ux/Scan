@@ -1,0 +1,1005 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14171a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<title>WAFER 比對工具（手機版）</title>
+<style>
+:root{
+  --bg:#14171a; --panel:#1c2024; --panel-2:#242a30; --line:#323a42;
+  --ink:#e7e5df; --dim:#8f979f; --amber:#f0a838; --cyan:#2fd3c4; --red:#ef5259;
+  --mono:Consolas,Menlo,"Roboto Mono",monospace;
+  --sans:"PingFang TC","Noto Sans TC","Microsoft JhengHei",-apple-system,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.45;-webkit-text-size-adjust:100%}
+body{padding-bottom:calc(84px + env(safe-area-inset-bottom));touch-action:manipulation}
+button{font:inherit;color:var(--ink);background:var(--panel-2);border:1px solid var(--line);border-radius:10px;min-height:44px;padding:6px 14px;cursor:pointer;-webkit-user-select:none;user-select:none}
+button:disabled{opacity:.35}
+button:active:not(:disabled){filter:brightness(1.25)}
+[hidden]{display:none!important}
+
+/* ---------- 置頂區:模式、相機、目前步驟 ---------- */
+#top{position:sticky;top:0;z-index:5;background:var(--bg);padding-top:env(safe-area-inset-top);border-bottom:1px solid var(--line)}
+.tabs{display:flex;gap:6px;padding:8px 10px 6px}
+.tabs button{flex:1;min-height:42px;padding:4px 2px;font-size:15px;font-weight:700;color:var(--dim);background:var(--panel)}
+.tabs button.on{color:#221a08;background:var(--amber);border-color:var(--amber)}
+
+#cam{position:relative;background:#000;overflow:hidden;height:30vh;height:30svh;min-height:190px}
+#cam.off{height:auto;min-height:0;background:none;padding:2px 10px 6px}
+#cam.off video,#cam.off #frame,#cam.off .camtools{display:none}
+#cam:not(.off) .camoff{display:none}
+body.typing #cam:not(.off){height:0;min-height:0}
+video{width:100%;height:100%;object-fit:cover;display:block}
+#frame{position:absolute;border:2px solid var(--amber);border-radius:10px;box-shadow:0 0 0 2000px rgba(0,0,0,.5);pointer-events:none;transition:border-color .1s}
+#frame.ok{border-color:var(--cyan);box-shadow:0 0 0 2000px rgba(10,80,70,.55)}
+#frame.ng{border-color:var(--red);box-shadow:0 0 0 2000px rgba(110,25,25,.55)}
+.camtools{position:absolute;left:0;right:0;bottom:6px;display:flex;justify-content:center;gap:6px;padding:0 6px}
+.camtools button{background:rgba(20,24,30,.74);border-color:rgba(255,255,255,.28);color:#fff;min-height:40px;padding:4px 12px;font-size:14px}
+.camtools button.on{background:var(--amber);border-color:var(--amber);color:#000}
+.camoff{display:flex;gap:8px;flex-wrap:wrap}
+#camstart{flex:1;min-height:52px;font-size:17px;font-weight:700;background:#1f6fa8;border-color:#1f6fa8;color:#fff}
+#photo{min-height:52px;font-size:14px}
+#cammsg{flex-basis:100%;font-size:13px;color:#ff8a8f;line-height:1.5}
+#cammsg:empty{display:none}
+
+#now{padding:8px 10px 10px}
+.steps{display:flex;gap:5px;margin-bottom:6px}
+.steps span{flex:1;height:5px;border-radius:3px;background:var(--line)}
+.steps span.done{background:var(--cyan)}
+.steps span.act{background:var(--amber)}
+.ask{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.ask small{font-size:12px;color:var(--dim)}
+.ask b{font-size:21px;color:var(--amber);letter-spacing:.02em}
+#askhint{font-size:13px;color:var(--dim);margin-top:1px}
+#note{min-height:22px;font-size:14px;font-family:var(--mono);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--dim)}
+#note.ok{color:var(--cyan)} #note.bad{color:var(--red);font-weight:700} #note.warn{color:var(--amber);white-space:normal}
+#mform{display:flex;gap:8px;margin-top:6px}
+#minp{flex:1;min-width:0;font-family:var(--mono);font-size:17px;padding:9px 12px;color:var(--ink);background:var(--panel-2);border:1.5px solid var(--line);border-radius:10px;outline:none}
+#minp:focus{border-color:var(--amber)}
+#minp.bad{border-color:var(--red)}
+#mform button{min-width:70px;font-weight:700}
+
+/* ---------- 本筆資料 ---------- */
+main{padding:10px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+.card.cur{border-color:var(--amber)}
+.card h2{margin:0 0 8px;font-size:15px;display:flex;align-items:center;gap:8px}
+.card h2 i{font-style:normal;font-family:var(--mono);font-size:12px;width:20px;height:20px;border-radius:5px;background:var(--panel-2);display:inline-flex;align-items:center;justify-content:center}
+.card h2 em{font-style:normal;font-weight:400;font-size:13px;color:var(--dim);margin-left:auto;font-family:var(--mono)}
+.kv{display:flex;align-items:baseline;gap:10px;padding:5px 0;border-top:1px solid var(--line)}
+.kv:first-of-type{border-top:none}
+.kv>span:first-child{flex:none;width:92px;font-size:13px;color:var(--dim)}
+.kv>b{flex:1;min-width:0;font-family:var(--mono);font-size:17px;word-break:break-all}
+.kv>b.wait{color:var(--dim);font-weight:400;font-size:14px;font-family:var(--sans)}
+.kv>u{text-decoration:none;font-family:var(--mono);font-size:13px;color:var(--cyan);flex:none}
+.lbl{font-size:13px;color:var(--dim);margin:8px 0 5px;display:flex;justify-content:space-between}
+.chips{display:flex;flex-wrap:wrap;gap:6px;min-height:36px}
+.chips>span{font-size:13px;color:var(--dim);align-self:center}
+.chip{font-family:var(--mono);font-size:16px;min-height:36px;padding:3px 10px;border-radius:8px;background:var(--panel-2)}
+.chip::after{content:" ×";color:var(--dim);font-size:13px}
+.chip.lock::after{content:""}
+.chip.ok{border-color:var(--cyan);color:var(--cyan)}
+.chip.warn{border-color:var(--amber);color:var(--amber)}
+.chip.bad{border-color:var(--red);color:var(--red)}
+.pair{display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid var(--line);font-family:var(--mono);font-size:16px}
+.pair:first-of-type{border-top:none}
+.pair b{flex:1;min-width:0;word-break:break-all}
+.pair u{text-decoration:none;min-width:64px;text-align:right}
+.pair button{min-height:36px;min-width:40px;padding:0;color:var(--dim)}
+.sum{display:flex;justify-content:space-between;align-items:baseline;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font-size:13px;color:var(--dim)}
+.sum b{font-family:var(--mono);font-size:22px;color:var(--ink)}
+.sum b.eq{color:var(--cyan)} .sum b.ne{color:var(--amber)}
+.opt{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.opt label{display:block;font-size:13px;color:var(--dim)}
+.opt label b{display:block;color:var(--ink);font-size:14px}
+.opt input{width:100%;margin-top:5px;font-family:var(--mono);font-size:17px;padding:9px 10px;color:var(--ink);background:var(--panel-2);border:1.5px solid var(--line);border-radius:10px;outline:none}
+.opt input:focus{border-color:var(--amber)}
+
+/* ---------- 比對紀錄 ---------- */
+.loghead{display:flex;align-items:center;gap:8px;margin:16px 0 8px}
+.loghead h2{margin:0;font-size:15px;flex:1}
+.loghead h2 small{font-weight:400;font-size:13px;font-family:var(--mono);color:var(--dim);margin-left:6px}
+.loghead button{min-height:40px;font-size:14px;padding:4px 12px}
+.loghead button.pdf{color:var(--cyan);border-color:rgba(47,211,196,.45)}
+.loghead button.arm{color:var(--red);border-color:var(--red)}
+.rec{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--cyan);border-radius:10px;padding:8px 10px;margin-bottom:8px}
+.rec.bad{border-left-color:var(--red)}
+.rec header{display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;color:var(--dim);margin-bottom:3px}
+.rec header b{color:var(--cyan)} .rec.bad header b{color:var(--red)}
+.rec div{display:flex;gap:8px;font-size:13px;padding:1px 0}
+.rec div span{flex:none;width:48%;color:var(--dim)}
+.rec div u{text-decoration:none;font-family:var(--mono);word-break:break-all;flex:1;min-width:0}
+.empty{text-align:center;color:var(--dim);font-size:14px;padding:20px 0}
+.foot{font-size:12px;color:var(--dim);text-align:center;margin-top:14px;line-height:1.6}
+
+/* ---------- 底部操作列(拇指區) ---------- */
+#bar{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;gap:8px;padding:10px 10px calc(10px + env(safe-area-inset-bottom));background:var(--bg);border-top:1px solid var(--line)}
+#bar button{min-height:56px;font-size:15px}
+#bReset{flex:1}
+#bMain{flex:2;font-size:17px;font-weight:700;background:var(--amber);border-color:var(--amber);color:#221a08}
+/* 手動輸入時鍵盤會蓋住或推擠底部列:先收起來,空白送出 = 按主按鈕 */
+body.typing #bar{display:none}
+
+/* ---------- 結果 ---------- */
+#okflash{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:rgba(10,90,80,.93);color:#fff;opacity:0;pointer-events:none;transition:opacity .12s}
+#okflash.show{opacity:1}
+#okflash b{font-size:84px;line-height:1}
+#okflash span{font-family:var(--mono);font-size:26px;font-weight:700;letter-spacing:.08em}
+#okflash small{font-size:16px}
+#err{position:fixed;inset:0;z-index:21;display:none;flex-direction:column;background:#3a1114;color:#fff;padding:calc(18px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom))}
+#err.show{display:flex;animation:pulse .45s ease-out 2}
+@keyframes pulse{0%{background:#b3262d}100%{background:#3a1114}}
+#err h3{margin:0;font-family:var(--mono);font-size:30px;letter-spacing:.06em;color:#ff8a8f}
+#err p{margin:6px 0 12px;font-size:15px;color:#f3c9cb}
+#errDetail{flex:1;min-height:0;overflow:auto;background:rgba(0,0,0,.3);border-radius:12px;padding:6px 12px}
+#errDetail div{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid rgba(255,255,255,.12);font-size:15px}
+#errDetail div:first-child{border-top:none}
+#errDetail span{color:#f3c9cb;flex:none;max-width:46%}
+#errDetail b{font-family:var(--mono);font-size:17px;text-align:right;word-break:break-all}
+#errDetail b.ok{color:var(--cyan)} #errDetail b.bad{color:#ff8a8f}
+#errOk{margin-top:14px;min-height:64px;font-size:19px;font-weight:700;background:#fff;color:#3a1114;border-color:#fff}
+</style>
+</head>
+<body>
+
+<div id="top">
+  <nav class="tabs" id="tabs">
+    <button type="button" data-m="out">委外測試</button>
+    <button type="button" data-m="in">廠內測試</button>
+    <button type="button" data-m="ic">廠內IC</button>
+  </nav>
+
+  <div id="cam" class="off">
+    <video id="video" playsinline muted autoplay></video>
+    <div id="frame"></div>
+    <div class="camtools">
+      <button type="button" id="shape">框</button>
+      <button type="button" id="torch" hidden>手電筒</button>
+      <button type="button" id="zoom" hidden>放大</button>
+      <button type="button" id="camstop">關閉相機</button>
+    </div>
+    <div class="camoff">
+      <button type="button" id="camstart">開啟相機掃描</button>
+      <button type="button" id="photo">拍照讀取</button>
+      <div id="cammsg"></div>
+    </div>
+    <input type="file" id="file" accept="image/*" capture="environment" hidden>
+  </div>
+
+  <div id="now">
+    <div class="steps" id="steps"></div>
+    <div class="ask"><small>現在掃描</small><b id="askname"></b></div>
+    <div id="askhint"></div>
+    <div id="note"></div>
+    <form id="mform" autocomplete="off">
+      <input id="minp" type="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" enterkeyhint="done" lang="en">
+      <button type="submit">加入</button>
+    </form>
+  </div>
+</div>
+
+<main>
+  <div id="data"></div>
+
+  <div class="card" id="icopt" hidden>
+    <h2>QC／工程領料數量<em>選填</em></h2>
+    <div class="opt">
+      <label><b>單次扣除</b>從黑箱總數扣掉
+        <input id="deduct" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="例：10"></label>
+      <label><b>單次改量</b>直接改成這個數量
+        <input id="override" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="例：90"></label>
+    </div>
+  </div>
+
+  <div class="loghead">
+    <h2>比對紀錄<small id="logcount"></small></h2>
+    <button type="button" class="pdf" id="bPdf">匯出 PDF</button>
+    <button type="button" id="bClear">清空</button>
+  </div>
+  <div id="log"></div>
+  <div class="foot" id="foot"></div>
+</main>
+
+<footer id="bar">
+  <button type="button" id="bReset">重來這一筆</button>
+  <button type="button" id="bMain"></button>
+</footer>
+
+<div id="okflash"><b>✓</b><span>CORRECT</span><small>比對相符，繼續下一筆</small></div>
+<div id="err">
+  <h3>✕ ERROR</h3>
+  <p>資料不相符，請確認後重新掃描這一筆。</p>
+  <div id="errDetail"></div>
+  <button type="button" id="errOk">確認，重來這一筆</button>
+</div>
+
+<!-- ===== 條碼辨識引擎 =====
+     Android(Chrome):用手機內建的條碼辨識,最快。
+     iPhone(所有 iPhone 瀏覽器都是 Safari 核心)沒有內建辨識:改用 bd/ 裡的 zxing-wasm,一張畫面可同時讀出多個條碼。
+     少數 Android 有內建辨識但不支援 QR/Code128(沒有 Google Play 服務):也改用 zxing-wasm。
+     解碼程式放在同一個網站(bd/zxing_reader.wasm),不連外部網址。 -->
+<script>
+(function(){
+  var nat=null; try{ nat=window.BarcodeDetector||null; }catch(e){}
+  window.__NATIVE_BD=nat;
+  /* 先暫時拿掉內建的,讓 polyfill 一定會安裝;稍後確認內建可用再換回來 */
+  if(nat){ try{ window.BarcodeDetector=undefined; }catch(e){} }
+})();
+</script>
+<script src="bd/barcode-detector.js"></script>
+<script>
+(function(){
+  'use strict';
+  var nat=window.__NATIVE_BD, cur=null; try{ cur=window.BarcodeDetector||null; }catch(e){}
+  var poly=(window.BarcodeDetectionAPI && cur && cur!==nat)?cur:null;
+  /* 庫房標籤實際用到的類型;少找幾種,每格畫面就快一些(手機內建與 zxing-wasm 都一樣) */
+  var WANT=['qr_code','data_matrix','code_128','code_39','code_93'];
+  var ENG=window.__ENG={native:false,poly:false};
+  function limit(C,fs){ try{ C.getSupportedFormats=function(){ return Promise.resolve(WANT.filter(function(f){ return fs.indexOf(f)>=0; })); }; }catch(e){} }
+  function usePoly(){
+    if(!poly) return false;
+    window.BarcodeDetector=poly; ENG.poly=true; limit(poly,WANT);
+    var ov={locateFile:function(p,pre){ return /\.wasm$/.test(p)?new URL('bd/'+p,location.href).href:pre+p; }};
+    try{ window.BarcodeDetectionAPI.prepareZXingModule({overrides:ov}); }catch(e){}
+    /* 頁面開好後先在背景把解碼程式準備好,按掃描時就不用等 */
+    setTimeout(function(){ try{ var r=window.BarcodeDetectionAPI.prepareZXingModule({overrides:ov,fireImmediately:true}); if(r&&r.catch) r.catch(function(){}); }catch(e){} },800);
+    return true;
+  }
+  function useNative(){ window.BarcodeDetector=nat; }
+  if(!nat){ usePoly(); window.__ENG_READY=Promise.resolve(); return; }
+  window.__ENG_READY=Promise.resolve().then(function(){ return nat.getSupportedFormats(); }).then(function(fs){
+    fs=fs||[];
+    if(fs.indexOf('qr_code')>=0 && fs.indexOf('code_128')>=0){ useNative(); ENG.native=true; limit(nat,fs); return; }
+    if(!usePoly()) useNative();
+  },function(){ if(!usePoly()) useNative(); });
+})();
+</script>
+<script src="scanner.js"></script>
+<script>
+(function(){
+'use strict';
+var PS=window.PhoneScan||null;
+var $=function(id){ return document.getElementById(id); };
+var UA=navigator.userAgent||'';
+var IOS=/iP(hone|ad|od)/.test(UA) || (/Macintosh/.test(UA) && navigator.maxTouchPoints>1);
+
+/* ---------- 共用小工具(比對規則與電腦版相同) ---------- */
+function norm(v){ return (v||'').trim().toUpperCase(); }
+function extractDigits(v){ return (v||'').replace(/[^0-9]/g,''); }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function isLot5(v){ return /^[A-Za-z0-9]{5}$/.test((v||'').trim()); }
+/* 鏡頭讀到的 LOT NO 一定是英文+數字混合(不會是純數字或純英文),避免把 5 位數的數量條碼當成 LOT NO */
+function camLot(v){ v=(v||'').trim(); return isLot5(v) && /[A-Za-z]/.test(v) && /[0-9]/.test(v); }
+/* 早期標籤的刻號用 ; , ? 分隔,一律換成 / */
+function normEng(v){ return (v||'').trim().replace(/[;,?；，？、\s]+/g,'/').replace(/^\/+|\/+$/g,''); }
+function isEngrave(v){ return /^[0-9\/]+$/.test(normEng(v)) && /[0-9]/.test(v); }
+function isQty(v){ return /^[0-9]+$/.test((v||'').trim()); }
+function numTokens(v){ return (v||'').split(/[^0-9]+/).filter(function(t){ return t!==''; }); }
+function sortNumeric(list){
+  return list.slice().sort(function(a,b){ var na=parseInt(a,10), nb=parseInt(b,10); return na!==nb?na-nb:a.localeCompare(b); });
+}
+function sortAlpha(list){ return list.map(norm).sort(function(a,b){ return a.localeCompare(b); }); }
+function sumQty(list){ return list.reduce(function(s,v){ return s+(parseInt(v,10)||0); },0); }
+function pad(n){ return n<10?'0'+n:''+n; }
+function nowStr(){ var d=new Date(); return d.getFullYear()+'/'+pad(d.getMonth()+1)+'/'+pad(d.getDate())+' '+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds()); }
+function store(k,v){ try{ if(v===undefined) return JSON.parse(localStorage.getItem(k)); localStorage.setItem(k,JSON.stringify(v)); }catch(e){ return null; } }
+
+/* 依數字排序後的刻號清單,保留原本的位置好讓單筆可以刪除 */
+function chipList(key,list,opt){
+  opt=opt||{};
+  if(!list.length) return '<div class="chips"><span>'+esc(opt.empty||'尚未掃描')+'</span></div>';
+  var idx=list.map(function(v,i){ return {v:v,i:i}; });
+  idx.sort(opt.alpha?function(a,b){ return a.v.localeCompare(b.v); }:function(a,b){ var na=parseInt(a.v,10), nb=parseInt(b.v,10); return na!==nb?na-nb:a.v.localeCompare(b.v); });
+  return '<div class="chips">'+idx.map(function(x){
+    var cls=opt.cls?opt.cls(x.v):'';
+    return opt.lock?'<button type="button" class="chip lock '+cls+'" disabled style="opacity:1">'+esc(x.v)+'</button>'
+                   :'<button type="button" class="chip '+cls+'" data-del="'+key+':'+x.i+'">'+esc(x.v)+'</button>';
+  }).join('')+'</div>';
+}
+
+/* =====================================================================
+   三個比對模式。每個模式提供:
+     step()    目前要掃的欄位:
+                 name/hint/ex  畫面文字      max  手動輸入長度上限   num  數字鍵盤
+                 key   這一步的代號(記住條碼類型用)
+                 kind  'lot' LOT NO | 'eng' 刻號、WF ID | 'qty' 數量 | 其他
+                 cam(text)     鏡頭讀到的條碼是不是這一步要的
+                 pair          {cam, kind}:同一張標籤上「下一步」的條碼,同一格畫面讀到就一起收
+                 submit(text)  → {err} | {msg} | {done}
+     main()    底部主按鈕 {label,enabled,fn},不需要就回傳 null
+     data()    本筆資料畫面
+     del(k,i)  刪掉一筆已掃的資料
+   ===================================================================== */
+
+/* ---------- 委外測試:分貨標籤 ↔ WAFER ---------- */
+function modeOut(){
+  var s;
+  function reset(){ s={ph:1,lbl:'',lblList:[],sub:'lot',wfLot:[],wf:[]}; }
+  function addEngrave(list,text,who){
+    text=normEng(text);
+    if(!isEngrave(text)) return {err:'刻號只能是數字與「/」'};
+    var tk=numTokens(text);
+    var dup=tk.filter(function(t){ return list.indexOf(t)>=0; });
+    if(dup.length) return {err:who+'刻號 '+dup.join('/')+' 已掃過，沒有重複加入',dup:true};
+    tk.forEach(function(t){ list.push(t); });
+    return {msg:who+'刻號 '+tk.join('/')};
+  }
+  function newWf(t){ t=normEng(t); return isEngrave(t) && !numTokens(t).some(function(x){ return s.wf.indexOf(x)>=0; }); }
+  function newLbl(t){ t=normEng(t); return isEngrave(t) && !numTokens(t).some(function(x){ return s.lblList.indexOf(x)>=0; }); }
+  function compare(){
+    var lblSorted=sortNumeric(s.lblList), wfLotSorted=sortAlpha(s.wfLot), wfSorted=sortNumeric(s.wf);
+    var labelLot=norm(s.lbl);
+    var lotMatch=labelLot!=='' && wfLotSorted.length>0 && wfLotSorted.every(function(v){ return v===labelLot; });
+    var lblLine=lblSorted.join(''), wfLine=wfSorted.join('');
+    var engMatch=lblLine===wfLine && lblLine!=='';
+    var cells=[s.lbl.trim(),lblLine,wfLotSorted.join('/'),wfLine];
+    finish(M.out,lotMatch&&engMatch,cells,[
+      {label:'標籤 LOT NO',value:labelLot||'(空白)',ok:true},
+      {label:'WAFER LOT NO(排序後)',value:cells[2]||'(空白)',ok:lotMatch},
+      {label:'標籤刻號(排序後)',value:lblSorted.join(' ')||'(空白)',ok:true},
+      {label:'WAFER刻號(排序後)',value:wfSorted.join(' ')||'(空白)',ok:engMatch}
+    ]);
+  }
+  reset();
+  return {
+    id:'out', name:'委外測試', pdf:'WAFER比對工具-委外測試 比對紀錄',
+    cols:['標籤 LOT NO','標籤刻號(排序後)','WAFER LOT NO(排序後)','WAFER刻號(排序後)'],
+    reset:reset, nsteps:3, stepNo:function(){ return s.ph; },
+    step:function(){
+      if(s.ph===1) return {key:'lblLot',kind:'lot',name:'分貨標籤 LOT NO',hint:'5 碼英數字；同一張標籤上的刻號會一起讀',ex:'A1B23',max:5,cam:camLot,
+        pair:{kind:'eng',cam:isEngrave},
+        submit:function(t){
+          if(!isLot5(t)) return {err:'LOT NO 必須是 5 碼英數字'};
+          s.lbl=t.trim(); s.ph=2; return {msg:'標籤 LOT NO '+norm(t)};
+        }};
+      if(s.ph===2) return {key:'lblEng',kind:'eng',name:'分貨標籤 刻號',hint:'可連續掃多筆，掃完按下方「標籤刻號掃完了」',ex:'12',cam:newLbl,
+        submit:function(t){ return addEngrave(s.lblList,t,'標籤'); }};
+      if(s.sub==='lot') return {key:'wfLot',kind:'lot',name:'WAFER LOT NO',hint:'對準 WAFER 標籤，LOT NO 與刻號 QR Code 會一起讀；全部掃完按「完成並比對」',ex:'A1B23',max:5,cam:camLot,
+        pair:{kind:'eng',cam:newWf},
+        submit:function(t){
+          if(!isLot5(t)) return {err:'LOT NO 必須是 5 碼英數字'};
+          s.wfLot.push(norm(t)); s.sub='eng'; return {msg:'WAFER LOT NO '+norm(t)};
+        }};
+      return {key:'wfEng',kind:'eng',name:'WAFER 刻號',hint:'接著掃同一片的刻號',ex:'12',cam:newWf,
+        submit:function(t){
+          var r=addEngrave(s.wf,t,'WAFER');
+          /* 這一片已經掃過:把剛才那筆 LOT NO 一起取消,LOT NO 與刻號的筆數才會對得上 */
+          if(r.dup){ s.wfLot.pop(); s.sub='lot'; r.err+='（剛才的 LOT NO 已一起取消）'; return r; }
+          if(!r.err) s.sub='lot';
+          return r;
+        }};
+    },
+    main:function(){
+      if(s.ph<3) return {label:'標籤刻號掃完了'+(s.lblList.length?'（'+s.lblList.length+'）':''),enabled:s.ph===2&&s.lblList.length>0,fn:function(){ s.ph=3; s.sub='lot'; say('標籤共 '+s.lblList.length+' 片，接著掃 WAFER','ok'); }};
+      return {label:'完成並比對',enabled:s.wfLot.length>0&&s.wf.length>0&&s.sub==='lot',fn:compare};
+    },
+    del:function(k,i){
+      if(k==='lbl'&&s.ph===2) s.lblList.splice(i,1);
+      if(k==='wfLot'&&s.ph===3){ s.wfLot.splice(i,1); s.sub=s.wfLot.length>s.wf.length?'eng':'lot'; }
+      if(k==='wf'&&s.ph===3) s.wf.splice(i,1);
+    },
+    data:function(){
+      var lot=norm(s.lbl);
+      var h='<div class="card'+(s.ph<3?' cur':'')+'"><h2><i>1</i>分貨標籤<em>'+(s.lblList.length?s.lblList.length+' 片':'')+'</em></h2>'+
+        '<div class="kv"><span>LOT NO</span>'+(lot?'<b>'+esc(lot)+'</b>':'<b class="wait">尚未掃描</b>')+'</div>'+
+        '<div class="lbl"><span>刻號'+(s.ph===2?'（點一下可刪除）':'')+'</span></div>'+
+        chipList('lbl',s.lblList,{lock:s.ph!==2,empty:'尚未掃描刻號'})+'</div>';
+      if(s.ph===3){
+        var left=s.lblList.filter(function(v){ return s.wf.indexOf(v)<0; });
+        h+='<div class="card cur"><h2><i>2</i>WAFER<em>'+s.wf.length+' / '+s.lblList.length+' 片</em></h2>'+
+          '<div class="lbl"><span>LOT NO（'+s.wfLot.length+'）</span></div>'+
+          chipList('wfLot',s.wfLot,{alpha:true,empty:'尚未掃描 LOT NO',cls:function(v){ return v===lot?'ok':'bad'; }})+
+          '<div class="lbl"><span>刻號（點一下可刪除）</span></div>'+
+          chipList('wf',s.wf,{empty:'尚未掃描刻號',cls:function(v){ return s.lblList.indexOf(v)>=0?'ok':'warn'; }})+
+          (left.length?'<div class="lbl"><span>標籤上還沒掃到的刻號</span></div>'+chipList('',sortNumeric(left),{lock:true}):
+            (s.wf.length?'<div class="sum"><span>標籤上的刻號都掃到了</span><b class="eq">✓</b></div>':''))+
+          '</div>';
+      }
+      return h;
+    }
+  };
+}
+
+/* ---------- 廠內測試:RUN CARD ↔ WAFER ---------- */
+function modeIn(){
+  var s;
+  function reset(){ s={ph:1,wip:'',eng:'',lot:'',wf:''}; }
+  function wipPrefix(v){ v=(v||'').trim(); var i=v.indexOf('-'); return i===-1?v:v.slice(0,i); }
+  function engraveNumber(v){
+    v=(v||'').trim().toUpperCase();
+    var i=v.indexOf('WF-'), rest=i===-1?v:v.slice(i+3), out='';
+    for(var k=0;k<rest.length;k++){ var ch=rest[k]; if(ch>='A'&&ch<='Z') out+=String(ch.charCodeAt(0)-64); else if(ch>='0'&&ch<='9') out+=ch; }
+    return out;
+  }
+  function camWip(t){ return t.indexOf('-')>=0 && t.toUpperCase().indexOf('WF')<0 && t.length<=40; }
+  function camRcEng(t){ return t.toUpperCase().indexOf('WF')>=0 && t.length<=30; }
+  function compare(){
+    var wp=wipPrefix(s.wip), en=engraveNumber(s.eng), lotV=norm(s.lot), wd=extractDigits(s.wf);
+    var lotMatch=norm(wp)===lotV && lotV!=='', idMatch=en===wd && wd!=='';
+    finish(M['in'],lotMatch&&idMatch,[s.wip.trim(),s.eng.trim(),s.lot.trim(),s.wf.trim()],[
+      {label:'WIP LOT 前段',value:wp,ok:true},
+      {label:'LOT NO',value:lotV||'(空白)',ok:lotMatch},
+      {label:'刻號轉換數字',value:en||'(空白)',ok:true},
+      {label:'WF ID 數字部分',value:wd||'(空白)',ok:idMatch}
+    ]);
+  }
+  reset();
+  return {
+    id:'in', name:'廠內測試', pdf:'WAFER比對工具-廠內測試 比對紀錄',
+    cols:['Run Card WIP LOT','Run Card 刻號','Wafer LOT NO','WF ID'],
+    reset:reset, nsteps:4, stepNo:function(){ return s.ph; },
+    step:function(){
+      if(s.ph===1) return {key:'wip',kind:'wip',name:'Run Card WIP LOT',hint:'需含「-」，取前段比對；同一張 Run Card 上的刻號會一起讀',ex:'ABC12-01',cam:camWip,
+        pair:{kind:'rcEng',cam:camRcEng},
+        submit:function(t){ if(t.indexOf('-')<0) return {err:'WIP LOT 必須含「-」'}; s.wip=t; s.ph=2; return {msg:'WIP LOT '+t}; }};
+      if(s.ph===2) return {key:'rcEng',kind:'rcEng',name:'Run Card 刻號',hint:'需含「WF」，取 WF- 後段，字母轉數字',ex:'WF-A12',cam:camRcEng,
+        submit:function(t){ if(t.toUpperCase().indexOf('WF')<0) return {err:'刻號必須含「WF」'}; s.eng=t; s.ph=3; return {msg:'刻號 '+t+' → '+engraveNumber(t)}; }};
+      if(s.ph===3) return {key:'inLot',kind:'lot',name:'Wafer LOT NO',hint:'5 碼英數字；同一張標籤上的 WF ID 會一起讀並立即比對',ex:'A1B23',max:5,cam:camLot,
+        pair:{kind:'eng',cam:isEngrave},
+        submit:function(t){ if(!isLot5(t)) return {err:'LOT NO 必須是 5 碼英數字'}; s.lot=t; s.ph=4; return {msg:'LOT NO '+norm(t)}; }};
+      return {key:'wfid',kind:'eng',name:'WF ID',hint:'只能是數字與「/」，掃到就立即比對',ex:'112',cam:isEngrave,
+        submit:function(t){ t=normEng(t); if(!isEngrave(t)) return {err:'WF ID 只能是數字與「/」'}; s.wf=t; compare(); return {done:true}; }};
+    },
+    main:function(){ return null; },
+    del:function(){},
+    data:function(){
+      function row(n,label,val,derived){
+        return '<div class="kv"><span>'+label+'</span>'+(val?'<b>'+esc(val)+'</b>':'<b class="wait">'+(s.ph===n?'← 現在掃這個':'尚未掃描')+'</b>')+(val&&derived?'<u>'+esc(derived)+'</u>':'')+'</div>';
+      }
+      return '<div class="card cur"><h2><i>1</i>RUN CARD</h2>'+
+        row(1,'WIP LOT',s.wip,'前段 '+wipPrefix(s.wip))+row(2,'刻號',s.eng,'→ '+engraveNumber(s.eng))+'</div>'+
+        '<div class="card'+(s.ph>2?' cur':'')+'"><h2><i>2</i>WAFER</h2>'+
+        row(3,'LOT NO',norm(s.lot))+row(4,'WF ID',s.wf)+'</div>';
+    }
+  };
+}
+
+/* ---------- 廠內IC測試比對:RUN CARD ↔ 黑箱條碼 ---------- */
+function modeIC(){
+  var s;
+  function reset(){ s={ph:1,sub:'lot',rcLot:[],rcQty:[],bbLot:[],bbQty:[]}; $('deduct').value=''; $('override').value=''; }
+  function validRc(v){ v=(v||'').trim(); var i=v.indexOf('-'); return i>0 && i<v.length-1; }
+  function lotPrefix(v){ v=(v||'').trim(); var i=v.indexOf('-'); return i===-1?v:v.slice(0,i); }
+  function parseBB(v){
+    v=(v||'').trim();
+    var m=v.match(/[^A-Za-z0-9\-]/); if(!m) return null;       /* 第一個不是英數字、也不是 "-" 的字元當分隔符號 */
+    var p=v.split(m[0]); if(p.length<3) return null;
+    var partNo=p[0].trim(), lot=p[1].trim(), q=p[2].trim().match(/^[0-9]+/);
+    if(partNo===''||lot===''||!q) return null;
+    return {partNo:partNo,lot:lot,qty:q[0]};
+  }
+  function adj(){
+    var d=$('deduct').value.trim(), o=$('override').value.trim();
+    var hasO=o!==''&&isQty(o), dv=(d!==''&&isQty(d))?parseInt(d,10):0, sum=sumQty(s.bbQty);
+    return {hasO:hasO,ov:hasO?parseInt(o,10):null,dv:dv,dRaw:d,sum:sum,after:hasO?parseInt(o,10):sum-dv};
+  }
+  function mismatch(expected,scanned){
+    var sum=sumQty(s.bbQty), rcSorted=sortAlpha(s.rcLot);
+    finish(M.ic,false,[rcSorted.join('/'),String(sumQty(s.rcQty)),expected,String(sum),'0','',String(sum)],[
+      {label:'先前掃描批號',value:expected,ok:true},
+      {label:'本次掃描批號',value:scanned,ok:false}
+    ]);
+  }
+  function compare(){
+    var rcSorted=sortAlpha(s.rcLot), rcSum=sumQty(s.rcQty), bbLot=s.bbLot[0]||'', a=adj();
+    var lotMatch=rcSorted.length>0 && bbLot!=='' && rcSorted.every(function(v){ return v===bbLot; });
+    var qtyMatch=rcSum===a.after;
+    finish(M.ic,lotMatch&&qtyMatch,[rcSorted.join('/'),String(rcSum),bbLot,String(a.sum),(!a.hasO&&a.dRaw!=='')?String(a.dv):'0',a.hasO?String(a.ov):'',String(a.after)],[
+      {label:'RUN CARD批號(排序後)',value:rcSorted.join('/')||'(空白)',ok:true},
+      {label:'黑箱批號',value:bbLot||'(空白)',ok:lotMatch},
+      {label:'RUN CARD數量加總',value:String(rcSum),ok:true},
+      {label:'黑箱原始加總',value:String(a.sum),ok:true},
+      {label:a.hasO?'單次改量':'單次扣除',value:a.hasO?String(a.ov):String(a.dv),ok:true},
+      {label:'黑箱最終數量',value:String(a.after),ok:qtyMatch}
+    ]);
+  }
+  reset();
+  return {
+    id:'ic', name:'廠內IC測試比對', pdf:'廠內IC測試比對 比對紀錄',
+    cols:['RUN CARD批號(排序後)','RUN CARD數量加總','黑箱批號(排序後)','黑箱原始加總','單次扣除','單次改量','黑箱最終數量'],
+    reset:reset, nsteps:2, stepNo:function(){ return s.ph; },
+    step:function(){
+      if(s.ph===1 && s.sub==='lot') return {key:'rcLot',kind:'rcLot',name:'RUN CARD 批號',hint:'格式「批號-流水碼」，取前段；全部掃完按「RUN CARD 掃完了」',ex:'A1B23-001',
+        cam:function(t){ return validRc(t) && !parseBB(t) && t.length<=40; },
+        submit:function(t){ if(!validRc(t)) return {err:'批號格式需為「批號-流水碼」'}; var l=lotPrefix(t).toUpperCase(); s.rcLot.push(l); s.sub='qty'; return {msg:'RUN CARD 批號 '+l}; }};
+      if(s.ph===1) return {key:'rcQty',kind:'qty',name:'RUN CARD 數量',hint:'接著掃（或輸入）這張 RUN CARD 的數量',ex:'100',num:true,cam:function(t){ return isQty(t) && t.length<=7; },
+        submit:function(t){ if(!isQty(t)) return {err:'數量只能是數字'}; s.rcQty.push(t.trim()); s.sub='lot'; return {msg:'數量 '+t.trim()+'，累計 '+sumQty(s.rcQty)}; }};
+      return {key:'bb',kind:'bb',name:'黑箱條碼',hint:'格式「料號?批號?數量」，可連續掃多箱；掃完按「完成並比對」',ex:'P001?A1B23?100',
+        cam:function(t){ return !!parseBB(t); },
+        submit:function(t){
+          var p=parseBB(t); if(!p) return {err:'黑箱條碼格式不符（料號、批號、數量）'};
+          var lot=p.lot.toUpperCase();
+          if(s.bbLot.length>0 && lot!==s.bbLot[0]){ mismatch(s.bbLot[0],lot); return {done:true}; }   /* 批號和第一箱不同:立即判定錯誤 */
+          s.bbLot.push(lot); s.bbQty.push(p.qty);
+          return {msg:'黑箱 '+lot+' × '+p.qty+'，共 '+s.bbLot.length+' 箱'};
+        }};
+    },
+    main:function(){
+      if(s.ph===1) return {label:'RUN CARD 掃完了',enabled:s.rcLot.length>0&&s.sub==='lot',fn:function(){ s.ph=2; say('RUN CARD 共 '+sumQty(s.rcQty)+'，接著掃黑箱條碼','ok'); }};
+      return {label:'完成並比對',enabled:s.bbLot.length>0,fn:compare};
+    },
+    del:function(k,i){
+      if(k==='rc'&&s.ph===1){ s.rcLot.splice(i,1); if(i<s.rcQty.length) s.rcQty.splice(i,1); s.sub=s.rcLot.length>s.rcQty.length?'qty':'lot'; }
+      if(k==='bb'&&s.ph===2){ s.bbLot.splice(i,1); s.bbQty.splice(i,1); }
+    },
+    data:function(){
+      var rcSum=sumQty(s.rcQty), a=adj(), h;
+      h='<div class="card'+(s.ph===1?' cur':'')+'"><h2><i>1</i>RUN CARD<em>'+(s.rcLot.length?s.rcLot.length+' 張':'')+'</em></h2>';
+      if(!s.rcLot.length) h+='<div class="chips"><span>尚未掃描批號</span></div>';
+      s.rcLot.forEach(function(l,i){
+        h+='<div class="pair"><b>'+esc(l)+'</b><u>'+(i<s.rcQty.length?esc(s.rcQty[i]):'<span style="color:var(--amber)">待掃數量</span>')+'</u>'+(s.ph===1?'<button type="button" data-del="rc:'+i+'">×</button>':'')+'</div>';
+      });
+      h+='<div class="sum"><span>RUN CARD 數量加總</span><b>'+rcSum+'</b></div></div>';
+      if(s.ph===2){
+        h+='<div class="card cur"><h2><i>2</i>黑箱條碼<em>'+(s.bbLot.length?s.bbLot.length+' 箱':'')+'</em></h2>';
+        if(!s.bbLot.length) h+='<div class="chips"><span>尚未掃描黑箱條碼</span></div>';
+        s.bbLot.forEach(function(l,i){ h+='<div class="pair"><b>'+esc(l)+'</b><u>'+esc(s.bbQty[i])+'</u><button type="button" data-del="bb:'+i+'">×</button></div>'; });
+        h+='<div class="sum"><span>黑箱原始加總'+(a.hasO?'　→ 改量':(a.dv?'　− 扣除 '+a.dv:''))+'</span><b>'+a.sum+'</b></div>'+
+           '<div class="sum"><span>黑箱最終數量（RUN CARD '+rcSum+'）</span><b class="'+(s.bbLot.length?(a.after===rcSum?'eq':'ne'):'')+'">'+a.after+'</b></div></div>';
+      }
+      return h;
+    }
+  };
+}
+
+var M={out:modeOut(), 'in':modeIn(), ic:modeIC()};
+var cur=M.out, busy=false, logs={out:[],'in':[],ic:[]};
+
+/* ---------- 提示音 / 震動 ----------
+   iPhone:Safari 沒有震動功能,只能靠聲音與畫面;聲音必須在使用者點過畫面後才能播,
+          所以第一次點畫面時就先把聲音準備好(否則鏡頭讀到時第一聲會是靜音)。
+          支援的 iOS 版本會把聲音設成「播放」類型,靜音模式下錯誤提示仍聽得到。
+   Android:聲音 + 震動。 */
+var AC=null;
+function unlockAudio(){
+  try{
+    if(navigator.audioSession && navigator.audioSession.type!=='playback') navigator.audioSession.type='playback';
+  }catch(e){}
+  try{
+    AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+    if(AC.state!=='running'){
+      AC.resume();
+      var b=AC.createBuffer(1,1,22050), src=AC.createBufferSource(); src.buffer=b; src.connect(AC.destination); src.start(0);
+    }
+  }catch(e){}
+}
+['touchend','click','keydown'].forEach(function(ev){ document.addEventListener(ev,unlockAudio,true); });
+function tone(f,dur,when,vol){
+  try{
+    if(!AC) return;
+    if(AC.state==='suspended') AC.resume();
+    var o=AC.createOscillator(), g=AC.createGain(), t=AC.currentTime+(when||0);
+    o.type='square'; o.frequency.value=f; g.gain.value=vol||.14; o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+dur);
+  }catch(e){}
+}
+function beep(kind){
+  try{
+    if(PS) PS.beep(kind,{sound:false});
+    else if(navigator.vibrate) navigator.vibrate(kind===true?60:kind==='done'?[60,50,120]:[90,60,90]);
+  }catch(e){}
+  if(kind===true) tone(1320,.08);
+  else if(kind==='done'){ tone(1320,.08); tone(1760,.16,.11); }
+  else{ tone(330,.26,0,.2); tone(330,.26,.36,.2); }
+}
+var noteT=0;
+function say(t,cls,ms){
+  var n=$('note'); n.textContent=t||''; n.className=cls||''; clearTimeout(noteT);
+  if(t) noteT=setTimeout(function(){ n.textContent=''; n.className=''; },ms||4000);
+}
+var flashT=0;
+function flashFrame(ok){ var f=$('frame'); f.className=ok?'ok':'ng'; clearTimeout(flashT); flashT=setTimeout(function(){ f.className=''; },350); }
+
+/* ---------- 收一筆資料(相機、手動輸入、藍牙條碼槍都走這裡) ---------- */
+function feed(text){
+  if(busy) return null;
+  var st=cur.step(); text=String(text==null?'':text).trim();
+  if(!st || !text) return null;
+  var r=st.submit(text)||{};
+  if(r.err){ beep(false); flashFrame(false); say('✕ '+r.err,'bad',5000); var i=$('minp'); i.classList.add('bad'); setTimeout(function(){ i.classList.remove('bad'); },700); }
+  else if(!r.done){ beep(true); flashFrame(true); say('✓ '+r.msg,'ok'); }
+  render();
+  return r;
+}
+/* 空白送出(手動輸入或條碼槍只按 Enter)= 按底部主按鈕,和電腦版一樣 */
+function pressMain(){ var mb=cur.main(); if(mb && mb.enabled && !busy){ mb.fn(); if(!busy) render(); return true; } return false; }
+
+/* ---------- 比對結果 ---------- */
+var errCb=null, errAt=0;
+function finish(mode,ok,cells,detail){
+  logs[mode.id].unshift({t:nowStr(),c:cells,ok:ok});
+  if(logs[mode.id].length>500) logs[mode.id].length=500;
+  store('wm_log_'+mode.id,logs[mode.id]);
+  busy=true; if(scanner) scanner.pause(true);
+  if(ok){
+    beep('done'); $('okflash').classList.add('show');
+    setTimeout(function(){ $('okflash').classList.remove('show'); mode.reset(); resume(); say('✓ 上一筆比對相符','ok'); },900);
+  }else{
+    beep(false); setTimeout(function(){ beep(false); },800);
+    $('errDetail').innerHTML=detail.map(function(l){ return '<div><span>'+esc(l.label)+'</span><b class="'+(l.ok?'ok':'bad')+'">'+esc(l.value)+'</b></div>'; }).join('');
+    $('err').classList.add('show'); errAt=Date.now();
+    errCb=function(){ mode.reset(); clearSeen(); resume(); say('已清除，請重新掃描這一筆',''); };
+  }
+  renderLog();
+}
+function resume(){ busy=false; if(scanner && !typing()) scanner.pause(false); render(); }
+$('errOk').addEventListener('click',function(){ $('err').classList.remove('show'); var f=errCb; errCb=null; if(f) f(); });
+
+/* ---------- 畫面 ---------- */
+function render(){
+  var st=cur.step(), n=cur.stepNo(), h='', i, mb=cur.main(), inp=$('minp');
+  for(i=1;i<=cur.nsteps;i++) h+='<span class="'+(i<n?'done':i===n?'act':'')+'"></span>';
+  $('steps').innerHTML=h;
+  $('askname').textContent=st?st.name:'';
+  $('askhint').textContent=st?st.hint:'';
+  inp.placeholder=st?'手動輸入，例：'+st.ex:'';
+  if(st&&st.max) inp.maxLength=st.max; else inp.removeAttribute('maxlength');
+  inp.setAttribute('inputmode',st&&st.num?'numeric':'text');
+  $('data').innerHTML=cur.data();
+  $('icopt').hidden=cur.id!=='ic';
+  $('bMain').hidden=!mb;
+  if(mb){ $('bMain').textContent=mb.label; $('bMain').disabled=!mb.enabled; }
+  Array.prototype.forEach.call($('tabs').children,function(b){ b.className=b.getAttribute('data-m')===cur.id?'on':''; });
+}
+function renderLog(){
+  var L=logs[cur.id], okN=L.filter(function(r){ return r.ok; }).length;
+  $('logcount').textContent=L.length?'Correct '+okN+'・Error '+(L.length-okN):'';
+  $('log').innerHTML=L.length?L.map(function(r){
+    return '<div class="rec'+(r.ok?'':' bad')+'"><header><span>'+esc(r.t)+'</span><b>'+(r.ok?'Correct':'Error')+'</b></header>'+
+      cur.cols.map(function(c,i){ return '<div><span>'+esc(c)+'</span><u>'+esc(r.c[i])+'</u></div>'; }).join('')+'</div>';
+  }).join(''):'<div class="empty">尚無比對紀錄</div>';
+}
+function setMode(id){
+  if(!M[id]) return;
+  cur=M[id]; store('wm_mode',id);
+  var f=store('wm_frame2_'+id); frameName=(PS && PS.FRAMES[f])?f:'R';
+  say(''); render(); renderLog(); layoutFrame();
+}
+
+/* =====================================================================
+   相機(相機與解碼由共用模組 scanner.js 負責,這裡決定「收哪一個」)
+   1. 只收「目前這一步」格式相符的條碼,同一張標籤上其他條碼略過。
+   2. 同一張標籤的 LOT NO 與刻號(QR Code)在同一格畫面讀到就一起收,不用分兩次對準。
+   3. 刻號、數量這類純數字:QR Code 優先;只讀到純數字的一維條碼時,要連續穩定讀到一小段時間才收
+      (WAFER 標籤上的 QTY 條碼也是純數字,避免誤收成刻號)。這一步曾經用 QR Code 收過,一維條碼要等更久。
+   4. 剛收過的條碼要離開鏡頭 HOLD 毫秒才會再收,避免同一張重複加入。
+   ===================================================================== */
+var scanner=null, frameName='R', stale={}, lastSeen={}, lastTake=0, HOLD=2500, GAP=600, TOOLS_H=50;
+var FRAME_CYCLE=['R','L','M','S','B'];
+var learn2d=store('wm_learn2d')||{}, pend1d=null, lastAny=0, lotMiss=0, hintAt=0, autoZoomed=false, frameN=0;
+function isStale(t,now){ return !!stale[t] && now-(lastSeen[t]||0)<HOLD; }
+function clearSeen(){ stale={}; lastSeen={}; pend1d=null; }
+function digitKind(k){ return k==='eng'||k==='qty'; }
+function typing(){ return document.body.classList.contains('typing'); }
+function frameRect(cw,ch){ return PS.frameRect(frameName,cw,Math.max(40,ch-TOOLS_H)); }
+function layoutFrame(){
+  if(!PS) return;
+  $('shape').textContent='框：'+(PS.FRAME_LABEL[frameName]||'');
+  var c=$('cam'); if(c.classList.contains('off') || !c.clientHeight) return;
+  var r=frameRect(c.clientWidth,c.clientHeight), f=$('frame').style;
+  f.left=r.x+'px'; f.top=r.y+'px'; f.width=r.w+'px'; f.height=r.h+'px';
+}
+function camMsg(t){ $('cammsg').textContent=t||''; }
+function take(t,two,st){
+  var now=Date.now();
+  stale[t]=1; lastSeen[t]=now; lastTake=now; pend1d=null;
+  if(two && st && digitKind(st.kind) && !learn2d[cur.id+':'+st.key]){ learn2d[cur.id+':'+st.key]=1; store('wm_learn2d',learn2d); }
+  return feed(t);
+}
+/* scanner.js 的 accept:告訴解碼器哪些是要的(內嵌解碼器找到要的就不再往下找,省時間) */
+function wanted(t){
+  if(busy) return false;
+  t=String(t||'').trim(); var st=cur.step(), now=Date.now(); if(!st) return false;
+  return (st.cam(t) && !isStale(t,now)) || (!!st.pair && st.pair.cam(t) && !isStale(t,now));
+}
+function onCodes(ds){
+  var now=Date.now(), list=[], seen={};
+  ds.forEach(function(d){ var t=String(d.text||'').trim(); if(t && !seen[t]){ seen[t]=1; list.push({t:t,two:!!d.two}); } });
+  if(!list.length) return;
+  lastAny=now;
+  list.forEach(function(x){ lastSeen[x.t]=now; });
+  if(++frameN%300===0){ for(var k in lastSeen) if(now-lastSeen[k]>60000){ delete lastSeen[k]; delete stale[k]; } }
+  if(busy || typing() || now-lastTake<GAP) return;
+  var st=cur.step(); if(!st) return;
+
+  /* 同一張標籤一次收兩個:畫面中這一步的條碼只有一個、下一步的新條碼也只有一個時才配對(避免和隔壁標籤配錯) */
+  if(st.pair){
+    var leads=list.filter(function(x){ return st.cam(x.t); });
+    var parts=list.filter(function(x){ return st.pair.cam(x.t) && !st.cam(x.t) && !isStale(x.t,now) && (x.two || !digitKind(st.pair.kind)); });
+    if(leads.length===1 && parts.length===1){
+      var r=take(leads[0].t,leads[0].two,st);
+      if(r && !r.err && !r.done && !busy){ var st2=cur.step(); if(st2 && st2.cam(parts[0].t)) take(parts[0].t,parts[0].two,st2); }
+      return;
+    }
+  }
+
+  var cands=list.filter(function(x){ return st.cam(x.t) && !isStale(x.t,now); });
+  if(!cands.length){
+    pend1d=null;
+    /* 讀得到 QR Code 卻一直讀不到 LOT NO(細的一維條碼):提示靠近,有變焦的手機自動放大一次 */
+    if(st.kind==='lot' && list.some(function(x){ return x.two; }) && !list.some(function(x){ return st.cam(x.t); })){
+      if(!lotMiss) lotMiss=now;
+      else if(now-lotMiss>1500 && now-hintAt>4000){ hintAt=now; lotHint(); }
+    }else lotMiss=0;
+    return;
+  }
+  lotMiss=0;
+  var c=cands[0];
+  if(digitKind(st.kind)){
+    var two=cands.filter(function(x){ return x.two; })[0];
+    if(two) c=two;
+    /* 畫面裡有刻號格式的 QR Code(只是已掃過):旁邊的純數字一維條碼是數量,不收 */
+    else if(st.kind==='eng' && list.some(function(x){ return x.two && isEngrave(x.t); })){ pend1d=null; return; }
+    else{
+      var need=learn2d[cur.id+':'+st.key]?1500:450;
+      if(!pend1d || pend1d.t!==c.t || now-pend1d.last>600){ pend1d={t:c.t,first:now,last:now}; return; }
+      pend1d.last=now;
+      if(now-pend1d.first<need) return;
+    }
+  }
+  take(c.t,c.two,st);
+}
+function lotHint(){
+  var z=scanner&&scanner.caps().zoom;
+  if(z && !autoZoomed && scanner.zoomAt()<1.5){
+    autoZoomed=true;
+    setZoom(Math.min(2,z.max));
+    say('讀到 QR Code，LOT NO 條碼較細：已自動放大 2 倍，請保持對準','warn',5000);
+  }else say(IOS?'LOT NO 條碼較細讀不到：保持 15–20 公分（太近 iPhone 對不到焦），用「放大」讓條碼變大':'LOT NO 條碼較細讀不到：靠近一點讓條碼填滿框，或按「放大」','warn',5000);
+}
+function setZoom(z){
+  return scanner.zoom(z).then(function(v){
+    v=Math.round(v*10)/10; store('wm_zoom',v);
+    $('zoom').textContent=v>1.05?'放大 '+v+'x':'放大'; $('zoom').className=v>1.05?'on':'';
+  });
+}
+/* 一直沒讀到任何條碼:依平台提示 */
+setInterval(function(){
+  if(!scanner || !scanner.isRunning() || busy || typing()) return;
+  var now=Date.now();
+  if(now-lastAny>6000 && now-hintAt>12000){
+    hintAt=now;
+    say(IOS?'讀不到？iPhone 太近會對不到焦：離標籤 15–20 公分再按「放大」；反光就換個角度，還是不行用「拍照讀取」'
+           :'讀不到？靠近一點讓條碼在框內變大，或按「放大」；反光就換個角度，還是不行用「拍照讀取」','warn',6000);
+  }
+},1000);
+
+function engName(){
+  if(!scanner || !scanner.isRunning()) return '';
+  var e=scanner.engine();
+  if(e==='native') return window.__ENG.poly?'zxing-wasm'+(IOS?'（iPhone）':''):'手機內建辨識';
+  return e==='zxing'?'ZXing（備援，較慢）':'';
+}
+function makeScanner(){
+  var poly=!!window.__ENG.poly;
+  scanner=PS.create({
+    video:$('video'), box:$('cam'), formats:'all', multi:false,
+    /* iPhone(zxing-wasm):與內嵌解碼器每 2 格輪流,補讀模糊、對比差的條碼(與收料核對相同的設定) */
+    hybrid:poly, need1d:poly?function(){ return false; }:undefined,
+    frame:function(cw,ch){ return frameRect(cw,ch); },
+    accept:wanted,
+    onFrame:onCodes,
+    onState:function(s){
+      if(s==='live'){
+        $('cam').classList.remove('off'); layoutFrame();
+        var c=scanner.caps();
+        $('torch').hidden=!c.torch; $('torch').className='';
+        $('zoom').hidden=!c.zoom; $('zoom').className=''; $('zoom').textContent='放大';
+        clearSeen(); lastAny=Date.now(); autoZoomed=false;
+        var z=store('wm_zoom');
+        if(c.zoom && z>1.05) setZoom(Math.min(z,c.zoom.max));
+        if(typing()) scanner.pause(true);
+      }
+      if(s==='stopped') $('cam').classList.add('off');
+      foot();
+    },
+    onError:function(msg,name){
+      camMsg(name==='nomedia'?'這個開啟方式無法使用相機。相機掃描需要從 https 網址開啟（例如 GitHub Pages）；現在仍可用「拍照讀取」或手動輸入。':
+        (name==='NotAllowedError'||name==='SecurityError')?(IOS?'相機權限被拒絕。請到「設定 → Safari → 相機」改成「允許」（或點網址列「大小」→ 網站設定），再重新整理。':'相機權限被拒絕。請點網址列左側的圖示 → 權限 → 相機 → 允許，再重新整理。'):msg);
+    }
+  });
+}
+function withScanner(fn){
+  if(!PS) return;
+  (window.__ENG_READY||Promise.resolve()).then(function(){ if(!scanner) makeScanner(); fn(); });
+}
+if(PS){
+  $('camstart').addEventListener('click',function(){ camMsg(''); withScanner(function(){ scanner.start(); }); });
+  $('camstop').addEventListener('click',function(){ if(scanner) scanner.stop(); });
+  $('shape').addEventListener('click',function(){
+    frameName=FRAME_CYCLE[(FRAME_CYCLE.indexOf(frameName)+1)%FRAME_CYCLE.length];
+    store('wm_frame2_'+cur.id,frameName); layoutFrame();
+  });
+  $('torch').addEventListener('click',function(){ scanner.torch().then(function(on){ $('torch').className=on?'on':''; }); });
+  $('zoom').addEventListener('click',function(){
+    var c=scanner.caps().zoom; if(!c) return;
+    var steps=[1,2,3].filter(function(z){ return z<=c.max+.01; }), now=Math.round(scanner.zoomAt());
+    setZoom(steps[(steps.indexOf(now)+1)%steps.length]||1);
+  });
+  $('photo').addEventListener('click',function(){ $('file').value=''; $('file').click(); });
+  $('file').addEventListener('change',function(){
+    var f=this.files&&this.files[0]; if(!f) return;
+    camMsg('解碼中…');
+    withScanner(function(){
+      scanner.decodeImage(f).then(function(ds){
+        camMsg('');
+        var st=cur.step(), list=ds.map(function(d){ return {t:String(d.text).trim(),two:!!d.two}; });
+        var hit=st && list.filter(function(x){ return st.cam(x.t); });
+        if(hit && hit.length){
+          if(digitKind(st.kind)) hit.sort(function(a,b){ return b.two-a.two; });
+          var r=take(hit[0].t,hit[0].two,st);
+          /* 照片裡同一張標籤的下一個條碼也一起收 */
+          var st2=cur.step();
+          if(r && !r.err && !r.done && st.pair && st2){ var p=list.filter(function(x){ return x.t!==hit[0].t && st2.cam(x.t); }).sort(function(a,b){ return b.two-a.two; })[0]; if(p) take(p.t,p.two,st2); }
+        }else{ beep(false); say(ds.length?'✕ 照片裡的條碼不是現在要掃的欄位':'✕ 這張照片讀不到條碼，請靠近一點再拍','bad'); }
+      },function(e){ camMsg((e&&e.message)||'無法讀取這張照片'); });
+    });
+  });
+  window.addEventListener('resize',layoutFrame);
+  window.addEventListener('orientationchange',function(){ setTimeout(layoutFrame,300); });
+}else{
+  $('camstart').disabled=true; $('photo').disabled=true;
+  camMsg('找不到共用掃描模組 scanner.js（需和這個檔案放在同一個資料夾）。目前只能手動輸入。');
+}
+
+/* ---------- 事件 ---------- */
+$('tabs').addEventListener('click',function(e){ var b=e.target.closest('button[data-m]'); if(b && !busy) setMode(b.getAttribute('data-m')); });
+$('mform').addEventListener('submit',function(e){
+  e.preventDefault(); var i=$('minp'), v=i.value; i.value='';
+  if(v.trim()==='') pressMain(); else feed(v);
+});
+$('minp').addEventListener('compositionend',function(){ if(/[㐀-鿿豈-﫿]/.test(this.value)){ this.value=''; say('✕ 請切換成英數輸入','bad'); } });
+$('data').addEventListener('click',function(e){
+  var b=e.target.closest('[data-del]'); if(!b || busy) return;
+  var p=b.getAttribute('data-del').split(':'); cur.del(p[0],+p[1]); render();
+});
+$('bMain').addEventListener('click',pressMain);
+['deduct','override'].forEach(function(id){
+  $(id).addEventListener('input',function(){ var v=this.value.replace(/[^0-9]/g,''); if(v!==this.value) this.value=v; if(cur.id==='ic') $('data').innerHTML=cur.data(); });
+});
+/* 會清掉資料的按鈕:按兩次才生效 */
+function twoStep(btn,label,fn){
+  var armed=false, t=0;
+  btn.addEventListener('click',function(){
+    if(busy) return;
+    if(!armed){ armed=true; btn.textContent='再按一次確認'; btn.classList.add('arm'); t=setTimeout(function(){ armed=false; btn.textContent=label; btn.classList.remove('arm'); },3000); return; }
+    clearTimeout(t); armed=false; btn.textContent=label; btn.classList.remove('arm'); fn();
+  });
+}
+$('bReset').addEventListener('click',function(){ if(busy) return; cur.reset(); clearSeen(); say('已清除這一筆',''); render(); });
+twoStep($('bClear'),'清空',function(){ logs[cur.id]=[]; store('wm_log_'+cur.id,[]); renderLog(); });
+$('bPdf').addEventListener('click',function(){ exportPdf(cur.pdf,['時間'].concat(cur.cols,['結果']),logs[cur.id]); });
+
+/* 手動輸入時把相機收起來並暫停掃描,鍵盤上方看得到輸入框與本筆資料 */
+var typeT=0;
+document.addEventListener('focusin',function(e){
+  if(e.target.tagName==='INPUT' && e.target.type==='text'){ clearTimeout(typeT); document.body.classList.add('typing'); if(scanner) scanner.pause(true); }
+});
+document.addEventListener('focusout',function(){
+  clearTimeout(typeT);
+  typeT=setTimeout(function(){
+    if(document.activeElement && document.activeElement.tagName==='INPUT') return;
+    document.body.classList.remove('typing'); if(scanner && !busy) scanner.pause(false); layoutFrame();
+  },200);
+});
+
+/* 藍牙條碼槍(鍵盤模式):沒有點輸入框時也能直接掃;只按 Enter = 按主按鈕。錯誤畫面出現後 0.25 秒按 Enter = 確認 */
+var kb='', kbT=0;
+document.addEventListener('keydown',function(e){
+  if($('err').classList.contains('show')){
+    if(e.key==='Enter'){ e.preventDefault(); if(Date.now()-errAt>=250) $('errOk').click(); }
+    return;
+  }
+  var t=e.target; if(t && (t.tagName==='INPUT'||t.tagName==='TEXTAREA'||t.isContentEditable)) return;
+  if(e.ctrlKey||e.metaKey||e.altKey) return;
+  if(e.key==='Enter'){ e.preventDefault(); var v=kb; kb=''; if(v.trim()) feed(v); else pressMain(); return; }
+  if(e.key && e.key.length===1){ kb+=e.key; clearTimeout(kbT); kbT=setTimeout(function(){ kb=''; },1500); }
+});
+
+/* ---------- 匯出 PDF(只匯出 Correct 的紀錄;在手機內產生檔案,不經過任何伺服器)
+   全部同步產生,讓 iPhone 能在同一次點擊內叫出「分享/儲存到檔案」(主畫面 App 模式下直接下載會卡在預覽頁)。
+   Android 直接下載到「下載」資料夾。 ---------- */
+function buildPdf(pages){
+  var parts=[], off=0, offs=[];
+  function push(x){ parts.push(x); off+=typeof x==='string'?x.length:x.byteLength; }
+  function obj(n){ offs[n]=off; push(n+' 0 obj\n'); }
+  push('%PDF-1.4\n');
+  obj(1); push('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  obj(2); push('<< /Type /Pages /Kids ['+pages.map(function(p,i){ return (3+3*i)+' 0 R'; }).join(' ')+'] /Count '+pages.length+' >>\nendobj\n');
+  pages.forEach(function(p,i){
+    var n=3+3*i, w=(p.w*72/96).toFixed(2), h=(p.h*72/96).toFixed(2), c='q '+w+' 0 0 '+h+' 0 0 cm /Im0 Do Q';
+    obj(n);   push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+w+' '+h+'] /Resources << /XObject << /Im0 '+(n+2)+' 0 R >> >> /Contents '+(n+1)+' 0 R >>\nendobj\n');
+    obj(n+1); push('<< /Length '+c.length+' >>\nstream\n'+c+'\nendstream\nendobj\n');
+    obj(n+2); push('<< /Type /XObject /Subtype /Image /Width '+p.w+' /Height '+p.h+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+p.bytes.byteLength+' >>\nstream\n');
+    push(p.bytes); push('\nendstream\nendobj\n');
+  });
+  var count=3+3*pages.length, xs=off, x='xref\n0 '+count+'\n0000000000 65535 f \n';
+  for(var k=1;k<count;k++) x+=('0000000000'+offs[k]).slice(-10)+' 00000 n \n';
+  push(x); push('trailer\n<< /Size '+count+' /Root 1 0 R >>\nstartxref\n'+xs+'\n%%EOF');
+  return new Blob(parts,{type:'application/pdf'});
+}
+function jpegBytes(cv){
+  var b64=cv.toDataURL('image/jpeg',.92).split(',')[1], bin=atob(b64), u=new Uint8Array(bin.length);
+  for(var i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+  return u;
+}
+function deliver(blob,name,n){
+  function download(){
+    var url=URL.createObjectURL(blob), a=document.createElement('a');
+    a.href=url; a.download=name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); },10000);
+    say('✓ 已匯出 '+n+' 筆 Correct 紀錄','ok');
+  }
+  if(IOS && window.File && navigator.canShare){
+    try{
+      var file=new File([blob],name,{type:'application/pdf'});
+      if(navigator.canShare({files:[file]})){
+        navigator.share({files:[file]}).then(function(){ say('✓ 已匯出 '+n+' 筆 Correct 紀錄','ok'); },function(e){ if(!e || e.name!=='AbortError') download(); });
+        return;
+      }
+    }catch(e){}
+  }
+  download();
+}
+function exportPdf(title,headers,recs){
+  var rows=recs.filter(function(r){ return r.ok; }).map(function(r){ return [r.t].concat(r.c,['Correct']); });
+  if(!rows.length){ beep(false); say('✕ 目前沒有 Correct 的比對紀錄可以匯出','bad'); return; }
+  try{
+    var meta='匯出時間：'+nowStr()+'　共 '+rows.length+' 筆', font='"PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif';
+    var fT='bold 26px '+font, fM='15px '+font, fH='bold 16px '+font, fC='15px '+font;
+    var padX=14, rowH=34, headH=38, out=28, PER=40;
+    var ms=document.createElement('canvas').getContext('2d');
+    ms.font=fH; var cw=headers.map(function(h){ return ms.measureText(h).width; });
+    ms.font=fC; rows.forEach(function(r){ r.forEach(function(c,i){ var w=ms.measureText(c).width; if(w>cw[i]) cw[i]=w; }); });
+    cw=cw.map(function(w){ return Math.ceil(w)+padX*2; });
+    var tw=cw.reduce(function(a,b){ return a+b; },0);
+    ms.font=fT; var W=Math.ceil(Math.max(tw,ms.measureText(title).width+120)+out*2), total=Math.ceil(rows.length/PER), pages=[];
+    for(var p=0;p<total;p++){
+      var part=rows.slice(p*PER,(p+1)*PER), top=out+40+26+14, H=top+headH+part.length*rowH+out;
+      var cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+      var c=cv.getContext('2d'), y=out, x;
+      c.fillStyle='#fff'; c.fillRect(0,0,W,H); c.textBaseline='top';
+      c.fillStyle='#111'; c.font=fT; c.fillText(title,out,y);
+      if(total>1){ c.font=fM; c.fillStyle='#555'; c.textAlign='right'; c.fillText((p+1)+' / '+total,W-out,y+8); c.textAlign='left'; }
+      y+=40; c.fillStyle='#555'; c.font=fM; c.fillText(meta,out,y); y=top;
+      c.fillStyle='#eee'; c.fillRect(out,y,tw,headH); c.fillStyle='#111'; c.font=fH; x=out;
+      headers.forEach(function(h,i){ c.fillText(h,x+padX,y+(headH-16)/2); x+=cw[i]; });
+      y+=headH; c.font=fC;
+      part.forEach(function(r,ri){
+        if(ri%2===1){ c.fillStyle='#f7f7f7'; c.fillRect(out,y,tw,rowH); }
+        var cx=out;
+        r.forEach(function(cell,ci){ c.fillStyle=ci===r.length-1?'#0e8a72':'#222'; c.fillText(cell,cx+padX,y+(rowH-15)/2); cx+=cw[ci]; });
+        y+=rowH;
+      });
+      c.strokeStyle='#ccc'; c.lineWidth=1; c.strokeRect(out+.5,top+.5,tw,headH+part.length*rowH);
+      pages.push({w:W,h:H,bytes:jpegBytes(cv)});
+      cv.width=cv.height=1;      /* iPhone 的畫布記憶體有限:用完馬上釋放 */
+    }
+    var d=new Date(), stamp=d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes());
+    deliver(buildPdf(pages),title.replace(/[\\/:*?"<>|]/g,'_')+'_'+stamp+'.pdf',rows.length);
+  }catch(e){ beep(false); say('✕ 匯出失敗：'+((e&&e.message)||''),'bad'); }
+}
+
+/* ---------- 啟動 ---------- */
+function foot(){
+  var e=engName();
+  $('foot').innerHTML='資料只留在這支手機，不會上傳'+(PS?'　・　共用掃描模組 v'+esc(PS.version):'')+(e?'<br>辨識引擎：'+esc(e):'')+
+    (IOS?'<br>iPhone 建議「加入主畫面」使用：比對紀錄才不會被 Safari 自動清除':'');
+}
+['out','in','ic'].forEach(function(id){ var L=store('wm_log_'+id); if(Array.isArray(L)) logs[id]=L.filter(function(r){ return r && Array.isArray(r.c); }); });
+foot();
+setMode(M[store('wm_mode')]?store('wm_mode'):'out');
+/* 給自動測試與除錯用 */
+window.__wm={feed:feed,codes:onCodes,mode:function(){ return cur.id; },scanner:function(){ return scanner; }};
+/* 離線開啟:有網路時開過一次,之後沒網路也能開 */
+try{ if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){}
+})();
+</script>
+</body>
+</html>

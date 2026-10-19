@@ -1,6 +1,6 @@
-/* 手機工具:離線快取(掃描、儲位查詢、收料核對與共用掃描模組 scanner.js)。有網路時優先拿最新版並更新快取;沒網路或太慢就用快取。 */
-var CACHE='scan-rcv-20261019a';
-var FILES=['./','./index.html','./Location.html','./Receiving.html','./ScanTest.html','./scanner.js','./bd/barcode-detector.js','./bd/zxing_reader.wasm','./manifest.webmanifest','./icon.png'];
+/* 手機工具:離線快取(掃描、儲位查詢、收料核對、WAFER 比對與共用掃描模組 scanner.js)。有網路時優先拿最新版並更新快取;沒網路或太慢就用快取。 */
+var CACHE='scan-wm-20261019a';
+var FILES=['./','./index.html','./Location.html','./Receiving.html','./WaferMatch.html','./ScanTest.html','./scanner.js','./bd/barcode-detector.js','./bd/zxing_reader.wasm','./manifest.webmanifest','./icon.png'];
 self.addEventListener('install',function(e){
   e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(FILES); }).then(function(){ return self.skipWaiting(); }));
 });
