@@ -22,7 +22,7 @@
 (function(root){
 'use strict';
 var ZX=root.ZXing, doc=root.document;
-var VERSION='1.1.0';
+var VERSION='1.2.0';
 
 var F2D=['QR_CODE','DATA_MATRIX','AZTEC','PDF_417'];
 var LINEAR=['CODE_128','CODE_39','CODE_93','EAN_13','EAN_8','UPC_A','UPC_E','ITF','CODABAR'];
@@ -253,7 +253,8 @@ function create(o){
     var stopSingle=function(d){ return acc(d); };
     var stopMulti=o.enough?function(d,all){ acc(d); return !!o.enough(all); }:function(d){ acc(d); return false; };
 
-    if(S.native){
+    /* hybrid:內建辨識是 polyfill(iPhone)時,每 2 格讓內嵌解碼器跑一次,補讀模糊、對比差的條碼 */
+    if(S.native && !(o.hybrid && S.tickN%2===0)){
       /* 一張標籤多個條碼時,一維條碼可能橫擺也可能直擺:記住上次讀得到的方向,偶爾試另一個方向 */
       var rotN=multi?(ph===3?!S.rotPref:S.rotPref):false;
       var cn=draw(video,g.sx,g.sy,g.cw,g.ch,hi,rotN);
@@ -399,6 +400,8 @@ function create(o){
      frame    一開始的瞄準框:'L' 大 'M' 中 'S' 小 'R' 長方(預設) 'B' 橫條 'V' 直條
      frames   「框」按鈕可切換的框,例如 ['S','R'](不給 = 全部;只有一種時隱藏按鈕)
      onFrameChange function(框代號):使用者切換框時通知(可用來記住上次用的框)
+     need1d   function() → 是否在內建辨識之外再用內嵌解碼器補讀一維條碼(不給 = 自動)
+     hybrid   true:內建辨識(或 polyfill)與內嵌解碼器輪流用,每 2 格有 1 格改用內嵌解碼器
      accept   function(text, fmt) → 是否為要的條碼(不要的直接忽略,繼續找框內其他條碼)
      onScan   function(text, fmt) → 不回傳或回傳 true:收下
                                     回傳 false:不收;回傳文字:不收並顯示這段文字
@@ -478,7 +481,7 @@ function open(o){
     return true;
   }
   var sc=create({
-    video:video, box:cam, formats:o.formats||'all', multi:false, accept:o.accept, res:o.res,
+    video:video, box:cam, formats:o.formats||'all', multi:false, accept:o.accept, res:o.res, need1d:o.need1d, hybrid:o.hybrid,
     frame:function(cw,ch){ return frameRect(frameName,cw,ch); },
     onFrame:function(ds){
       if(closed) return;

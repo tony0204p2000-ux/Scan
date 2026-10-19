@@ -382,6 +382,20 @@ details.card[open] summary{margin-bottom:10px}
   </div>
 </div>
 
+<!-- iPhone(Safari)沒有內建條碼辨識:載入 BarcodeDetector polyfill(zxing-wasm),一張畫面可同時讀出多個條碼。
+     Android 有內建辨識時不會安裝,照常用手機內建的。解碼程式 bd/zxing_reader.wasm 放在同一個網站,不連外部網址。 -->
+<script>window.__HAD_NATIVE=('BarcodeDetector' in window);</script>
+<script src="bd/barcode-detector.js"></script>
+<script>
+(function(){
+  if(window.__HAD_NATIVE || !window.BarcodeDetectionAPI) return;
+  window.__POLY=true;
+  var opt={overrides:{locateFile:function(p,pre){ return /\.wasm$/.test(p)?new URL('bd/'+p,location.href).href:pre+p; }}};
+  try{ BarcodeDetectionAPI.prepareZXingModule(opt); }catch(e){}
+  /* 頁面開好後先在背景把解碼程式準備好,按掃描時就不用等 */
+  setTimeout(function(){ try{ var r=BarcodeDetectionAPI.prepareZXingModule({overrides:opt.overrides,fireImmediately:true}); if(r&&r.catch) r.catch(function(){}); }catch(e){} },1200);
+})();
+</script>
 <script src="scanner.js"></script>
 <script>
 (function(){
@@ -787,11 +801,13 @@ showSet();
 
 var hintT=0, lastRead=0, idleT=0;
 /* ---------- 依平台調整 ----------
+   (2026/10/17 起 iPhone 也載入 BarcodeDetector polyfill,與內嵌解碼器每 2 格輪流,下方 NATIVE 兩者皆為 true)
    Android(Chrome):手機內建條碼辨識,速度快,全部類型都找。
    iPhone(Safari):沒有內建辨識,改用內嵌解碼器,每多找一種類型就慢一些。
      廠商標籤實際用到:QR(鈺創/晶豪科)、DataMatrix(旺宏/華邦電)、Code128(晶豪科/弘憶)、Code39(LG)。
      每格先找前三種,Code39 每三格找一次;一旦掃過 Code39 標籤就每格都找。拍照讀取一律全部找。 */
 var NATIVE=(function(){ try{ return 'BarcodeDetector' in window; }catch(e){ return false; } })();
+var POLY=!!window.__POLY, ANDROID=!!window.__HAD_NATIVE;
 var F3=['QR_CODE','DATA_MATRIX','CODE_128'], F4=['QR_CODE','DATA_MATRIX','CODE_128','CODE_39'];
 var use39=false, fmtN=0, photoUntil=0;
 function camFormats(){
@@ -805,6 +821,7 @@ function startScan(){
   if(!window.PhoneScan){ modal('掃描模組沒有載入','請從 GitHub 網址開啟這一頁（需與 scanner.js 放在同一個資料夾）。\n也可以先用「手動輸入」或藍牙條碼槍。'); return; }
   var h=PhoneScan.open({
     title:'收料核對', formats:camFormats,
+    need1d:POLY?function(){ return false; }:undefined, hybrid:POLY,
     frames:SET.frames, frame:SET.frames.indexOf(SET.last)>=0?SET.last:SET.frames[0],
     onFrameChange:function(k){ SET.last=k; saveSet(); },
     hint:'對準 QR Code，或 Lot 與 Qty 條碼（順序不拘）；其他條碼自動略過',
@@ -837,10 +854,10 @@ function startScan(){
   });
   /* 一直沒讀到任何條碼:提示靠近/放大/拍照讀取 */
   idleT=setInterval(function(){
-    var wait=NATIVE?7000:5000;
+    var wait=(ANDROID||POLY)?7000:5000;
     if(Date.now()-lastRead>wait && Date.now()-hintT>wait){
       hintT=Date.now();
-      h.say(NATIVE?'讀不到？靠近一點讓 QR Code 在框內變大，或按上方「放大」；還是不行就按下方「拍照讀取」'
+      h.say(ANDROID?'讀不到？靠近一點讓 QR Code 在框內變大，或按上方「放大」；還是不行就按下方「拍照讀取」'
                   :'讀不到？靠近一點讓 QR Code／二維碼在框內變大；字很密的建議直接按下方「拍照讀取」（用完整畫質解碼）','warn');
     }
   },1000);
