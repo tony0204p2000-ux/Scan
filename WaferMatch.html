@@ -31,18 +31,23 @@ button:active:not(:disabled){filter:brightness(1.25)}
 .tabs button{flex:1;min-height:42px;padding:4px 2px;font-size:15px;font-weight:700;color:var(--dim);background:var(--panel)}
 .tabs button.on{color:#221a08;background:var(--amber);border-color:var(--amber)}
 
-#cam{position:relative;background:#000;overflow:hidden;height:30vh;height:30svh;min-height:190px}
-#cam.held:not(.off)::after{content:"已暫停讀取・按「下一張」繼續";position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);background:rgba(10,90,80,.92);color:#fff;font-size:15px;font-weight:700;padding:8px 14px;border-radius:10px;white-space:nowrap;pointer-events:none}
+#cam{position:relative;background:#000;overflow:hidden;height:34vh;height:34svh;min-height:220px}
+#cam.held:not(.off)::after{content:"已暫停讀取\A按「下一張」繼續";white-space:pre;text-align:center;position:absolute;left:calc((100% - 96px) / 2 + 4px);top:50%;transform:translate(-50%,-50%);background:rgba(10,90,80,.94);color:#fff;font-size:15px;font-weight:700;line-height:1.5;padding:8px 14px;border-radius:10px;pointer-events:none}
 #cam.off{height:auto;min-height:0;background:none;padding:2px 10px 6px}
-#cam.off video,#cam.off #frame,#cam.off .camtools{display:none}
+#cam.off video,#cam.off #frame,#cam.off #guide,#cam.off .camtools{display:none}
 #cam:not(.off) .camoff{display:none}
 body.typing #cam:not(.off){height:0;min-height:0}
 video{width:100%;height:100%;object-fit:cover;display:block}
 #frame{position:absolute;border:2px solid var(--amber);border-radius:10px;box-shadow:0 0 0 2000px rgba(0,0,0,.5);pointer-events:none;transition:border-color .1s}
 #frame.ok{border-color:var(--cyan);box-shadow:0 0 0 2000px rgba(10,80,70,.55)}
 #frame.ng{border-color:var(--red);box-shadow:0 0 0 2000px rgba(110,25,25,.55)}
-.camtools{position:absolute;left:0;right:0;bottom:6px;display:flex;justify-content:center;gap:6px;padding:0 6px}
-.camtools button{background:rgba(20,24,30,.74);border-color:rgba(255,255,255,.28);color:#fff;min-height:40px;padding:4px 12px;font-size:14px}
+/* 相機工具直排在右側,讓直立的標籤框可以用到整個高度 */
+.camtools{position:absolute;right:6px;top:6px;bottom:6px;width:84px;display:flex;flex-direction:column;justify-content:center;gap:6px}
+.camtools button{background:rgba(20,24,30,.74);border-color:rgba(255,255,255,.28);color:#fff;min-height:38px;padding:2px 4px;font-size:13px;line-height:1.2}
+/* WAFER 標籤框內的對位參考線:上方 4 條一維條碼、左下 QR Code */
+#guide{position:absolute;pointer-events:none}
+#guide i{position:absolute;border:1.5px dashed rgba(240,168,56,.8);border-radius:3px}
+#guide b{position:absolute;left:0;right:0;bottom:-20px;text-align:center;font-size:12px;font-weight:400;color:rgba(255,255,255,.8);white-space:nowrap}
 .camtools button.on{background:var(--amber);border-color:var(--amber);color:#000}
 .camoff{display:flex;gap:8px;flex-wrap:wrap}
 #camstart{flex:1;min-height:52px;font-size:17px;font-weight:700;background:#1f6fa8;border-color:#1f6fa8;color:#fff}
@@ -109,9 +114,6 @@ main{padding:10px;overflow-x:hidden;overflow-x:clip}
 .loghead{display:flex;align-items:center;gap:8px;margin:16px 0 8px}
 .loghead h2{margin:0;font-size:15px;flex:1}
 .loghead h2 small{font-weight:400;font-size:13px;font-family:var(--mono);color:var(--dim);margin-left:6px}
-.loghead button{min-height:40px;font-size:14px;padding:4px 12px}
-.loghead button.pdf{color:var(--cyan);border-color:rgba(47,211,196,.45)}
-.loghead button.arm{color:var(--red);border-color:var(--red)}
 .rec{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--cyan);border-radius:10px;padding:8px 10px;margin-bottom:8px}
 .rec.bad{border-left-color:var(--red)}
 .rec header{display:flex;justify-content:space-between;font-family:var(--mono);font-size:13px;color:var(--dim);margin-bottom:3px}
@@ -168,6 +170,7 @@ main{padding:10px;overflow-x:hidden;overflow-x:clip}
   <div id="cam" class="off">
     <video id="video" playsinline muted autoplay></video>
     <div id="frame"></div>
+    <div id="guide" hidden><i style="left:6.5%;width:86%;top:5.4%;height:10%"></i><i style="left:7.5%;width:86%;top:18.8%;height:9%"></i><i style="left:7.5%;width:45%;top:30.7%;height:10%"></i><i style="left:8.5%;width:54%;top:42.8%;height:10.5%"></i><i style="left:10%;width:56%;top:59%;height:35.6%"></i></div>
     <div class="camtools">
       <button type="button" id="shape">框</button>
       <button type="button" id="torch" hidden>手電筒</button>
@@ -215,9 +218,7 @@ main{padding:10px;overflow-x:hidden;overflow-x:clip}
   </div>
 
   <div class="loghead">
-    <h2>比對紀錄<small id="logcount"></small></h2>
-    <button type="button" class="pdf" id="bPdf">匯出 PDF</button>
-    <button type="button" id="bClear">清空</button>
+    <h2>最近 3 筆比對<small id="logcount"></small></h2>
   </div>
   <div id="log"></div>
   <div class="foot" id="foot"></div>
@@ -390,7 +391,7 @@ function modeOut(){
         cam:function(){ return false; }, submit:function(){ return {err:'這張已讀完，請先按「下一張」或「完成」'}; }};
       var nl=needLot();
       return {key:'cur',kind:'label',name:who()+' 第 '+n+' 張',
-        hint:nl?'對準標籤，LOT NO 和刻號都讀到才算完成（手動輸入：先 LOT NO 再刻號）':'第 2 張起只讀刻號（LOT NO 沿用第 1 張 '+s.lot+'）',
+        hint:nl?'把框對準標籤右側的條碼與 QR Code，LOT NO 和刻號都讀到才算完成':'第 2 張起只讀刻號（QR Code），LOT NO 沿用第 1 張 '+s.lot,
         ex:(nl&&!s.cur.lot)?'LOT NO A1B23':'刻號 01/02', max:(nl&&!s.cur.lot)?5:0,
         cam:function(){ return false; },
         submit:function(t){
@@ -631,7 +632,7 @@ function modeIC(){
 }
 
 var M={out:modeOut(), 'in':modeIn(), ic:modeIC()};
-var cur=M.out, busy=false, logs={out:[],'in':[],ic:[]};
+var cur=M.out, busy=false, logs={out:[],'in':[],ic:[]}, KEEP=3;
 
 /* ---------- 提示音 / 震動 ----------
    iPhone:Safari 沒有震動功能,只能靠聲音與畫面;聲音必須在使用者點過畫面後才能播,
@@ -702,7 +703,7 @@ function pressMain(){ var mb=cur.main(); if(mb && mb.enabled && !busy){ mb.fn();
 var errCb=null, errAt=0;
 function finish(mode,ok,cells,detail){
   logs[mode.id].unshift({t:nowStr(),c:cells,ok:ok});
-  if(logs[mode.id].length>500) logs[mode.id].length=500;
+  if(logs[mode.id].length>KEEP) logs[mode.id].length=KEEP;   /* 只留最近 3 筆,給使用者簡單確認 */
   store('wm_log_'+mode.id,logs[mode.id]);
   busy=true; if(scanner) scanner.pause(true);
   if(ok){
@@ -740,7 +741,7 @@ function render(){
 }
 function renderLog(){
   var L=logs[cur.id], okN=L.filter(function(r){ return r.ok; }).length;
-  $('logcount').textContent=L.length?'Correct '+okN+'・Error '+(L.length-okN):'';
+  $('logcount').textContent='';
   $('log').innerHTML=L.length?L.map(function(r){
     return '<div class="rec'+(r.ok?'':' bad')+'"><header><span>'+esc(r.t)+'</span><b>'+(r.ok?'Correct':'Error')+'</b></header>'+
       cur.cols.map(function(c,i){ return '<div><span>'+esc(c)+'</span><u>'+esc(r.c[i])+'</u></div>'; }).join('')+'</div>';
@@ -749,7 +750,7 @@ function renderLog(){
 function setMode(id){
   if(!M[id]) return;
   cur=M[id]; store('wm_mode',id);
-  var f=store('wm_frame2_'+id); frameName=(PS && PS.FRAMES[f])?f:'R';
+  var f=store('wm_frame3_'+id); frameName=(PS && FRAME_CYCLE.indexOf(f)>=0)?f:(id==='ic'?'R':'W');
   say(''); render(); renderLog(); layoutFrame(); syncPause();
 }
 
@@ -763,8 +764,10 @@ function setMode(id){
       換到別的欄位(例如分貨標籤掃完換掃 WAFER,兩張標籤內容一樣)只要離開鏡頭 HOLD2 毫秒。
       被擋住時畫面會提示,不會沒有反應。
    ===================================================================== */
-var scanner=null, frameName='R', stale={}, lastSeen={}, lastTake=0, HOLD=2500, HOLD2=700, GAP=600, TOOLS_H=50, blocked=0;
-var FRAME_CYCLE=['R','L','M','S','B'];
+var scanner=null, frameName='W', stale={}, lastSeen={}, lastTake=0, HOLD=2500, HOLD2=700, GAP=600, TOOLS_W=96, blocked=0;
+/* 'W' = WAFER 標籤框:依標籤右側條碼區(4 條一維條碼 + 下方 QR Code)的比例,寬:高 約 2:3 */
+var FRAME_CYCLE=['W','R','L','M','S','B'], W_AR=0.664;
+function frameLabel(k){ return k==='W'?'標籤':(PS.FRAME_LABEL[k]||''); }
 var learn2d=store('wm_learn2d')||{}, pend1d=null, lastAny=0, lotMiss=0, hintAt=0, autoZoomed=false, frameN=0;
 /* 用「這一格之前」最後一次看到的時間判斷;不能用這一格本身,否則條碼一直在畫面裡就永遠不會過期 */
 var prevSeen=null;
@@ -772,13 +775,18 @@ function isStale(t,now,key){ var x=stale[t]; if(!x) return false; var ls=(prevSe
 function clearSeen(){ stale={}; lastSeen={}; pend1d=null; blocked=0; }
 function digitKind(k){ return k==='eng'||k==='qty'; }
 function typing(){ return document.body.classList.contains('typing'); }
-function frameRect(cw,ch){ return PS.frameRect(frameName,cw,Math.max(40,ch-TOOLS_H)); }
+function frameRect(cw,ch){
+  var aw=Math.max(60,cw-TOOLS_W);              /* 右側留給相機工具 */
+  if(frameName==='W'){ var h=ch*0.9, w=h*W_AR; if(w>aw*0.92){ w=aw*0.92; h=w/W_AR; } return {x:(aw-w)/2+4,y:(ch-h)/2,w:w,h:h}; }
+  return PS.frameRect(frameName,aw,ch);
+}
 function layoutFrame(){
   if(!PS) return;
-  $('shape').textContent='框：'+(PS.FRAME_LABEL[frameName]||'');
+  $('shape').textContent='框：'+frameLabel(frameName);
   var c=$('cam'); if(c.classList.contains('off') || !c.clientHeight) return;
-  var r=frameRect(c.clientWidth,c.clientHeight), f=$('frame').style;
+  var r=frameRect(c.clientWidth,c.clientHeight), f=$('frame').style, g=$('guide');
   f.left=r.x+'px'; f.top=r.y+'px'; f.width=r.w+'px'; f.height=r.h+'px';
+  g.hidden=frameName!=='W'; g.style.left=r.x+'px'; g.style.top=r.y+'px'; g.style.width=r.w+'px'; g.style.height=r.h+'px';
 }
 function camMsg(t){ $('cammsg').textContent=t||''; }
 function take(t,two,st){
@@ -927,7 +935,7 @@ if(PS){
   $('camstop').addEventListener('click',function(){ if(scanner) scanner.stop(); });
   $('shape').addEventListener('click',function(){
     frameName=FRAME_CYCLE[(FRAME_CYCLE.indexOf(frameName)+1)%FRAME_CYCLE.length];
-    store('wm_frame2_'+cur.id,frameName); layoutFrame();
+    store('wm_frame3_'+cur.id,frameName); layoutFrame();
   });
   $('torch').addEventListener('click',function(){ scanner.torch().then(function(on){ $('torch').className=on?'on':''; }); });
   $('zoom').addEventListener('click',function(){
@@ -976,15 +984,6 @@ $('bMain').addEventListener('click',pressMain);
 ['deduct','override'].forEach(function(id){
   $(id).addEventListener('input',function(){ var v=this.value.replace(/[^0-9]/g,''); if(v!==this.value) this.value=v; if(cur.id==='ic') $('data').innerHTML=cur.data(); });
 });
-/* 會清掉資料的按鈕:按兩次才生效 */
-function twoStep(btn,label,fn){
-  var armed=false, t=0;
-  btn.addEventListener('click',function(){
-    if(busy) return;
-    if(!armed){ armed=true; btn.textContent='再按一次確認'; btn.classList.add('arm'); t=setTimeout(function(){ armed=false; btn.textContent=label; btn.classList.remove('arm'); },3000); return; }
-    clearTimeout(t); armed=false; btn.textContent=label; btn.classList.remove('arm'); fn();
-  });
-}
 /* 「重來」就在「下一張」旁邊:這一筆已有資料時要按兩次,避免誤觸 */
 var rsArm=false, rsT=0;
 $('bReset').addEventListener('click',function(){
@@ -995,8 +994,6 @@ $('bReset').addEventListener('click',function(){
   cur.reset(); clearSeen(); say('已清除這一筆',''); render(); syncPause();
 });
 $('bNext').addEventListener('click',pressNext);
-twoStep($('bClear'),'清空',function(){ logs[cur.id]=[]; store('wm_log_'+cur.id,[]); renderLog(); });
-$('bPdf').addEventListener('click',function(){ exportPdf(cur.pdf,['時間'].concat(cur.cols,['結果']),logs[cur.id]); });
 
 /* 手動輸入時把相機收起來並暫停掃描,鍵盤上方看得到輸入框與本筆資料 */
 var typeT=0;
@@ -1024,97 +1021,13 @@ document.addEventListener('keydown',function(e){
   if(e.key && e.key.length===1){ kb+=e.key; clearTimeout(kbT); kbT=setTimeout(function(){ kb=''; },1500); }
 });
 
-/* ---------- 匯出 PDF(只匯出 Correct 的紀錄;在手機內產生檔案,不經過任何伺服器)
-   全部同步產生,讓 iPhone 能在同一次點擊內叫出「分享/儲存到檔案」(主畫面 App 模式下直接下載會卡在預覽頁)。
-   Android 直接下載到「下載」資料夾。 ---------- */
-function buildPdf(pages){
-  var parts=[], off=0, offs=[];
-  function push(x){ parts.push(x); off+=typeof x==='string'?x.length:x.byteLength; }
-  function obj(n){ offs[n]=off; push(n+' 0 obj\n'); }
-  push('%PDF-1.4\n');
-  obj(1); push('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
-  obj(2); push('<< /Type /Pages /Kids ['+pages.map(function(p,i){ return (3+3*i)+' 0 R'; }).join(' ')+'] /Count '+pages.length+' >>\nendobj\n');
-  pages.forEach(function(p,i){
-    var n=3+3*i, w=(p.w*72/96).toFixed(2), h=(p.h*72/96).toFixed(2), c='q '+w+' 0 0 '+h+' 0 0 cm /Im0 Do Q';
-    obj(n);   push('<< /Type /Page /Parent 2 0 R /MediaBox [0 0 '+w+' '+h+'] /Resources << /XObject << /Im0 '+(n+2)+' 0 R >> >> /Contents '+(n+1)+' 0 R >>\nendobj\n');
-    obj(n+1); push('<< /Length '+c.length+' >>\nstream\n'+c+'\nendstream\nendobj\n');
-    obj(n+2); push('<< /Type /XObject /Subtype /Image /Width '+p.w+' /Height '+p.h+' /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length '+p.bytes.byteLength+' >>\nstream\n');
-    push(p.bytes); push('\nendstream\nendobj\n');
-  });
-  var count=3+3*pages.length, xs=off, x='xref\n0 '+count+'\n0000000000 65535 f \n';
-  for(var k=1;k<count;k++) x+=('0000000000'+offs[k]).slice(-10)+' 00000 n \n';
-  push(x); push('trailer\n<< /Size '+count+' /Root 1 0 R >>\nstartxref\n'+xs+'\n%%EOF');
-  return new Blob(parts,{type:'application/pdf'});
-}
-function jpegBytes(cv){
-  var b64=cv.toDataURL('image/jpeg',.92).split(',')[1], bin=atob(b64), u=new Uint8Array(bin.length);
-  for(var i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
-  return u;
-}
-function deliver(blob,name,n){
-  function download(){
-    var url=URL.createObjectURL(blob), a=document.createElement('a');
-    a.href=url; a.download=name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
-    setTimeout(function(){ URL.revokeObjectURL(url); },10000);
-    say('✓ 已匯出 '+n+' 筆 Correct 紀錄','ok');
-  }
-  if(IOS && window.File && navigator.canShare){
-    try{
-      var file=new File([blob],name,{type:'application/pdf'});
-      if(navigator.canShare({files:[file]})){
-        navigator.share({files:[file]}).then(function(){ say('✓ 已匯出 '+n+' 筆 Correct 紀錄','ok'); },function(e){ if(!e || e.name!=='AbortError') download(); });
-        return;
-      }
-    }catch(e){}
-  }
-  download();
-}
-function exportPdf(title,headers,recs){
-  var rows=recs.filter(function(r){ return r.ok; }).map(function(r){ return [r.t].concat(r.c,['Correct']); });
-  if(!rows.length){ beep(false); say('✕ 目前沒有 Correct 的比對紀錄可以匯出','bad'); return; }
-  try{
-    var meta='匯出時間：'+nowStr()+'　共 '+rows.length+' 筆', font='"PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif';
-    var fT='bold 26px '+font, fM='15px '+font, fH='bold 16px '+font, fC='15px '+font;
-    var padX=14, rowH=34, headH=38, out=28, PER=40;
-    var ms=document.createElement('canvas').getContext('2d');
-    ms.font=fH; var cw=headers.map(function(h){ return ms.measureText(h).width; });
-    ms.font=fC; rows.forEach(function(r){ r.forEach(function(c,i){ var w=ms.measureText(c).width; if(w>cw[i]) cw[i]=w; }); });
-    cw=cw.map(function(w){ return Math.ceil(w)+padX*2; });
-    var tw=cw.reduce(function(a,b){ return a+b; },0);
-    ms.font=fT; var W=Math.ceil(Math.max(tw,ms.measureText(title).width+120)+out*2), total=Math.ceil(rows.length/PER), pages=[];
-    for(var p=0;p<total;p++){
-      var part=rows.slice(p*PER,(p+1)*PER), top=out+40+26+14, H=top+headH+part.length*rowH+out;
-      var cv=document.createElement('canvas'); cv.width=W; cv.height=H;
-      var c=cv.getContext('2d'), y=out, x;
-      c.fillStyle='#fff'; c.fillRect(0,0,W,H); c.textBaseline='top';
-      c.fillStyle='#111'; c.font=fT; c.fillText(title,out,y);
-      if(total>1){ c.font=fM; c.fillStyle='#555'; c.textAlign='right'; c.fillText((p+1)+' / '+total,W-out,y+8); c.textAlign='left'; }
-      y+=40; c.fillStyle='#555'; c.font=fM; c.fillText(meta,out,y); y=top;
-      c.fillStyle='#eee'; c.fillRect(out,y,tw,headH); c.fillStyle='#111'; c.font=fH; x=out;
-      headers.forEach(function(h,i){ c.fillText(h,x+padX,y+(headH-16)/2); x+=cw[i]; });
-      y+=headH; c.font=fC;
-      part.forEach(function(r,ri){
-        if(ri%2===1){ c.fillStyle='#f7f7f7'; c.fillRect(out,y,tw,rowH); }
-        var cx=out;
-        r.forEach(function(cell,ci){ c.fillStyle=ci===r.length-1?'#0e8a72':'#222'; c.fillText(cell,cx+padX,y+(rowH-15)/2); cx+=cw[ci]; });
-        y+=rowH;
-      });
-      c.strokeStyle='#ccc'; c.lineWidth=1; c.strokeRect(out+.5,top+.5,tw,headH+part.length*rowH);
-      pages.push({w:W,h:H,bytes:jpegBytes(cv)});
-      cv.width=cv.height=1;      /* iPhone 的畫布記憶體有限:用完馬上釋放 */
-    }
-    var d=new Date(), stamp=d.getFullYear()+pad(d.getMonth()+1)+pad(d.getDate())+'_'+pad(d.getHours())+pad(d.getMinutes());
-    deliver(buildPdf(pages),title.replace(/[\\/:*?"<>|]/g,'_')+'_'+stamp+'.pdf',rows.length);
-  }catch(e){ beep(false); say('✕ 匯出失敗：'+((e&&e.message)||''),'bad'); }
-}
-
 /* ---------- 啟動 ---------- */
 function foot(){
   var e=engName();
   $('foot').innerHTML='資料只留在這支手機，不會上傳'+(PS?'　・　共用掃描模組 v'+esc(PS.version):'')+(e?'<br>辨識引擎：'+esc(e):'')+
-    (IOS?'<br>iPhone 建議「加入主畫面」使用：比對紀錄才不會被 Safari 自動清除':'');
+    (IOS?'<br>iPhone 建議用 Safari「加入主畫面」使用，沒網路也能開':'');
 }
-['out','in','ic'].forEach(function(id){ var L=store('wm_log_'+id); if(Array.isArray(L)) logs[id]=L.filter(function(r){ return r && Array.isArray(r.c); }); });
+['out','in','ic'].forEach(function(id){ var L=store('wm_log_'+id); if(Array.isArray(L)) logs[id]=L.filter(function(r){ return r && Array.isArray(r.c); }).slice(0,KEEP); });
 foot();
 setMode(M[store('wm_mode')]?store('wm_mode'):'out');
 /* 給自動測試與除錯用 */
