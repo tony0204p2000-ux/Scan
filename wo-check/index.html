@@ -1,0 +1,1019 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#24292f">
+<title>工單點交核對（手機版）</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#fff; --ink:#1f2328; --sub:#656d76; --line:#d0d7de; --soft:#eaeef2;
+    --accent:#1f6feb; --accent-weak:#e7f0ff;
+    --ok:#1a7f37; --ok-weak:#dafbe1; --warn:#9a6700; --warn-weak:#fff8c5;
+    --danger:#cf222e; --danger-weak:#ffebe9;
+    --barH:68px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);font-family:"Microsoft JhengHei","PingFang TC","Noto Sans TC",sans-serif;font-size:15px;
+    overscroll-behavior:none}
+  header{position:sticky;top:0;z-index:20;background:#24292f;color:#fff;padding:calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    display:flex;align-items:center;gap:10px}
+  header h1{font-size:16px;margin:0;font-weight:600;flex:1}
+  .steps{display:flex;gap:4px}
+  .steps span{font-size:12px;padding:3px 9px;border-radius:12px;background:#3a4048;color:#c9d1d9}
+  .steps span.on{background:#58a6ff;color:#0d1117;font-weight:700}
+  .screen{display:none;padding:12px 12px calc(var(--barH) + 20px + env(safe-area-inset-bottom))}
+  .screen.on{display:block}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px}
+  .muted{color:var(--sub)}
+  .tag{display:inline-block;font-size:12px;padding:1px 7px;border-radius:4px}
+  .tag.c{background:var(--danger-weak);color:var(--danger)}
+  .tag.w{background:var(--warn-weak);color:var(--warn)}
+  .tag.o{background:var(--ok-weak);color:var(--ok)}
+  button{font:inherit;border:none;cursor:pointer}
+  .btn{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:10px 14px;border-radius:10px;font-size:15px}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .btn.danger{color:var(--danger)}
+  .btn:disabled{opacity:.45}
+  .bottom{position:fixed;left:0;right:0;bottom:0;z-index:20;background:rgba(255,255,255,.96);border-top:1px solid var(--line);
+    padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px}
+  .bottom .btn{flex:1;padding:13px 10px}
+  .bottom .btn.wide{flex:2}
+
+  /* ----- 載入 ----- */
+  .pick{display:block;text-align:center;padding:26px 16px;border:2px dashed var(--line);background:var(--card);border-radius:12px;color:var(--accent);font-weight:600;font-size:16px}
+  .pick small{display:block;color:var(--sub);font-weight:400;font-size:13px;margin-top:4px}
+  .fmeta{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--sub);margin:14px 2px 8px}
+  .fmeta b{color:var(--ink)}
+  .wo{padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px}
+  .wo .info{flex:1;min-width:0}
+  .wo .t1{font-weight:700;font-size:15px}
+  .wo .t2{font-size:13px;color:var(--sub);margin-top:3px}
+  .wo .t3{font-size:13px;margin-top:3px;word-break:break-all}
+  .wo .qty{font-size:22px;font-weight:700;text-align:right;min-width:40px}
+  .wo .qty small{display:block;font-size:11px;color:var(--sub);font-weight:400}
+  .wo.cancel{opacity:.5}
+  .wo.cancel .t1{text-decoration:line-through}
+  .wo .tg{border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 10px;font-size:13px;color:var(--danger)}
+  .wo.cancel .tg{color:var(--ok)}
+  .summary-line{font-size:14px;margin:6px 2px 10px}
+
+  /* ----- 掃描 ----- */
+  .cam{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3}
+  .cam video{width:100%;height:100%;object-fit:cover;display:block}
+  .cam .frame{position:absolute;left:5%;top:8%;width:90%;height:84%;border:3px solid rgba(255,255,255,.9);border-radius:10px;
+    box-shadow:0 0 0 2000px rgba(0,0,0,.35)}
+  .cam .frame::after{content:"";position:absolute;left:6%;right:6%;top:50%;height:2px;background:rgba(255,80,80,.85);animation:scanline 1.6s ease-in-out infinite}
+  @keyframes scanline{0%,100%{transform:translateY(-34px)}50%{transform:translateY(34px)}}
+  .cam .camMsg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#fff;padding:20px;font-size:15px;background:rgba(0,0,0,.6)}
+  .cam .paused{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,.7);color:#fff;padding:8px 16px;border-radius:20px;font-size:14px;display:none}
+  .cam.pause .paused{display:block}
+  .cam.pause .frame::after{animation:none;opacity:0}
+  .cam.hit .frame{border-color:#2ea043}
+  .cam.bad .frame{border-color:#f85149}
+  .prog{display:flex;align-items:center;gap:10px;margin:12px 2px 8px}
+  .prog .num{font-size:24px;font-weight:700}
+  .prog .num small{font-size:14px;color:var(--sub);font-weight:400}
+  .prog .bar{flex:1;height:8px;background:var(--soft);border-radius:4px;overflow:hidden}
+  .prog .bar i{display:block;height:100%;background:var(--ok);transition:width .2s}
+  .pend{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px;align-items:stretch}
+  .pend .no{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;text-align:center;font-size:12px;color:var(--sub)}
+  .pend .no b{display:block;font-size:22px;color:var(--ink)}
+  .pend .box{border:2px solid var(--line);border-radius:10px;padding:6px 10px;background:var(--card)}
+  .pend .box .k{font-size:12px;color:var(--sub)}
+  .pend .box .v{font-size:22px;font-weight:700;font-family:Consolas,monospace}
+  .pend .box.need{border-color:var(--accent);background:var(--accent-weak)}
+  .pend .box.filled{border-color:var(--ok);background:var(--ok-weak)}
+  .last{margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--soft);font-size:14px}
+  .last.ok{background:var(--ok-weak);color:var(--ok)}
+  .last.warn{background:var(--warn-weak);color:var(--warn)}
+  .last.err{background:var(--danger-weak);color:var(--danger)}
+  .tools{display:flex;gap:8px;margin-top:10px}
+  .tools .btn{flex:1;padding:9px 6px;font-size:14px}
+  details.card{margin-top:10px}
+  details.card summary{padding:11px 14px;font-weight:600;font-size:14px}
+  .plist{padding:0 14px 10px}
+  .plist .row{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid var(--soft);font-size:13px}
+  .plist .row.done{color:var(--ok)}
+
+  .camctl{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .chips{display:flex;gap:6px}
+  .chips button{border:1px solid var(--line);background:#fff;border-radius:16px;padding:5px 12px;font-size:13px;color:var(--sub)}
+  .chips button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .zoom{flex:1;display:flex;align-items:center;gap:6px;font-size:14px}
+  .zoom input{flex:1}
+  .cam .torch{position:absolute;right:10px;bottom:10px;width:42px;height:42px;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;font-size:20px}
+  .cam .torch.on{background:#f5c518}
+  .cam .frame{transition:all .2s}
+  .pend{grid-template-columns:auto 1fr 1.6fr!important}
+  .pend .box .v{font-size:18px!important;word-break:break-all}
+  .pend .box.opt{border-style:dashed}
+  .elist{margin:6px 0;padding-left:20px}
+  .elist li{margin:4px 0}
+  .plist label.row{align-items:center}
+  .plist input[type=checkbox]{width:22px;height:22px}
+  .info{padding:10px 14px;margin-bottom:10px;display:grid;gap:8px}
+  .info label{display:grid;grid-template-columns:70px 1fr;align-items:center;font-size:14px;color:var(--sub)}
+  .info input{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;color:var(--ink)}
+  .pullhead{background:var(--danger);color:#fff;font-weight:700;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:16px}
+  .pull{font-size:20px;font-weight:700;font-family:Consolas,monospace;color:var(--danger)}
+  .rrow.ihead{background:#fafbfc}
+  .i-nolot .a span:first-child,.i-extra .a span:first-child{color:var(--danger)}
+  .i-short .a span:first-child,.i-unscanned .a span:first-child{color:var(--warn)}
+  /* ----- 視窗 ----- */
+  .mask{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;display:none;align-items:flex-end;justify-content:center}
+  .mask.on{display:flex}
+  .sheet{background:#fff;width:100%;max-width:560px;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom);animation:up .18s ease-out}
+  @keyframes up{from{transform:translateY(40px);opacity:.4}to{transform:none;opacity:1}}
+  .sheet .sh{padding:16px 18px;font-size:19px;font-weight:700;border-radius:16px 16px 0 0}
+  .sheet.warn .sh{background:var(--warn-weak);color:var(--warn)}
+  .sheet.err .sh{background:var(--danger-weak);color:var(--danger)}
+  .sheet.ok .sh{background:var(--ok-weak);color:var(--ok)}
+  .sheet.plain .sh{background:var(--soft)}
+  .sheet .sb{padding:14px 18px;line-height:1.7}
+  .sheet .sb .big{font-size:22px;font-weight:700;font-family:Consolas,monospace}
+  .sheet .sf{display:flex;gap:8px;padding:6px 18px 16px}
+  .sheet .sf .btn{flex:1;padding:14px}
+  .sheet input{width:100%;font-size:18px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;margin:4px 0 10px;font-family:Consolas,monospace;text-transform:uppercase}
+
+  /* ----- 結果 ----- */
+  .verdict{padding:14px 16px;font-weight:700;font-size:16px;margin-bottom:10px}
+  .verdict.ok{background:var(--ok-weak);color:var(--ok);border-color:#aceebb}
+  .verdict.ng{background:var(--warn-weak);color:var(--warn);border-color:#eed888}
+  .rsec{margin-bottom:10px;overflow:hidden}
+  .rsec h3{font-size:14px;margin:0;padding:10px 14px;background:#fafbfc;border-bottom:1px solid var(--line)}
+  .rrow{padding:10px 14px;border-top:1px solid var(--soft);font-size:14px}
+  .rrow:first-of-type{border-top:none}
+  .rrow .a{display:flex;justify-content:space-between;gap:8px;font-weight:600}
+  .rrow .b{color:var(--sub);font-size:13px;margin-top:2px;word-break:break-all}
+  .plus{color:var(--danger)} .minus{color:var(--warn)} .zero{color:var(--ok)}
+  .lots{margin-top:6px;font-size:13px;background:#fafbfc;border-radius:8px;padding:6px 8px}
+  .lotline{margin:2px 0;word-break:break-all} .lotline .minus,.lotline .plus{font-weight:600}
+  .none{padding:16px;text-align:center;color:var(--sub);font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <h1>工單點交核對</h1>
+  <div class="steps"><span data-s="load" class="on">1 工單</span><span data-s="scan">2 掃描</span><span data-s="result">3 結果</span></div>
+</header>
+
+<!-- 1 工單 -->
+<section class="screen on" id="sc-load">
+  <label class="pick" for="fileInput">＋ 選擇加工單 txt<small>可一次選多個檔案</small></label>
+  <input id="fileInput" type="file" accept=".txt,text/plain" multiple hidden>
+  <div id="loadMsg" class="muted" style="color:var(--danger);font-size:13px;margin-top:6px"></div>
+  <div id="woList"></div>
+</section>
+
+<!-- 2 掃描 -->
+<section class="screen" id="sc-scan">
+  <div class="cam" id="cam" data-frame="label">
+    <video id="video" playsinline muted></video>
+    <div class="frame"></div>
+    <div class="paused">已暫停，點畫面繼續</div>
+    <div class="camMsg" id="camMsg">相機啟動中…</div>
+    <button class="torch" id="torchBtn" hidden>🔦</button>
+  </div>
+  <div class="camctl">
+    <div class="chips" id="frameChips">
+      <button data-f="label" class="on">整張標籤</button><button data-f="rect">長方</button><button data-f="bar">橫條</button>
+    </div>
+    <label class="zoom" id="zoomBox" hidden>🔍<input type="range" id="zoom" min="1" max="1" step="0.1" value="1"></label>
+  </div>
+  <div class="prog"><div class="num" id="pNum">0 <small>/ 0</small></div><div class="bar"><i id="pBar"></i></div></div>
+  <div class="pend">
+    <div class="no">第<b id="wNo">1</b>盒</div>
+    <div class="box" id="boxLot"><div class="k">批號 LOT NO</div><div class="v" id="vLot">—</div></div>
+    <div class="box" id="boxWf"><div class="k">刻號 WF ID</div><div class="v" id="vWf">—</div></div>
+  </div>
+  <div class="last" id="last">將 Wafer 盒標籤放進框內（LOT NO 條碼與 QR Code 都要在框內）</div>
+  <div class="tools">
+    <button class="btn" id="undoBtn">↶ 復原</button>
+    <button class="btn" id="manualBtn">⌨ 手動輸入</button>
+    <button class="btn" id="pauseBtn">⏸ 暫停</button>
+  </div>
+  <details class="card"><summary>刷讀順序 <span class="muted" id="boxSum"></span></summary><div class="plist" id="boxList"></div></details>
+  <details class="card"><summary>工單進度 <span class="muted" id="progSum"></span></summary><div class="plist" id="progList"></div></details>
+  <details class="card"><summary>錯誤紀錄 <span class="muted" id="errSum"></span></summary><div class="plist" id="errList"></div></details>
+  <details class="card"><summary>設定</summary><div class="plist">
+    <label class="row"><span>音效</span><input type="checkbox" id="optSound"></label>
+    <label class="row"><span>震動</span><input type="checkbox" id="optVib"></label>
+  </div></details>
+</section>
+
+<!-- 3 結果 -->
+<section class="screen" id="sc-result">
+  <div class="card info">
+    <label>點交人員<input id="iHandler" autocomplete="off"></label>
+    <label>簽收人<input id="iReceiver" autocomplete="off"></label>
+    <label>備註<input id="iNote" autocomplete="off"></label>
+  </div>
+  <div id="resContent"></div>
+</section>
+
+<div class="bottom" id="bottom"></div>
+<div class="mask" id="mask"><div class="sheet" id="sheet"><div class="sh" id="sTitle"></div><div class="sb" id="sBody"></div><div class="sf" id="sFoot"></div></div></div>
+<canvas id="cv" hidden></canvas>
+
+<script>
+/* ===== 共用核心（電腦版與手機版共用，修改後執行 build.py 同步兩個版本） ===== */
+const esc = s => String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- 讀檔：先試 UTF-8，失敗改 Big5 ---------- */
+function decodeText(buf){
+  try { return new TextDecoder('utf-8', {fatal:true}).decode(buf).replace(/^﻿/, ''); }
+  catch(e){ return new TextDecoder('big5').decode(buf); }
+}
+
+/* ---------- 解析加工單 ---------- */
+function sepSpans(line){
+  const spans = []; const re = /-+/g; let m;
+  while((m = re.exec(line))) spans.push([m.index, m.index + m[0].length]);
+  return spans;
+}
+function cut(row, span){ return span ? row.substring(span[0], span[1]).trim() : ''; }
+
+function parseWorkOrder(text, name){
+  const lines = text.split(/\r?\n/);
+  const out = {name, vendor:'', printDate:'', records:[]};
+  let spans = null, cur = null;
+  for(let i=0;i<lines.length;i++){
+    const line = lines[i]; let m;
+    if(!out.vendor && (m = line.match(/^\s*廠\s*商\s*[:：]\s*(.+?)\s*$/))) { out.vendor = m[1]; continue; }
+    if(!out.printDate && (m = line.match(/列印日期\s*[:：]\s*(\S+)/))) out.printDate = m[1];
+    if(/^-+(\s+-+){3,}\s*$/.test(line) && i>0 && /工單/.test(lines[i-1]) && /料號/.test(lines[i-1])){
+      spans = sepSpans(line); continue;
+    }
+    if(spans && /^\S+-\d+\s/.test(line)){
+      const r1 = line, r2 = lines[i+1] || '';
+      cur = { wo:cut(r1,spans[0]), part:cut(r2,spans[1]), lot:cut(r2,spans[2]),
+              plant:cut(r2,spans[3]), qty:cut(r2,spans[5]), wafers:[], cancel:false };
+      if(!cur.part || !cur.lot){
+        const t = r2.trim().split(/\s+/);
+        if(t[0] && t[0].startsWith('(')) t.shift();
+        cur.part = cur.part || t[0] || ''; cur.lot = cur.lot || t[1] || '';
+        cur.plant = cur.plant || t[2] || ''; cur.qty = cur.qty || t[3] || '';
+      }
+      const q = parseFloat(cur.qty); if(!isNaN(q)) cur.qty = q;
+      out.records.push(cur); i++; continue;
+    }
+    if(!cur) continue;
+    if((m = line.match(/^(.*?)\s*Fab批號\s*[:：]\s*(.*?)\s*$/))){
+      cur.wafers.push({die:m[1].trim(), fab:m[2], slots:''}); continue;
+    }
+    if((m = line.match(/^(.*?)\s*刻號\s*[:：]\s*(.*?)\s*$/))){
+      const die = m[1].trim();
+      let w = cur.wafers.find(x => x.die === die && !x.slots) || cur.wafers[cur.wafers.length-1];
+      if(!w){ w = {die, fab:'', slots:''}; cur.wafers.push(w); }
+      w.slots = m[2];
+    }
+  }
+  return out;
+}
+
+/* ---------- 刻號工具 ---------- */
+const splitSlots = s => String(s||'').split(/[,，\s]+/).filter(Boolean);
+const pad2 = n => String(n).padStart(2,'0');
+function compress(list){
+  const items = Array.isArray(list) ? list : splitSlots(list);
+  if(!items.length) return '';
+  const nums = items.map(x => ({t:x, n:parseInt(x,10)}));
+  if(nums.some(x => isNaN(x.n))) return items.join(', ');
+  nums.sort((a,b) => a.n - b.n);
+  const parts = []; let st = nums[0], pv = nums[0];
+  for(let k=1;k<=nums.length;k++){
+    const c = nums[k];
+    if(c && c.n === pv.n + 1){ pv = c; continue; }
+    parts.push(st === pv ? st.t : st.t + '-' + pv.t);
+    st = pv = c;
+  }
+  return parts.join(', ');
+}
+const fabText  = r => r.wafers.map(w => w.fab).filter(Boolean).join(' / ');
+const slotText = r => r.wafers.map(w => compress(w.slots)).filter(Boolean).join(' / ');
+function qtyMismatch(r){
+  if(typeof r.qty !== 'number' || r.wafers.length !== 1) return false;
+  return splitSlots(r.wafers[0].slots).length !== r.qty;
+}
+
+/* ---------- 條碼格式判斷 ----------
+   Wafer 盒標籤：
+     LOT NO（一維條碼）：5 碼英數混合，例：Q7J99            → 批號
+     WF ID （QR Code）：刻號清單，例：01/02/03/…/25         → 刻號（整盒一次登記）
+     QTY   （一維條碼）：不需刷，片數直接用 WF ID 刻號數計算
+     STOCK NO / ITEM NO：不需刷，刷到視為格式錯誤
+   fmt：'qr' 或 '1d'（手機知道條碼類型），電腦版條碼槍不知道類型時為 undefined   */
+function toHalfWidth(s){
+  return String(s||'').replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)).replace(/　/g, ' ');
+}
+function parseWfList(v){
+  const t = v.replace(/[;,?，；？\\|]/g, '/').replace(/\s+/g, '').replace(/\/+$/, '');
+  if(!/^\d{1,2}(\/\d{1,2})*$/.test(t)) return null;
+  const list = t.split('/').map(x => +x);
+  if(list.some(n => n < 1 || n > 25)) return null;
+  return list.map(pad2);
+}
+function classifyCode(raw, fmt){
+  const src = String(raw||'');
+  if(/[㄀-ㄯˇˊˋ˙]/.test(src)) return {type:'ime', value:src.trim()};
+  const v = toHalfWidth(src).trim().toUpperCase();
+  if(/^[A-Z0-9]{5}$/.test(v) && /[A-Z]/.test(v) && /\d/.test(v)) return {type:'lot', value:v};
+  if(/^\d{1,3}$/.test(v)){
+    const n = +v;
+    if(fmt === '1d') return {type:'qty', value:n};   // 手機讀到的一維數字條碼是 QTY，不需比對，直接忽略
+    if(n >= 1 && n <= 25) return {type:'wf', value:[pad2(n)], single:true};   // 單片盒
+    return {type:null, value:v};
+  }
+  if(/[\/;,?]/.test(v) && fmt !== '1d'){ const l = parseWfList(v); if(l) return {type:'wf', value:l}; }
+  return {type:null, value:v};
+}
+/* 給「手動輸入」與舊介面用 */
+function classify(raw){
+  const c = classifyCode(raw);
+  if(c.type === 'wf' && c.single) return {type:'slot', value:c.value[0]};
+  return c;
+}
+
+/* ---------- 核對資料庫 ---------- */
+function buildDb(files){
+  const byLot = new Map(), byLotCancel = new Map(), records = [];
+  const add = (map, k, rec) => { if(!map.has(k)) map.set(k, []); const a = map.get(k); if(!a.includes(rec)) a.push(rec); };
+  files.forEach(f => f.records.forEach(r => {
+    const slots = []; r.wafers.forEach(w => splitSlots(w.slots).forEach(s => { const n = parseInt(s,10); if(!isNaN(n)) slots.push(pad2(n)); }));
+    const rec = {wo:r.wo, part:r.part, lot:String(r.lot).toUpperCase(), fab:fabText(r), slots, vendor:f.vendor};
+    // 同一批號可能拆在多張工單（不同項次或不同產品），一個批號對應多筆工單
+    const map = r.cancel ? byLotCancel : byLot;
+    if(!r.cancel) records.push(rec);
+    add(map, rec.lot, rec);
+  }));
+  const expected = records.reduce((a,r) => a + r.slots.length, 0);
+  return {byLot, byLotCancel, records, expected};
+}
+
+/* status：ok 正確 / noslot 刻號不在工單 / nolot 批號不在工單 / cancelled 屬於已取消工單 / dup 重複刷讀（不計入實刷） */
+const STATUS_TEXT = {ok:'正確', noslot:'刻號不在工單', nolot:'批號不在工單', cancelled:'屬於已取消工單', dup:'重複刷讀', qty:'QTY與WF ID片數不符'};
+
+/* 每片 Wafer 以「批號 + 刻號」比對，自動對到含有該刻號的工單 */
+function evaluate(db, scans, lot, slot){
+  const recs = db.byLot.get(lot) || [];
+  const cands = recs.filter(r => r.slots.includes(slot));
+  if(cands.length){
+    const done = r => scans.some(s => s.status === 'ok' && s.wo === r.wo && s.slot === slot);
+    const free = cands.find(r => !done(r));
+    if(!free) return {status:'dup', woText:cands[0].wo, partText:cands[0].part};
+    return {status:'ok', woText:free.wo, partText:free.part};
+  }
+  if(scans.some(s => s.lot === lot && s.slot === slot && s.status !== 'dup')){
+    const p = scans.find(s => s.lot === lot && s.slot === slot);
+    return {status:'dup', woText:p.wo, partText:p.part};
+  }
+  const can = (db.byLotCancel.get(lot) || []).filter(r => r.slots.includes(slot));
+  if(can.length) return {status:'cancelled', woText:can.map(r => r.wo).join(' / '), partText:can[0].part};
+  if(!recs.length) return {status:'nolot', woText:'', partText:''};
+  const parts = [...new Set(recs.map(r => r.part))];
+  return {status:'noslot', woText:recs.map(r => r.wo).join(' / '), partText:parts[0]};
+}
+
+/* boxes：[{b, lot, slots:[...], qty, time}] —— 每次刷完一張盒標籤記一筆，刷讀明細由它推算 */
+function deriveScans(db, boxes){
+  const scans = [];
+  boxes.forEach(bx => bx.slots.forEach(slot => {
+    const ev = evaluate(db, scans, bx.lot, slot);
+    scans.push({n:scans.length + 1, b:bx.b, lot:bx.lot, slot, status:ev.status, wo:ev.woText, part:ev.partText, time:bx.time});
+  }));
+  return scans;
+}
+function boxQtyBad(bx){ return false; }   // QTY 不刷，片數以刻號數計算
+function nowText(){ const d = new Date(); return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()); }
+function okCount(scans){ return scans.filter(s => s.status === 'ok').length; }
+/* 問題 Wafer（批號不在工單 / 刻號多了 / 屬於已取消工單）刷到時就要求取出，不算點交片數 */
+const REMOVE = ['nolot','noslot','cancelled'];
+function countedCount(scans){ return scans.filter(s => s.status === 'ok').length; }
+
+function summarize(db, boxes){
+  const scans = deriveScans(db, boxes);
+  const parts = new Map();
+  const get = p => { if(!parts.has(p)) parts.set(p, {part:p, expected:0, actual:0}); return parts.get(p); };
+  db.records.forEach(r => get(r.part).expected += r.slots.length);
+  scans.forEach(s => { if(s.status === 'ok') get(s.part).actual++; else if(REMOVE.includes(s.status)) get(s.part || '（不明料號）'); });
+  // 各料號底下逐批號列出問題：少了哪些刻號、多了哪些刻號
+  const lotMap = new Map();   // key 料號|批號
+  const lotOf = (part, lot) => { const k = part + '|' + lot; if(!lotMap.has(k)) lotMap.set(k, {part, lot, expected:0, actual:0, missing:[], extra:[]}); return lotMap.get(k); };
+  db.records.forEach(r => {
+    const L = lotOf(r.part, r.lot); L.expected += r.slots.length;
+    const got = new Set(scans.filter(s => s.wo === r.wo && s.status === 'ok').map(s => s.slot));
+    r.slots.forEach(sl => { if(!got.has(sl)) L.missing.push(sl); });
+  });
+  scans.forEach(s => {
+    if(s.status === 'dup') return;
+    const L = lotOf(s.part || '（不明料號）', s.lot);
+    if(s.status === 'ok') L.actual++; else L.extra.push(s.slot);
+  });
+  const sortSl = a => [...new Set(a)].sort();
+  const partRows = [...parts.values()].map(p => {
+    const lots = [...lotMap.values()].filter(L => L.part === p.part)
+      .map(L => ({...L, missing:sortSl(L.missing), extra:sortSl(L.extra)}))
+      .filter(L => L.missing.length || L.extra.length);
+    return {...p, diff:p.actual - p.expected, lots};
+  });
+  const missing = [];
+  db.records.forEach(r => {
+    const got = new Set(scans.filter(s => s.wo === r.wo && s.status === 'ok').map(s => s.slot));
+    const miss = r.slots.filter(s => !got.has(s));
+    if(miss.length) missing.push({wo:r.wo, part:r.part, lot:r.lot, fab:r.fab, slots:miss, all:miss.length === r.slots.length});
+  });
+  const errors = [];
+  boxes.forEach(bx => {
+    if(boxQtyBad(bx)) errors.push({b:bx.b, n:'', lot:bx.lot, slot:'', status:'qty', wo:'', part:'', time:bx.time,
+      note:`QTY ${bx.qty}，WF ID ${bx.slots.length} 片`});
+    scans.filter(s => s.b === bx.b && s.status !== 'ok').forEach(s => errors.push(s));
+  });
+  const boxRows = boxes.map(bx => {
+    const ss = scans.filter(s => s.b === bx.b);
+    return {...bx, ok:ss.filter(s => s.status === 'ok').length, bad:ss.filter(s => s.status !== 'ok'), qtyBad:boxQtyBad(bx),
+      parts:[...new Set(ss.map(s => s.part).filter(Boolean))].join(' / ')};
+  });
+  const ok = okCount(scans);
+  // 結算錯誤詳細清單（同批號同原因合併成一列）
+  const groupBy = (list, keyFn) => { const m = new Map(); list.forEach(x => { const k = keyFn(x); if(!m.has(k)) m.set(k, {...x, slots:[]}); m.get(k).slots.push(x.slot); }); return [...m.values()].map(g => ({...g, slots:[...new Set(g.slots)].sort()})); };
+  const issues = {
+    nolot:  groupBy(scans.filter(s => s.status === 'nolot'), s => s.lot),
+    extra:  groupBy(scans.filter(s => s.status === 'noslot' || s.status === 'cancelled'), s => s.status + '|' + s.lot + '|' + s.wo),
+    short:  missing.filter(m => !m.all),
+    unscanned: missing.filter(m => m.all),
+    dup:    groupBy(scans.filter(s => s.status === 'dup'), s => s.lot + '|' + s.wo)
+  };
+  const removed = scans.filter(s => REMOVE.includes(s.status)).length;
+  return {scans, total:countedCount(scans), ok, removed, issues, expected:db.expected, partRows, missing, errors, boxRows,
+          complete: ok >= db.expected && db.expected > 0};
+}
+function orderProgress(db, scans){
+  return db.records.map(r => {
+    const got = new Set(scans.filter(s => s.wo === r.wo && s.status === 'ok').map(s => s.slot));
+    return {...r, done:got.size, got};
+  });
+}
+/* 一盒刷完後的說明文字 */
+function boxReport(sm, b){
+  const row = sm.boxRows.find(x => x.b === b);
+  const groups = {};
+  row.bad.forEach(s => { (groups[s.status] = groups[s.status] || []).push(s); });
+  return {row, groups};
+}
+
+/* ---------- 音效 / 震動 ---------- */
+let _ac = null;
+const SOUND = {sound:true, vibrate:true};
+function beep(kind){
+  if(SOUND.sound) try{
+    _ac = _ac || new (window.AudioContext || window.webkitAudioContext)();
+    const seq = kind === 'ok' ? [[1200,.08]] : kind === 'warn' ? [[700,.15],[0,.06],[700,.15]] : [[260,.35]];
+    let t = _ac.currentTime;
+    seq.forEach(([f,d]) => {
+      if(f){ const o = _ac.createOscillator(), g = _ac.createGain();
+        o.type = kind === 'ok' ? 'sine' : 'square'; o.frequency.value = f;
+        g.gain.setValueAtTime(.18, t); g.gain.exponentialRampToValueAtTime(.001, t + d);
+        o.connect(g); g.connect(_ac.destination); o.start(t); o.stop(t + d); }
+      t += d;
+    });
+  }catch(e){}
+  if(SOUND.vibrate) try{ if(navigator.vibrate) navigator.vibrate(kind === 'ok' ? 60 : kind === 'warn' ? [150,80,150] : [400]); }catch(e){}
+}
+
+/* ---------- 暫存（避免重新整理後進度消失） ---------- */
+function saveState(key, obj){ try{ localStorage.setItem(key, JSON.stringify(obj)); }catch(e){} }
+function loadState(key){ try{ const s = localStorage.getItem(key); return s ? JSON.parse(s) : null; }catch(e){ return null; } }
+function clearState(key){ try{ localStorage.removeItem(key); }catch(e){} }
+
+/* ---------- 匯出 Excel（不需外部函式庫，可多工作表） ---------- */
+const CRC_T = (() => { const t = new Uint32Array(256);
+  for(let n=0;n<256;n++){ let c=n; for(let k=0;k<8;k++) c = c&1 ? 0xEDB88320^(c>>>1) : c>>>1; t[n]=c>>>0; } return t; })();
+function crc32(b){ let c = 0xFFFFFFFF; for(let i=0;i<b.length;i++) c = CRC_T[(c^b[i])&0xFF]^(c>>>8); return (c^0xFFFFFFFF)>>>0; }
+function zipStore(entries){
+  const enc = new TextEncoder(), chunks = [], central = []; let off = 0;
+  entries.forEach(e => {
+    const nm = enc.encode(e.name), d = e.data, crc = crc32(d);
+    const h = new DataView(new ArrayBuffer(30));
+    h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(6,0x0800,true);
+    h.setUint32(14,crc,true); h.setUint32(18,d.length,true); h.setUint32(22,d.length,true); h.setUint16(26,nm.length,true);
+    chunks.push(new Uint8Array(h.buffer), nm, d);
+    const c = new DataView(new ArrayBuffer(46));
+    c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true); c.setUint16(8,0x0800,true);
+    c.setUint32(16,crc,true); c.setUint32(20,d.length,true); c.setUint32(24,d.length,true);
+    c.setUint16(28,nm.length,true); c.setUint32(42,off,true);
+    central.push(new Uint8Array(c.buffer), nm);
+    off += 30 + nm.length + d.length;
+  });
+  const cs = central.reduce((a,b)=>a+b.length,0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0,0x06054b50,true); end.setUint16(8,entries.length,true); end.setUint16(10,entries.length,true);
+  end.setUint32(12,cs,true); end.setUint32(16,off,true);
+  return new Blob([...chunks, ...central, new Uint8Array(end.buffer)], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+}
+function xmlEsc(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])).replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,''); }
+function colName(n){ let s=''; n++; while(n){ const m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+/* sheets: [{name, rows:[[...]], widths:[...]}]，第一列為表頭 */
+function buildXlsx(sheets){
+  const enc = new TextEncoder(), f = (name, s) => ({name, data:enc.encode(s)});
+  const sheetXml = sh => {
+    const rows = sh.rows.map((r,ri) => `<row r="${ri+1}">` + r.map((v,ci) => {
+      const ref = colName(ci) + (ri+1), s = ri === 0 ? ' s="1"' : '';
+      if(v === null || v === undefined || v === '') return ri === 0 ? `<c r="${ref}"${s}/>` : '';
+      return typeof v === 'number' ? `<c r="${ref}"${s}><v>${v}</v></c>`
+        : `<c r="${ref}" t="inlineStr"${s}><is><t xml:space="preserve">${xmlEsc(v)}</t></is></c>`;
+    }).join('') + '</row>').join('');
+    const cols = (sh.widths||[]).map((w,i)=>`<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join('');
+    return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>${cols?`<cols>${cols}</cols>`:''}<sheetData>${rows}</sheetData></worksheet>`;
+  };
+  const entries = [
+    f('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((s,i)=>`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>`),
+    f('_rels/.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`),
+    f('xl/workbook.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s,i)=>`<sheet name="${xmlEsc(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('')}</sheets></workbook>`),
+    f('xl/_rels/workbook.xml.rels', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((s,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('')}<Relationship Id="rId${sheets.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`),
+    f('xl/styles.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFDDEBF7"/></patternFill></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/></cellXfs></styleSheet>`)
+  ];
+  sheets.forEach((s,i) => entries.push(f(`xl/worksheets/sheet${i+1}.xml`, sheetXml(s))));
+  return zipStore(entries);
+}
+function downloadBlob(blob, name){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+function stampText(){ const d = new Date(); return d.getFullYear()+pad2(d.getMonth()+1)+pad2(d.getDate())+'_'+pad2(d.getHours())+pad2(d.getMinutes()); }
+
+/* 簡化清單工作表 */
+function listSheet(files){
+  const rows = [['工單','料號','批號','領料廠','數量','Fab批號','刻號','廠商']];
+  files.forEach(f => f.records.filter(r => !r.cancel).forEach(r =>
+    rows.push([r.wo, r.part, r.lot, r.plant, r.qty, fabText(r), slotText(r), f.vendor])));
+  return {name:'工單簡化', rows, widths:[18,14,10,10,8,14,24,16]};
+}
+function vendorsText(files){ return [...new Set(files.map(f => f.vendor).filter(Boolean))].join('、'); }
+function cancelledText(files){ const a = []; files.forEach(f => f.records.forEach(r => { if(r.cancel) a.push(r.wo); })); return a.join(', '); }
+/* 料號狀態文字，例：Q9GT4：少 03-25（23 片）；PBA67：少 20-23, 25（5 片）、多 24（1 片） */
+function lotIssueParts(L){
+  return [L.missing.length ? `少 ${compress(L.missing)}（${L.missing.length} 片）` : '', L.extra.length ? `多 ${compress(L.extra)}（${L.extra.length} 片，已取出）` : ''].filter(Boolean);
+}
+function lotIssueText(p, sep){ return p.lots.map(L => `${L.lot}：${lotIssueParts(L).join('、')}`).join(sep || '；'); }
+/* 畫面用：每個批號一行，少 / 多 分顏色 */
+function lotIssueHtml(p){
+  return p.lots.map(L => `<div class="lotline"><b>${esc(L.lot)}</b>${L.missing.length ? ` <span class="minus">少 ${esc(compress(L.missing))}（${L.missing.length} 片）</span>` : ''}${L.extra.length ? ` <span class="plus">多 ${esc(compress(L.extra))}（${L.extra.length} 片，已取出）</span>` : ''}</div>`).join('');
+}
+/* 錯誤詳細清單：[標題, 說明, 列[]] */
+function issueSections(sm){
+  const I = sm.issues;
+  return [
+    {key:'nolot', title:'批號不在工單', note:'刷到時已要求取出', rows:I.nolot.map(g => ({lot:g.lot, part:'—', wo:'—', slots:g.slots}))},
+    {key:'extra', title:'刻號多了', note:'刷到時已要求取出', rows:I.extra.map(g => ({lot:g.lot, part:g.part, wo:g.status === 'cancelled' ? g.wo + '（已取消工單）' : g.wo, slots:g.slots}))},
+    {key:'short', title:'刻號少了', note:'工單上有，但該批號只刷到部分刻號', rows:I.short.map(m => ({lot:m.lot, part:m.part, wo:m.wo, slots:m.slots}))},
+    {key:'unscanned', title:'未刷讀', note:'整筆工單一片都沒刷到', rows:I.unscanned.map(m => ({lot:m.lot, part:m.part, wo:m.wo, slots:m.slots}))},
+    {key:'dup', title:'重複刷讀', note:'同一片刷了兩次以上，不重複計算', rows:I.dup.map(g => ({lot:g.lot, part:g.part, wo:g.wo, slots:g.slots}))}
+  ];
+}
+/* 刷完一盒有問題時的提醒視窗內容（兩版共用） */
+function boxAlert(bx, row){
+  const rm = row.bad.filter(s => REMOVE.includes(s.status)), dup = row.bad.filter(s => s.status === 'dup');
+  const why = {nolot:'批號不在工單', noslot:'刻號多了（不在工單刻號內）', cancelled:'屬於已取消工單'};
+  const groups = {};
+  rm.forEach(s => (groups[s.status] = groups[s.status] || []).push(s));
+  const lines = Object.entries(groups).map(([st, list]) => {
+    const wos = [...new Set(list.map(s => s.wo).filter(Boolean))].join(' / ');
+    return `<li><b>${why[st]}</b><div class="pull">刻號 ${esc(compress(list.map(s => s.slot)))}（${list.length} 片）</div>${wos ? `<div class="muted">${esc(wos)}</div>` : ''}</li>`;
+  });
+  if(dup.length) lines.push(`<li><b>重複刷讀</b>：刻號 ${esc(compress(dup.map(s => s.slot)))}（已刷過，不重複計算，不用取出）</li>`);
+  const allOut = rm.length && rm.length === bx.slots.length;
+  const head = rm.length
+    ? `<div class="pullhead">請將以下 Wafer 取出，不要點交${allOut ? '（整盒取出）' : ''}</div>`
+    : '';
+  return {
+    kind: rm.length ? 'err' : 'warn',
+    title: rm.length ? `⚠ 第 ${bx.b} 盒：請取出問題 Wafer` : `⚠ 第 ${bx.b} 盒：重複刷讀`,
+    body: `${head}<div class="big">批號 ${esc(bx.lot)}</div>
+      <div>${bx.slots.length === 1 ? `此盒僅有 1 片，刻號為 ${bx.slots[0]}` : `刻號 ${esc(compress(bx.slots))}（${bx.slots.length} 片），正確 ${row.ok} 片`}</div>
+      <ul class="elist">${lines.join('')}</ul><div class="muted">已記錄在錯誤紀錄</div>`,
+    button: rm.length ? '已取出，繼續刷下一盒' : '確認，繼續刷下一盒'
+  };
+}
+function errNote(s){ return s.status === 'qty' ? s.note : (s.wo || ''); }
+
+/* 核對結果工作表；info = {handler, receiver, note} 點交資訊 */
+function resultSheets(db, boxes, files, info){
+  const sm = summarize(db, boxes); info = info || {};
+  const s1 = [['項目','內容']];
+  s1.push(['廠商', vendorsText(files)], ['核對時間', new Date().toLocaleString('zh-TW', {hour12:false})],
+    ['點交人員', info.handler || ''], ['簽收人', info.receiver || ''], ['備註', info.note || ''],
+    ['已取消工單', cancelledText(files)], ['實刷 Wafer 片數（點交）', sm.total], ['應刷 Wafer 片數', sm.expected],
+    ['未刷到片數', sm.expected - sm.ok], ['已取出問題片數', sm.removed], []);
+  s1.push(['料號','應刷片數','實刷片數','差異','問題批號 / 刻號']);
+  sm.partRows.forEach(p => s1.push([p.part, p.expected, p.actual, p.diff, p.lots.length ? lotIssueText(p) : '相符']));
+  const s2 = [['類別','批號','料號','工單','刻號','片數','說明']];
+  issueSections(sm).forEach(sec => sec.rows.forEach(r => s2.push([sec.title, r.lot, r.part, r.wo, compress(r.slots), r.slots.length, sec.note]))); 
+  const s3 = [['盒序','時間','批號','刻號','片數','正確片數','異常片數','料號']];
+  sm.boxRows.forEach(r => s3.push([r.b, r.time, r.lot, compress(r.slots), r.slots.length, r.ok, r.bad.length, r.parts]));
+  const s4 = [['序號','盒序','時間','批號','刻號','工單','料號','結果']];
+  sm.scans.forEach(s => s4.push([s.n, s.b, s.time, s.lot, s.slot, s.wo, s.part, STATUS_TEXT[s.status]]));
+  return [
+    {name:'核對結果', rows:s1, widths:[18,24,10,8,60]},
+    {name:'錯誤清單', rows:s2, widths:[14,10,14,26,24,6,30]},
+    {name:'刷讀順序', rows:s3, widths:[6,10,10,24,6,9,9,16]},
+    {name:'刷讀明細', rows:s4, widths:[6,6,10,10,6,18,14,14]}
+  ];
+}
+
+
+(function(){
+'use strict';
+const KEY = 'wo_check_m_v2';
+const $ = id => document.getElementById(id);
+
+const EMPTY = () => ({lot:'', wf:null, t_lot:0, t_wf:0});
+let files = [], boxes = [], pending = EMPTY(), db = buildDb([]);
+let info = {handler:'', receiver:'', note:''}, settings = {frame:'label', zoom:0};
+let screen = 'load', modalOpen = false, completedShown = false;
+
+function persist(){ saveState(KEY, {files, boxes, info, settings, sound:SOUND.sound, vibrate:SOUND.vibrate}); }
+(function restore(){
+  const s = loadState(KEY);
+  if(s){ if(s.files) files = s.files; boxes = s.boxes || []; if(s.info) info = s.info; if(s.settings) Object.assign(settings, s.settings);
+    if(s.sound === false) SOUND.sound = false; if(s.vibrate === false) SOUND.vibrate = false; }
+  db = buildDb(files); completedShown = summarize(db, boxes).complete;
+})();
+
+/* ---------- 畫面切換 ---------- */
+function go(s){
+  screen = s;
+  document.querySelectorAll('.screen').forEach(x => x.classList.toggle('on', x.id === 'sc-' + s));
+  document.querySelectorAll('.steps span').forEach(x => x.classList.toggle('on', x.dataset.s === s));
+  window.scrollTo(0,0);
+  if(s === 'scan'){ renderScan(); startCam(); } else stopCam();
+  if(s === 'load') renderLoad();
+  if(s === 'result') renderResult();
+  renderBottom();
+}
+document.querySelectorAll('.steps span').forEach(x => x.onclick = () => { if(x.dataset.s === 'load' || db.expected) go(x.dataset.s); });
+
+function renderBottom(){
+  const b = $('bottom');
+  if(screen === 'load'){
+    b.innerHTML = `<button class="btn danger" id="bClear">清除</button><button class="btn primary wide" id="bStart" ${db.expected?'':'disabled'}>開始掃描（${db.expected} 片）</button>`;
+    $('bClear').onclick = () => { if(files.length && confirm('清除所有工單與刷讀紀錄？')){ files = []; boxes = []; pending = EMPTY(); dbChanged(); } };
+    $('bStart').onclick = () => go('scan');
+  } else if(screen === 'scan'){
+    b.innerHTML = `<button class="btn" id="bBack">工單</button><button class="btn primary wide" id="bFinish">結束核對，看結果</button>`;
+    $('bBack').onclick = () => go('load'); $('bFinish').onclick = () => go('result');
+  } else {
+    b.innerHTML = `<button class="btn" id="bBack">繼續掃描</button><button class="btn primary wide" id="bXlsx">匯出 Excel</button>`;
+    $('bBack').onclick = () => go('scan');
+    $('bXlsx').onclick = () => downloadBlob(buildXlsx(resultSheets(db, boxes, files, info)), '工單核對結果_' + stampText() + '.xlsx');
+  }
+}
+
+/* ================= 1 工單 ================= */
+function renderLoad(){
+  const el = $('woList');
+  if(!files.length){ el.innerHTML = '<div class="none">尚未載入工單</div>'; renderBottom(); return; }
+  el.innerHTML = files.map((f,fi) => `
+    <div class="fmeta"><span><b>${esc(f.vendor||'—')}</b></span><span>${esc(f.name)}</span><span>列印 ${esc(f.printDate||'—')}</span>
+      <span>有效 <b>${f.records.filter(r=>!r.cancel).length}</b> / ${f.records.length} 筆</span></div>
+    ${f.records.map((r,ri) => `<div class="card wo ${r.cancel?'cancel':''}">
+      <div class="info"><div class="t1">${esc(r.wo)} ${r.cancel?'<span class="tag c">已取消</span>':''}${qtyMismatch(r)?'<span class="tag w">刻號數≠數量</span>':''}</div>
+        <div class="t2">${esc(r.part)}　批號 <b style="color:var(--ink)">${esc(r.lot)}</b>　${esc(fabText(r))}</div>
+        <div class="t3">刻號 ${esc(slotText(r))}</div></div>
+      <div class="qty">${esc(r.qty)}<small>片</small></div>
+      <button class="tg" data-f="${fi}" data-r="${ri}">${r.cancel?'恢復':'取消'}</button></div>`).join('')}`).join('');
+  renderBottom();
+}
+$('woList').addEventListener('click', e => {
+  const b = e.target.closest('button[data-f]'); if(!b) return;
+  const r = files[+b.dataset.f].records[+b.dataset.r]; r.cancel = !r.cancel; dbChanged();
+});
+function dbChanged(){
+  db = buildDb(files);
+  completedShown = summarize(db, boxes).complete;
+  persist(); renderLoad();
+}
+$('fileInput').onchange = async e => {
+  const list = [...e.target.files]; e.target.value = '';
+  if(!list.length) return;
+  if(boxes.length && !confirm('已有刷讀紀錄，加入新檔案後會依新的工單重新比對，確定？')) return;
+  const bad = [];
+  for(const f of list){
+    const p = parseWorkOrder(decodeText(await f.arrayBuffer()), f.name);
+    if(!p.records.length) bad.push(f.name);
+    const i = files.findIndex(x => x.name === f.name); if(i >= 0) files[i] = p; else files.push(p);
+  }
+  $('loadMsg').textContent = bad.length ? '找不到工單資料：' + bad.join(', ') : '';
+  dbChanged();
+};
+
+/* ================= 2 掃描 ================= */
+const video = $('video'), cv = $('cv'), cam = $('cam');
+const FRAMES = {label:[.05,.08,.90,.84], rect:[.08,.22,.84,.56], bar:[.05,.38,.90,.24]};
+let stream = null, track = null, detector = null, wasm = false, zx = null, loopTimer = null, paused = false, busy = false;
+let lastKey = '', coolUntil = 0, hold = null;
+
+function applyFrame(){
+  const f = FRAMES[settings.frame] || FRAMES.label, el = cam.querySelector('.frame');
+  el.style.left = f[0]*100 + '%'; el.style.top = f[1]*100 + '%'; el.style.width = f[2]*100 + '%'; el.style.height = f[3]*100 + '%';
+  document.querySelectorAll('#frameChips button').forEach(b => b.classList.toggle('on', b.dataset.f === settings.frame));
+}
+document.querySelectorAll('#frameChips button').forEach(b => b.onclick = () => { settings.frame = b.dataset.f; applyFrame(); persist(); });
+
+async function startCam(){
+  if(stream){ paused = false; cam.classList.remove('pause'); loop(); return; }
+  $('camMsg').style.display = 'flex'; $('camMsg').textContent = '相機啟動中…';
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    $('camMsg').innerHTML = '此瀏覽器無法使用相機<br>請用 https 網址開啟，或改用「手動輸入」'; return;
+  }
+  try{
+    stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}});
+    video.srcObject = stream; await video.play();
+    track = stream.getVideoTracks()[0];
+    const cap = track.getCapabilities ? track.getCapabilities() : {};
+    try{ if(cap.focusMode && cap.focusMode.includes('continuous')) await track.applyConstraints({advanced:[{focusMode:'continuous'}]}); }catch(e){}
+    $('torchBtn').hidden = !cap.torch;
+    if(cap.zoom && cap.zoom.max > cap.zoom.min){
+      const z = $('zoom'); z.min = cap.zoom.min; z.max = Math.min(cap.zoom.max, 6); z.step = cap.zoom.step || .1;
+      z.value = Math.max(cap.zoom.min, Math.min(settings.zoom || cap.zoom.min, z.max)); $('zoomBox').hidden = false;
+      try{ await track.applyConstraints({advanced:[{zoom:+z.value}]}); }catch(e){}
+    } else $('zoomBox').hidden = true;
+  }catch(err){
+    stream = null;
+    $('camMsg').innerHTML = (err && err.name === 'NotAllowedError') ? '相機權限被拒絕<br>請到瀏覽器設定允許相機後重新整理' : '無法開啟相機：' + esc(err && err.message || err);
+    return;
+  }
+  if(!detector && !wasm && !zx) await initDecoder();
+  if(!detector && !wasm && !zx){ $('camMsg').innerHTML = '無法載入條碼辨識<br>請確認網路後重新整理，或改用「手動輸入」'; return; }
+  $('camMsg').style.display = 'none';
+  paused = false; cam.classList.remove('pause'); loop();
+}
+function stopCam(){
+  clearTimeout(loopTimer); loopTimer = null;
+  if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; track = null; }
+}
+$('zoom').addEventListener('input', async e => { settings.zoom = +e.target.value; persist(); try{ await track.applyConstraints({advanced:[{zoom:settings.zoom}]}); }catch(err){} });
+let torchOn = false;
+$('torchBtn').onclick = async e => { e.stopPropagation(); torchOn = !torchOn; try{ await track.applyConstraints({advanced:[{torch:torchOn}]}); }catch(err){} $('torchBtn').classList.toggle('on', torchOn); };
+
+function loadScript(src){ return new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = no; document.head.appendChild(s); }); }
+async function initDecoder(){
+  if('BarcodeDetector' in window){
+    try{
+      const fm = await BarcodeDetector.getSupportedFormats();
+      if(fm && fm.includes('qr_code')){ detector = new BarcodeDetector({formats:fm.filter(f => ['qr_code','code_128','code_39','code_93','codabar','ean_13','ean_8','itf','upc_a','upc_e','data_matrix'].includes(f))}); return; }
+    }catch(e){}
+  }
+  // iPhone 等不支援 BarcodeDetector：用 zxing-wasm（一次讀出畫面中所有條碼，速度快），檔案放在同資料夾可離線
+  try{
+    await loadScript('zxing-wasm.js');
+    await ZXingWASM.prepareZXingModule({overrides:{locateFile:(f) => f}, fireImmediately:true});
+    wasm = true;
+  }catch(e){ wasm = false; }
+  // JavaScript 版 ZXing：wasm 漏讀細小一維條碼時補讀；wasm 無法載入時當備援
+  try{ await loadScript('zxing.min.js'); }catch(e){ try{ await loadScript('https://unpkg.com/@zxing/library@0.21.3/umd/index.min.js'); }catch(e2){} }
+  try{
+    const Z = window.ZXing, hints = new Map();
+    hints.set(Z.DecodeHintType.TRY_HARDER, true);
+    zx = {Z, reader:new Z.MultiFormatReader()}; zx.reader.setHints(hints);
+  }catch(e){ zx = null; }
+}
+/* 只辨識框線內的範圍，降低誤讀 */
+function grabFrame(){
+  const vw = video.videoWidth, vh = video.videoHeight; if(!vw || !vh) return null;
+  const f = FRAMES[settings.frame] || FRAMES.label;
+  const box = cam.getBoundingClientRect(), scale = Math.max(box.width / vw, box.height / vh);
+  const ox = (vw * scale - box.width) / 2, oy = (vh * scale - box.height) / 2;
+  const fx = (box.width * f[0] + ox) / scale, fy = (box.height * f[1] + oy) / scale;
+  const fw = box.width * f[2] / scale, fh = box.height * f[3] / scale;
+  cv.width = Math.round(fw); cv.height = Math.round(fh);
+  cv.getContext('2d', {willReadFrequently:true}).drawImage(video, fx, fy, fw, fh, 0, 0, cv.width, cv.height);
+  return cv;
+}
+async function decodeFrame(){
+  const c = grabFrame(); if(!c) return [];
+  if(detector){ const r = await detector.detect(c); return r.map(x => ({text:x.rawValue, fmt:x.format === 'qr_code' ? 'qr' : '1d'})); }
+  if(wasm){
+    // 先讀整個框；還缺 LOT NO 或 QR Code 時，再把框切成上下重疊的橫條補讀（一維條碼小時更容易讀到）
+    const ctx = c.getContext('2d', {willReadFrequently:true}), w = c.width, h = c.height, out = [];
+    const opt = {formats:['QRCode','Code128','Code39','Code93','Codabar','ITF','EAN13'], maxNumberOfSymbols:8, tryHarder:true};
+    const have = () => out.some(o => o.fmt === 'qr') && out.some(o => classifyCode(o.text, o.fmt).type === 'lot');
+    const regions = [[0,0,w,h]]; for(let i=0;i<7;i++) regions.push([0, Math.round(h*i/8), w, Math.round(h/4)]);
+    for(const r of regions){
+      const res = await ZXingWASM.readBarcodes(ctx.getImageData(r[0], r[1], r[2], r[3]), opt);
+      res.forEach(x => { if(x.isValid !== false && x.text && !out.some(o => o.text === x.text)) out.push({text:x.text, fmt:x.format === 'QRCode' ? 'qr' : '1d'}); });
+      if(have() || (pending.lot && out.some(o => o.fmt === 'qr')) || (pending.wf && out.some(o => classifyCode(o.text,o.fmt).type === 'lot'))) break;
+    }
+    // 標籤離鏡頭較遠、一維條碼太細時 wasm 會漏讀 LOT NO，改用 ZXing（JS 版）縮小畫面後逐條補讀
+    if(zx && !out.some(o => classifyCode(o.text, o.fmt).type === 'lot')){
+      const sc = Math.min(1, 1200 / w), sw = Math.round(w*sc), sh = Math.round(h*sc);
+      cv3.width = sw; cv3.height = sh; cv3.getContext('2d', {willReadFrequently:true}).drawImage(c, 0, 0, sw, sh);
+      for(let k=0;k<2;k++){ const v = zxDecode(cv3, zxStrips(sw, sh)[zxTurn++ % 24]); if(v && !out.some(o => o.text === v.text)) out.push(v); }
+    }
+    return out;
+  }
+  if(zx){
+    // ZXing 一次只讀一個條碼：整個框 + 輪流讀局部區塊，讓 LOT NO 與 QR Code 都讀得到
+    const out = [], w = c.width, h = c.height;
+    // 標籤上數個一維條碼上下緊鄰，整框只會讀到同一個，所以再切成上下重疊的細長條逐一讀
+    const tiles = [[0,0,w/2,h],[w/2,0,w/2,h]];
+    for(let i=0;i<11;i++) tiles.push([0, h*i/12, w, h/6], [w/2, h*i/12, w/2, h/6]);
+    [null, tiles[zxTurn++ % tiles.length], tiles[zxTurn++ % tiles.length]].forEach(r => { const v = zxDecode(c, r); if(v && !out.some(o => o.text === v.text)) out.push(v); });
+    return out;
+  }
+  return [];
+}
+let zxTurn = 0;
+const cv3 = document.createElement('canvas');
+function zxStrips(w, h){ const t = []; for(let i=0;i<12;i++) t.push([0, h*i/13, w, h/6.5], [w/2, h*i/13, w/2, h/6.5]); return t; }
+const cv2 = document.createElement('canvas');
+function zxDecode(c, r){
+  try{
+    let src = c;
+    if(r){ cv2.width = Math.round(r[2]); cv2.height = Math.round(r[3]);
+      cv2.getContext('2d', {willReadFrequently:true}).drawImage(c, r[0], r[1], r[2], r[3], 0, 0, cv2.width, cv2.height); src = cv2; }
+    const Z = zx.Z, res = zx.reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(src))));
+    return {text:res.getText(), fmt:res.getBarcodeFormat() === Z.BarcodeFormat.QR_CODE ? 'qr' : '1d'};
+  }catch(e){ return null; }
+}
+function loop(){
+  clearTimeout(loopTimer);
+  if(!stream || paused || screen !== 'scan') return;
+  loopTimer = setTimeout(async () => {
+    if(!busy && !modalOpen && Date.now() > coolUntil){
+      busy = true;
+      try{ handleCodes(await decodeFrame()); }catch(e){}
+      busy = false;
+    }
+    loop();
+  }, detector || wasm ? 100 : 180);
+}
+cam.addEventListener('click', () => {
+  if(!stream){ startCam(); return; }
+  paused = !paused; cam.classList.toggle('pause', paused); $('pauseBtn').textContent = paused ? '▶ 繼續' : '⏸ 暫停';
+  if(!paused) loop();
+});
+$('pauseBtn').onclick = () => cam.click();
+
+/* 框內可能同時有 STOCK NO、ITEM NO、LOT NO、QTY、QR Code，只保留 LOT NO 與 WF ID（QR Code） */
+function handleCodes(codes){
+  const now = Date.now();
+  // 單獨讀到的值超過 6 秒未湊齊就作廢，避免和下一張標籤錯配
+  ['lot','wf'].forEach(k => { if(pending[k] && now - pending['t_' + k] > 6000) pending[k] = k === 'lot' ? '' : null; });
+  let multi = false;
+  if(codes.length){
+    const got = {lot:new Set(), wf:new Map()};
+    codes.forEach(o => { const c = classifyCode(o.text, o.fmt);
+      if(c.type === 'lot') got.lot.add(c.value); else if(c.type === 'wf' && o.fmt === 'qr') got.wf.set(c.value.join('/'), c.value); });
+    // 剛刷完的同一張標籤還在畫面中：在讀到不同批號或離開畫面 1.5 秒前，不再顯示它的 WF ID
+    if(hold){
+      if(got.lot.size && ![...got.lot].includes(hold.lot)) hold = null;
+      else if(got.wf.has(hold.wf)){ got.wf.delete(hold.wf); hold.seen = now; }
+      else if(now - hold.seen > 1500) hold = null;
+    }
+    multi = got.lot.size > 1 || got.wf.size > 1;
+    if(got.lot.size === 1){ pending.lot = [...got.lot][0]; pending.t_lot = now; }
+    if(got.wf.size === 1){ pending.wf = [...got.wf.values()][0]; pending.t_wf = now; }
+    if(multi) setLast('warn', '框內有兩張以上的標籤，請靠近只對準一張');
+  }
+  if(pending.lot && pending.wf){
+    const key = pending.lot + '|' + pending.wf.join('/');
+    if(key === lastKey){ pending = EMPTY(); renderPend(); return; }         // 同一張標籤還在畫面中
+    commitBox(pending.lot, pending.wf);
+  } else if(codes.length) renderPend();
+}
+function commitBox(lot, slots){
+  const bx = {b:boxes.length + 1, lot, slots, qty:null, time:nowText()};
+  boxes.push(bx); lastKey = lot + '|' + slots.join('/'); hold = {lot, wf:slots.join('/'), seen:Date.now()};
+  pending = EMPTY(); coolUntil = Date.now() + 800;
+  persist();
+  const sm = summarize(db, boxes), {row, groups} = boxReport(sm, bx.b);
+  renderScan();
+  if(!row.bad.length && !row.qtyBad){
+    flashFrame('hit'); beep('ok');
+    setLast('ok', slots.length === 1 ? `✔ 第 ${bx.b} 盒　${lot}　此盒僅有 1 片，刻號為 ${slots[0]}，正確` : `✔ 第 ${bx.b} 盒　${lot}　刻號 ${compress(slots)}　${row.ok} 片正確`);
+    if(sm.complete && !completedShown){ completedShown = true; setTimeout(showComplete, 300); }
+    return;
+  }
+  flashFrame('bad'); beep(row.bad.some(s => REMOVE.includes(s.status)) ? 'err' : 'warn');
+  const al = boxAlert(bx, row);
+  setLast(al.kind, `✖ 第 ${bx.b} 盒　${lot}　正確 ${row.ok} 片，問題 ${row.bad.length} 片`);
+  openSheet(al.kind, al.title, al.body,
+    [[al.button, 'primary', () => { if(summarize(db, boxes).complete && !completedShown){ completedShown = true; setTimeout(showComplete, 200); } }]]);
+}
+function flashFrame(c){ cam.classList.add(c); setTimeout(() => cam.classList.remove(c), 500); }
+function setLast(cls, t){ const l = $('last'); l.className = 'last ' + cls; l.textContent = t; }
+
+function renderPend(){
+  $('wNo').textContent = boxes.length + 1;
+  $('vLot').textContent = pending.lot || '—';
+  $('vWf').textContent = pending.wf ? `${compress(pending.wf)}` : '—';
+  $('boxLot').className = 'box ' + (pending.lot ? 'filled' : 'need');
+  $('boxWf').className = 'box ' + (pending.wf ? 'filled' : 'need');
+}
+function renderScan(){
+  const sm = summarize(db, boxes);
+  $('pNum').innerHTML = `${sm.ok} <small>/ ${sm.expected}</small>`;
+  $('pBar').style.width = (sm.expected ? sm.ok / sm.expected * 100 : 0) + '%';
+  renderPend();
+  const prog = orderProgress(db, sm.scans);
+  $('progSum').textContent = `${prog.filter(r => r.done === r.slots.length).length} / ${prog.length} 筆完成`;
+  $('progList').innerHTML = prog.map(r => `<div class="row ${r.done===r.slots.length?'done':''}"><span>${esc(r.wo.replace(/^.*-(\d+)$/,'-$1'))}　${esc(r.part)}　${esc(r.lot)}</span><b>${r.done} / ${r.slots.length}</b></div>`).join('');
+  $('boxSum').textContent = `${boxes.length} 盒`;
+  $('boxList').innerHTML = sm.boxRows.length ? sm.boxRows.slice().reverse().map(r =>
+    `<div class="row"><span>#${r.b}　${esc(r.lot)}　${esc(compress(r.slots))}</span>${!r.bad.length && !r.qtyBad ? `<span class="tag o">${r.ok} 片</span>` : `<span class="tag c">異常 ${r.bad.length}${r.qtyBad?'・QTY':''}</span>`}</div>`).join('')
+    : '<div class="row muted">尚未刷讀</div>';
+  $('errSum').textContent = sm.errors.length ? `${sm.errors.length} 筆` : '無';
+  $('errList').innerHTML = sm.errors.length ? sm.errors.slice().reverse().map(s =>
+    `<div class="row"><span>盒${s.b}　${esc(s.lot)}${s.slot ? ' - ' + esc(s.slot) : ''}${s.status === 'qty' ? '　' + esc(s.note) : ''}</span><span class="tag ${s.status==='dup'||s.status==='qty'?'w':'c'}">${STATUS_TEXT[s.status]}</span></div>`).join('')
+    : '<div class="row muted">無</div>';
+}
+
+/* ---------- 視窗 ---------- */
+function openSheet(kind, title, body, buttons){
+  modalOpen = true;
+  $('sheet').className = 'sheet ' + kind; $('sTitle').textContent = title; $('sBody').innerHTML = body; $('sFoot').innerHTML = '';
+  buttons.forEach(([t, cls, fn]) => { const b = document.createElement('button'); b.className = 'btn ' + cls; b.textContent = t;
+    b.onclick = () => { if(fn && fn() === false) return; closeSheet(); }; $('sFoot').appendChild(b); });
+  $('mask').classList.add('on');
+}
+function closeSheet(){ $('mask').classList.remove('on'); modalOpen = false; coolUntil = Date.now() + 600; }
+function showComplete(){
+  const sm = summarize(db, boxes);
+  openSheet('ok', '✔ 全部 Wafer 已刷完', `<div>實刷 <span class="big">${sm.total}</span> 片（${boxes.length} 盒），應刷 ${sm.expected} 片</div><div>已取出問題片 ${sm.removed} 片</div>`,
+    [['留在掃描', '', null], ['看結果', 'primary', () => { setTimeout(() => go('result'), 0); }]]);
+}
+/* 手動輸入：刻號可輸入 01/02/03 或 1-5,8 */
+function parseManualSlots(v){
+  const out = [];
+  for(const part of toHalfWidth(v).split(/[\/,;，\s]+/).filter(Boolean)){
+    const m = part.match(/^(\d{1,2})(?:-(\d{1,2}))?$/); if(!m) return null;
+    const a = +m[1], b = m[2] ? +m[2] : a; if(a < 1 || b > 25 || a > b) return null;
+    for(let i=a;i<=b;i++) out.push(pad2(i));
+  }
+  return out.length ? out : null;
+}
+$('manualBtn').onclick = () => {
+  openSheet('plain', '手動輸入', `<div class="muted">標籤讀不到時使用</div>
+    <div>批號 LOT NO</div><input id="mLot" maxlength="5" autocomplete="off" value="${esc(pending.lot)}">
+    <div>刻號 WF ID（例：01/02/03 或 1-5,8）</div><input id="mWf" autocomplete="off" value="${esc(pending.wf ? compress(pending.wf).replace(/ /g,'') : '')}">
+    <div id="mErr" style="color:var(--danger);font-size:14px"></div>`,
+    [['取消', '', null], ['送出', 'primary', () => {
+      const l = classifyCode($('mLot').value), w = parseManualSlots($('mWf').value);
+      if(l.type !== 'lot'){ $('mErr').textContent = '批號格式錯誤（5 碼英數混合）'; return false; }
+      if(!w){ $('mErr').textContent = '刻號格式錯誤（01~25）'; return false; }
+      setTimeout(() => { lastKey = ''; commitBox(l.value, w); }, 0);
+    }]]);
+  setTimeout(() => $('mLot').focus(), 100);
+};
+$('undoBtn').onclick = () => {
+  if(pending.lot || pending.wf){ pending = EMPTY(); setLast('', '已清除本盒'); }
+  else if(boxes.length){ const b = boxes.pop(); lastKey = ''; setLast('', `已復原第 ${b.b} 盒（${b.lot}　${compress(b.slots)}）`); completedShown = summarize(db, boxes).complete; }
+  persist(); renderScan();
+};
+$('optSound').checked = SOUND.sound; $('optVib').checked = SOUND.vibrate;
+$('optSound').onchange = e => { SOUND.sound = e.target.checked; persist(); if(SOUND.sound) beep('ok'); };
+$('optVib').onchange = e => { SOUND.vibrate = e.target.checked; persist(); };
+
+/* ================= 3 結果 ================= */
+function renderResult(){
+  const sm = summarize(db, boxes);
+  $('iHandler').value = info.handler; $('iReceiver').value = info.receiver; $('iNote').value = info.note;
+  const good = sm.complete && !sm.errors.length && sm.partRows.every(p => p.diff === 0);
+  $('resContent').innerHTML = (good
+    ? `<div class="card verdict ok">✔ 核對相符：實刷 ${sm.total} 片（${boxes.length} 盒），與工單一致</div>`
+    : `<div class="card verdict ng">⚠ 實刷 ${sm.total} 片（應刷 ${sm.expected}，${boxes.length} 盒）<br>未刷到 ${sm.expected - sm.ok} 片　已取出 ${sm.removed} 片</div>`)
+  + `<div class="card rsec"><h3>各料號片數</h3>${sm.partRows.map(p => `<div class="rrow"><div class="a"><span>${esc(p.part)}</span>
+      <span class="${p.diff>0?'plus':p.diff<0?'minus':'zero'}">${p.diff===0?'相符':p.diff>0?'多 '+p.diff+' 片':'少 '+(-p.diff)+' 片'}</span></div>
+      <div class="b">應刷 ${p.expected}　實刷 ${p.actual}</div>${p.lots.length ? `<div class="lots">${lotIssueHtml(p)}</div>` : ''}</div>`).join('')}</div>`
+  + `<div class="card rsec"><h3>錯誤詳細清單</h3>${(() => { const secs = issueSections(sm).filter(x => x.rows.length);
+      return secs.length ? secs.map(sec => `<div class="rrow ihead i-${sec.key}"><div class="a"><span>${sec.title}</span><span>${sec.rows.reduce((a,r) => a + r.slots.length, 0)} 片</span></div><div class="b">${sec.note}</div></div>`
+        + sec.rows.map(r => `<div class="rrow"><div class="a"><span>${esc(r.lot)}</span><span>${r.slots.length} 片</span></div>
+          <div class="b">${esc(r.part)}　${esc(r.wo)}</div><div class="b">刻號 ${esc(compress(r.slots))}</div></div>`).join('')).join('')
+        : '<div class="none">沒有任何錯誤</div>'; })()}</div>`
+  + `<div class="card rsec"><h3>刷讀順序（${boxes.length} 盒）</h3>${sm.boxRows.length ? sm.boxRows.map(r => `<div class="rrow">
+      <div class="a"><span>#${r.b}　${esc(r.lot)}</span><span>${r.slots.length} 片${!r.bad.length && !r.qtyBad ? '' : ` <span class="tag c">異常 ${r.bad.length}${r.qtyBad?'・QTY':''}</span>`}</span></div>
+      <div class="b">${r.time}　刻號 ${esc(compress(r.slots))}　${esc(r.parts)}</div></div>`).join('') : '<div class="none">尚未刷讀</div>'}</div>`
+  + `<button class="btn danger" id="resetBtn" style="width:100%;margin-top:4px">清除刷讀紀錄，重新核對</button>`;
+  $('resetBtn').onclick = () => { if(confirm('清除所有刷讀紀錄重新核對？（工單保留）')){ boxes = []; pending = EMPTY(); lastKey=''; completedShown = false; persist(); renderResult(); } };
+}
+[['iHandler','handler'],['iReceiver','receiver'],['iNote','note']].forEach(([id,k]) => $(id).addEventListener('input', e => { info[k] = e.target.value; persist(); }));
+
+document.addEventListener('visibilitychange', () => { if(document.hidden) stopCam(); else if(screen === 'scan') startCam(); });
+
+/* 離線快取：在 https 網址下註冊，之後沒網路也能開啟 */
+if('serviceWorker' in navigator && location.protocol === 'https:'){
+  window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+}
+
+/* ---------- 啟動 ---------- */
+applyFrame();
+renderLoad();
+if(boxes.length){ go('scan'); setLast('', `已還原上次的核對進度（已刷 ${boxes.length} 盒）`); } else go('load');
+})();
+</script>
+</body>
+</html>
