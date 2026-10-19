@@ -354,7 +354,7 @@ function modeOut(){
     reset:reset, nsteps:3, stepNo:function(){ return s.ph; },
     step:function(){
       if(s.ph===1) return {key:'lblLot',kind:'lot',name:'分貨標籤 LOT NO',hint:'5 碼英數字；同一張標籤上的刻號會一起讀',ex:'A1B23',max:5,cam:camLot,
-        pair:{kind:'eng',cam:isEngrave},
+        pair:{key:'lblEng',kind:'eng',cam:isEngrave},
         submit:function(t){
           if(!isLot5(t)) return {err:'LOT NO 必須是 5 碼英數字'};
           s.lbl=t.trim(); s.ph=2; return {msg:'標籤 LOT NO '+norm(t)};
@@ -362,7 +362,7 @@ function modeOut(){
       if(s.ph===2) return {key:'lblEng',kind:'eng',name:'分貨標籤 刻號',hint:'可連續掃多筆，掃完按下方「標籤刻號掃完了」',ex:'12',cam:newLbl,
         submit:function(t){ return addEngrave(s.lblList,t,'標籤'); }};
       if(s.sub==='lot') return {key:'wfLot',kind:'lot',name:'WAFER LOT NO',hint:'對準 WAFER 標籤，LOT NO 與刻號 QR Code 會一起讀；全部掃完按「完成並比對」',ex:'A1B23',max:5,cam:camLot,
-        pair:{kind:'eng',cam:newWf},
+        pair:{key:'wfEng',kind:'eng',cam:newWf},
         submit:function(t){
           if(!isLot5(t)) return {err:'LOT NO 必須是 5 碼英數字'};
           s.wfLot.push(norm(t)); s.sub='eng'; return {msg:'WAFER LOT NO '+norm(t)};
@@ -437,12 +437,12 @@ function modeIn(){
     reset:reset, nsteps:4, stepNo:function(){ return s.ph; },
     step:function(){
       if(s.ph===1) return {key:'wip',kind:'wip',name:'Run Card WIP LOT',hint:'需含「-」，取前段比對；同一張 Run Card 上的刻號會一起讀',ex:'ABC12-01',cam:camWip,
-        pair:{kind:'rcEng',cam:camRcEng},
+        pair:{key:'rcEng',kind:'rcEng',cam:camRcEng},
         submit:function(t){ if(t.indexOf('-')<0) return {err:'WIP LOT 必須含「-」'}; s.wip=t; s.ph=2; return {msg:'WIP LOT '+t}; }};
       if(s.ph===2) return {key:'rcEng',kind:'rcEng',name:'Run Card 刻號',hint:'需含「WF」，取 WF- 後段，字母轉數字',ex:'WF-A12',cam:camRcEng,
         submit:function(t){ if(t.toUpperCase().indexOf('WF')<0) return {err:'刻號必須含「WF」'}; s.eng=t; s.ph=3; return {msg:'刻號 '+t+' → '+engraveNumber(t)}; }};
       if(s.ph===3) return {key:'inLot',kind:'lot',name:'Wafer LOT NO',hint:'5 碼英數字；同一張標籤上的 WF ID 會一起讀並立即比對',ex:'A1B23',max:5,cam:camLot,
-        pair:{kind:'eng',cam:isEngrave},
+        pair:{key:'wfid',kind:'eng',cam:isEngrave},
         submit:function(t){ if(!isLot5(t)) return {err:'LOT NO 必須是 5 碼英數字'}; s.lot=t; s.ph=4; return {msg:'LOT NO '+norm(t)}; }};
       return {key:'wfid',kind:'eng',name:'WF ID',hint:'只能是數字與「/」，掃到就立即比對',ex:'112',cam:isEngrave,
         submit:function(t){ t=normEng(t); if(!isEngrave(t)) return {err:'WF ID 只能是數字與「/」'}; s.wf=t; compare(); return {done:true}; }};
@@ -668,13 +668,17 @@ function setMode(id){
    2. 同一張標籤的 LOT NO 與刻號(QR Code)在同一格畫面讀到就一起收,不用分兩次對準。
    3. 刻號、數量這類純數字:QR Code 優先;只讀到純數字的一維條碼時,要連續穩定讀到一小段時間才收
       (WAFER 標籤上的 QTY 條碼也是純數字,避免誤收成刻號)。這一步曾經用 QR Code 收過,一維條碼要等更久。
-   4. 剛收過的條碼要離開鏡頭 HOLD 毫秒才會再收,避免同一張重複加入。
+   4. 防重複:同一個欄位剛收過的條碼,要離開鏡頭 HOLD 毫秒才會再收;
+      換到別的欄位(例如分貨標籤掃完換掃 WAFER,兩張標籤內容一樣)只要離開鏡頭 HOLD2 毫秒。
+      被擋住時畫面會提示,不會沒有反應。
    ===================================================================== */
-var scanner=null, frameName='R', stale={}, lastSeen={}, lastTake=0, HOLD=2500, GAP=600, TOOLS_H=50;
+var scanner=null, frameName='R', stale={}, lastSeen={}, lastTake=0, HOLD=2500, HOLD2=700, GAP=600, TOOLS_H=50, blocked=0;
 var FRAME_CYCLE=['R','L','M','S','B'];
 var learn2d=store('wm_learn2d')||{}, pend1d=null, lastAny=0, lotMiss=0, hintAt=0, autoZoomed=false, frameN=0;
-function isStale(t,now){ return !!stale[t] && now-(lastSeen[t]||0)<HOLD; }
-function clearSeen(){ stale={}; lastSeen={}; pend1d=null; }
+/* 用「這一格之前」最後一次看到的時間判斷;不能用這一格本身,否則條碼一直在畫面裡就永遠不會過期 */
+var prevSeen=null;
+function isStale(t,now,key){ var x=stale[t]; if(!x) return false; var ls=(prevSeen && t in prevSeen)?prevSeen[t]:lastSeen[t]; return now-(ls||0)<(x.k===key?HOLD:HOLD2); }
+function clearSeen(){ stale={}; lastSeen={}; pend1d=null; blocked=0; }
 function digitKind(k){ return k==='eng'||k==='qty'; }
 function typing(){ return document.body.classList.contains('typing'); }
 function frameRect(cw,ch){ return PS.frameRect(frameName,cw,Math.max(40,ch-TOOLS_H)); }
@@ -688,7 +692,7 @@ function layoutFrame(){
 function camMsg(t){ $('cammsg').textContent=t||''; }
 function take(t,two,st){
   var now=Date.now();
-  stale[t]=1; lastSeen[t]=now; lastTake=now; pend1d=null;
+  stale[t]={k:st?st.key:'',n:st?st.name:''}; lastSeen[t]=now; lastTake=now; pend1d=null; blocked=0;
   if(two && st && digitKind(st.kind) && !learn2d[cur.id+':'+st.key]){ learn2d[cur.id+':'+st.key]=1; store('wm_learn2d',learn2d); }
   return feed(t);
 }
@@ -696,14 +700,18 @@ function take(t,two,st){
 function wanted(t){
   if(busy) return false;
   t=String(t||'').trim(); var st=cur.step(), now=Date.now(); if(!st) return false;
-  return (st.cam(t) && !isStale(t,now)) || (!!st.pair && st.pair.cam(t) && !isStale(t,now));
+  return (st.cam(t) && !isStale(t,now,st.key)) || (!!st.pair && st.pair.cam(t) && !isStale(t,now,st.pair.key));
 }
 function onCodes(ds){
   var now=Date.now(), list=[], seen={};
   ds.forEach(function(d){ var t=String(d.text||'').trim(); if(t && !seen[t]){ seen[t]=1; list.push({t:t,two:!!d.two}); } });
   if(!list.length) return;
   lastAny=now;
-  list.forEach(function(x){ lastSeen[x.t]=now; });
+  prevSeen={};
+  list.forEach(function(x){ prevSeen[x.t]=lastSeen[x.t]||0; lastSeen[x.t]=now; });
+  try{ decide(list,now); }finally{ prevSeen=null; }
+}
+function decide(list,now){
   if(++frameN%300===0){ for(var k in lastSeen) if(now-lastSeen[k]>60000){ delete lastSeen[k]; delete stale[k]; } }
   if(busy || typing() || now-lastTake<GAP) return;
   var st=cur.step(); if(!st) return;
@@ -711,7 +719,7 @@ function onCodes(ds){
   /* 同一張標籤一次收兩個:畫面中這一步的條碼只有一個、下一步的新條碼也只有一個時才配對(避免和隔壁標籤配錯) */
   if(st.pair){
     var leads=list.filter(function(x){ return st.cam(x.t); });
-    var parts=list.filter(function(x){ return st.pair.cam(x.t) && !st.cam(x.t) && !isStale(x.t,now) && (x.two || !digitKind(st.pair.kind)); });
+    var parts=list.filter(function(x){ return st.pair.cam(x.t) && !st.cam(x.t) && !isStale(x.t,now,st.pair.key) && (x.two || !digitKind(st.pair.kind)); });
     if(leads.length===1 && parts.length===1){
       var r=take(leads[0].t,leads[0].two,st);
       if(r && !r.err && !r.done && !busy){ var st2=cur.step(); if(st2 && st2.cam(parts[0].t)) take(parts[0].t,parts[0].two,st2); }
@@ -719,9 +727,21 @@ function onCodes(ds){
     }
   }
 
-  var cands=list.filter(function(x){ return st.cam(x.t) && !isStale(x.t,now); });
+  var cands=list.filter(function(x){ return st.cam(x.t) && !isStale(x.t,now,st.key); });
   if(!cands.length){
     pend1d=null;
+    /* 框內只有剛收過的條碼:提示移開,不讓人以為當機 */
+    var held=list.filter(function(x){ return stale[x.t] && (st.cam(x.t) || (st.pair && st.pair.cam(x.t))); })[0];
+    if(held){
+      if(!blocked) blocked=now;
+      else if(now-blocked>1200 && now-hintAt>3500){
+        hintAt=now;
+        var from=stale[held.t].n, same=stale[held.t].k===st.key || (st.pair && stale[held.t].k===st.pair.key);
+        say(same?'這張已收，請換下一張（同一張要移開鏡頭再對準才會重收）':'這張剛在「'+from+'」收過：要當「'+st.name+'」收，請把鏡頭移開一下再對準','warn',4000);
+      }
+      return;
+    }
+    blocked=0;
     /* 讀得到 QR Code 卻一直讀不到 LOT NO(細的一維條碼):提示靠近,有變焦的手機自動放大一次 */
     if(st.kind==='lot' && list.some(function(x){ return x.two; }) && !list.some(function(x){ return st.cam(x.t); })){
       if(!lotMiss) lotMiss=now;
