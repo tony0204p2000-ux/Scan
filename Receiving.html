@@ -382,18 +382,30 @@ details.card[open] summary{margin-bottom:10px}
   </div>
 </div>
 
-<!-- iPhone(Safari)沒有內建條碼辨識:載入 BarcodeDetector polyfill(zxing-wasm),一張畫面可同時讀出多個條碼。
-     Android 有內建辨識時不會安裝,照常用手機內建的。解碼程式 bd/zxing_reader.wasm 放在同一個網站,不連外部網址。 -->
+<!-- 條碼解碼:
+     Android(Chrome)有內建辨識且支援 QR/Code128 → 用內建。
+     iPhone(Safari)沒有內建辨識,或內建辨識不可用的 Android → 改用 BarcodeDetector polyfill(zxing-wasm),一張畫面可同時讀出多個條碼。
+     解碼程式 bd/zxing_reader.wasm 放在同一個網站,不連外部網址;載入失敗時自動退回內嵌解碼器。 -->
 <script>window.__HAD_NATIVE=('BarcodeDetector' in window);</script>
 <script src="bd/barcode-detector.js"></script>
 <script>
 (function(){
-  if(window.__HAD_NATIVE || !window.BarcodeDetectionAPI) return;
-  window.__POLY=true;
+  var API=window.BarcodeDetectionAPI; if(!API) return;
   var opt={overrides:{locateFile:function(p,pre){ return /\.wasm$/.test(p)?new URL('bd/'+p,location.href).href:pre+p; }}};
-  try{ BarcodeDetectionAPI.prepareZXingModule(opt); }catch(e){}
-  /* 頁面開好後先在背景把解碼程式準備好,按掃描時就不用等 */
-  setTimeout(function(){ try{ var r=BarcodeDetectionAPI.prepareZXingModule({overrides:opt.overrides,fireImmediately:true}); if(r&&r.catch) r.catch(function(){}); }catch(e){} },1200);
+  try{ API.prepareZXingModule(opt); }catch(e){}
+  function usePoly(){
+    window.__POLY=true;
+    try{ if(window.BarcodeDetector!==API.BarcodeDetector) window.BarcodeDetector=API.BarcodeDetector; }catch(e){}
+    /* 背景先把解碼程式準備好,按掃描時就不用等 */
+    setTimeout(function(){ try{ var r=API.prepareZXingModule({overrides:opt.overrides,fireImmediately:true}); if(r&&r.catch) r.catch(function(){}); }catch(e){} },800);
+  }
+  if(!window.__HAD_NATIVE){ usePoly(); return; }
+  /* 有內建辨識,但不支援 QR 或 Code128(部分沒有 Google 服務的 Android):也改用 polyfill */
+  try{
+    window.__NATIVE_CHECK=window.BarcodeDetector.getSupportedFormats().then(function(fs){
+      if(!fs || fs.indexOf('qr_code')<0 || fs.indexOf('code_128')<0) usePoly();
+    },function(){ usePoly(); });
+  }catch(e){ usePoly(); }
 })();
 </script>
 <script src="scanner.js"></script>
@@ -807,7 +819,8 @@ var hintT=0, lastRead=0, idleT=0;
      廠商標籤實際用到:QR(鈺創/晶豪科)、DataMatrix(旺宏/華邦電)、Code128(晶豪科/弘憶)、Code39(LG)。
      每格先找前三種,Code39 每三格找一次;一旦掃過 Code39 標籤就每格都找。拍照讀取一律全部找。 */
 var NATIVE=(function(){ try{ return 'BarcodeDetector' in window; }catch(e){ return false; } })();
-var POLY=!!window.__POLY, ANDROID=!!window.__HAD_NATIVE;
+function POLY(){ return !!window.__POLY; }
+var ANDROID=!!window.__HAD_NATIVE;
 var F3=['QR_CODE','DATA_MATRIX','CODE_128'], F4=['QR_CODE','DATA_MATRIX','CODE_128','CODE_39'];
 var use39=false, fmtN=0, photoUntil=0;
 function camFormats(){
@@ -821,14 +834,16 @@ function startScan(){
   if(!window.PhoneScan){ modal('掃描模組沒有載入','請從 GitHub 網址開啟這一頁（需與 scanner.js 放在同一個資料夾）。\n也可以先用「手動輸入」或藍牙條碼槍。'); return; }
   var h=PhoneScan.open({
     title:'收料核對', formats:camFormats,
-    need1d:POLY?function(){ return false; }:undefined, hybrid:POLY,
+    need1d:POLY()?function(){ return false; }:undefined, hybrid:POLY(),
+    /* polyfill:每 3 格才試一次轉 90 度(手機橫拿時用),其他格省下時間 */
+    nativeOpts:POLY()?function(n){ return {tryRotate:n%3===0}; }:undefined,
     frames:SET.frames, frame:SET.frames.indexOf(SET.last)>=0?SET.last:SET.frames[0],
     onFrameChange:function(k){ SET.last=k; saveSet(); },
     hint:'對準 QR Code，或 Lot 與 Qty 條碼（順序不拘）；其他條碼自動略過',
     accept:function(text){
-      var ok=camWanted(text); lastRead=Date.now();
+      var ok=camWanted(text); lastRead=Date.now(); if(ok) photoUntil=0;
       /* 讀到但略過的條碼:簡短提示,讓人知道相機有在讀 */
-      if(!ok && pending<0 && Date.now()-hintT>2000){
+      if(!ok && pending<0 && Date.now()-hintT>2000 && Date.now()>=photoUntil){
         hintT=Date.now(); var sk=String(text).replace(/\s+/g,' ').trim(); if(sk.length>24) sk=sk.slice(0,24)+'…';
         setTimeout(function(){ h.say('略過：'+sk+'（不是清單的 Lot No）',''); },0);
       }
@@ -854,10 +869,11 @@ function startScan(){
   });
   /* 一直沒讀到任何條碼:提示靠近/放大/拍照讀取 */
   idleT=setInterval(function(){
-    var wait=(ANDROID||POLY)?7000:5000;
+    var wait=(ANDROID||POLY())?7000:5000;
+    if(Date.now()<photoUntil) return;   /* 拍照讀取中,不要蓋掉「解碼中…」 */
     if(Date.now()-lastRead>wait && Date.now()-hintT>wait){
       hintT=Date.now();
-      h.say(ANDROID?'讀不到？靠近一點讓 QR Code 在框內變大，或按上方「放大」；還是不行就按下方「拍照讀取」'
+      h.say(ANDROID&&!POLY()?'讀不到？靠近一點讓 QR Code 在框內變大，或按上方「放大」；還是不行就按下方「拍照讀取」'
                   :'讀不到？靠近一點讓 QR Code／二維碼在框內變大；字很密的建議直接按下方「拍照讀取」（用完整畫質解碼）','warn');
     }
   },1000);

@@ -22,7 +22,7 @@
 (function(root){
 'use strict';
 var ZX=root.ZXing, doc=root.document;
-var VERSION='1.2.0';
+var VERSION='1.3.0';
 
 var F2D=['QR_CODE','DATA_MATRIX','AZTEC','PDF_417'];
 var LINEAR=['CODE_128','CODE_39','CODE_93','EAN_13','EAN_8','UPC_A','UPC_E','ITF','CODABAR'];
@@ -195,8 +195,8 @@ var ERR={
    ========================================================================== */
 function create(o){
   o=o||{};
-  var video=o.video, boxEl=o.box||video.parentNode, cv=doc.createElement('canvas');
-  var S={stream:null,running:false,starting:false,want:false,paused:false,tickN:0,native:null,nativeTried:false,nativeErr:0,torch:false,zoom:1,caps:{torch:false,zoom:null},wake:null,ms:0,timer:0,rotPref:false,dead:false};
+  var video=o.video, boxEl=o.box||video.parentNode, cvLive=doc.createElement('canvas'), cvPhoto=doc.createElement('canvas');
+  var S={stream:null,running:false,starting:false,want:false,paused:false,tickN:0,zxN:0,missing:[],native:null,nativeTried:false,nativeErr:0,torch:false,zoom:1,caps:{torch:false,zoom:null},wake:null,ms:0,timer:0,rotPref:false,dead:false};
 
   function fmts(){
     var f=typeof o.formats==='function'?o.formats():o.formats;
@@ -205,8 +205,8 @@ function create(o){
   }
   function acc(d){ d.ok=!o.accept||!!o.accept(d.text,d.fmt); return d.ok; }
   function state(s){ if(o.onState){ try{ o.onState(s,api); }catch(e){} } }
-  function draw(src,sx,sy,cw,ch,scale,rot){
-    var w=Math.max(1,Math.round(cw*scale)), h=Math.max(1,Math.round(ch*scale));
+  function draw(src,sx,sy,cw,ch,scale,rot,target){
+    var w=Math.max(1,Math.round(cw*scale)), h=Math.max(1,Math.round(ch*scale)), cv=target||cvLive;
     cv.width=rot?h:w; cv.height=rot?w:h;
     var c=cv.getContext('2d',{willReadFrequently:true});
     c.save();
@@ -229,7 +229,12 @@ function create(o){
     if(S.nativeTried || o.native===false || !('BarcodeDetector' in root)){ S.nativeTried=true; return Promise.resolve(); }
     S.nativeTried=true;
     return root.BarcodeDetector.getSupportedFormats().then(function(fs){
-      if(fs.indexOf('qr_code')>=0 && fs.indexOf('code_128')>=0) S.native=new root.BarcodeDetector({formats:fs.filter(function(f){return NATIVE_NAME[f];})});
+      if(fs.indexOf('qr_code')>=0 && fs.indexOf('code_128')>=0){
+        S.native=new root.BarcodeDetector({formats:fs.filter(function(f){return NATIVE_NAME[f];})});
+        /* 手機內建辨識不支援的類型(例如部分 Android 沒有 DataMatrix):這些類型交給內嵌解碼器輪流補讀 */
+        var have=fs.map(function(f){ return NATIVE_NAME[f]; });
+        S.missing=PRESET.all.filter(function(n){ return have.indexOf(n)<0; });
+      }
     }).catch(function(){});
   }
   function emit(out,t0){
@@ -253,13 +258,17 @@ function create(o){
     var stopSingle=function(d){ return acc(d); };
     var stopMulti=o.enough?function(d,all){ acc(d); return !!o.enough(all); }:function(d){ acc(d); return false; };
 
-    /* hybrid:內建辨識是 polyfill(iPhone)時,每 2 格讓內嵌解碼器跑一次,補讀模糊、對比差的條碼 */
-    if(S.native && !(o.hybrid && S.tickN%2===0)){
+    /* hybrid:內建辨識是 polyfill(iPhone)時,每 2 格讓內嵌解碼器跑一次,補讀模糊、對比差的條碼。
+       內建辨識缺少要找的類型時(部分 Android 沒有 DataMatrix 等),也自動輪流 */
+    var hyb=o.hybrid || nm.some(function(n){ return S.missing.indexOf(n)>=0; });
+    if(S.native && !(hyb && S.tickN%2===0)){
       /* 一張標籤多個條碼時,一維條碼可能橫擺也可能直擺:記住上次讀得到的方向,偶爾試另一個方向 */
       var rotN=multi?(ph===3?!S.rotPref:S.rotPref):false;
       var cn=draw(video,g.sx,g.sy,g.cw,g.ch,hi,rotN);
+      if(o.nativeOpts){ try{ root.__BDOPT=o.nativeOpts(S.tickN); }catch(e){} }
       S.native.detect(cn).then(function(rs){
         S.nativeErr=0;
+        try{
         rs=Array.prototype.slice.call(rs||[]).filter(function(r){ return nm.indexOf(NATIVE_NAME[r.format])>=0; });
         var cx=cn.width/2, cy=cn.height/2;
         var dist=function(r){ var b=r.boundingBox; return b?Math.abs(b.x+b.width/2-cx)+Math.abs(b.y+b.height/2-cy):0; };
@@ -275,17 +284,26 @@ function create(o){
           merge(out,extra);
         }
         emit(out,t0);
-      }).catch(function(){
+        }catch(e){ if(root.console) root.console.error(e); }
+      },function(){
         /* 內建辨識連續失敗就改用內嵌的解碼器 */
         if(++S.nativeErr>=3){ S.native=null; state('live'); }
-      }).then(next);
+      }).then(next,next);
       return;
     }
 
     var out;
+    /* 與內建辨識輪流時:高解析度與轉向已由內建辨識(或 polyfill)處理,
+       內嵌解碼器只做低解析度、兩種門檻輪流,專門補讀模糊、對比差的條碼 */
+    if(S.native && !multi){
+      S.zxN++;
+      out=zxAll(draw(video,g.sx,g.sy,g.cw,g.ch,lo,tall),nm,S.zxN%2?'g':true,o.max||6,stopSingle,true);
+      emit(out,t0); next(); return;
+    }
+    if(S.native){ S.zxN++; ph=S.zxN%4; }
     if(multi){
-      var useHiM=canHi && (S.tickN%2===1), rotM=(ph===3?!S.rotPref:S.rotPref);
-      out=zxAll(draw(video,g.sx,g.sy,g.cw,g.ch,useHiM?hi:lo,rotM),nm,S.tickN%2?'g':false,o.max||10,stopMulti,true);
+      var useHiM=canHi && (ph%2===1), rotM=(ph===3?!S.rotPref:S.rotPref);
+      out=zxAll(draw(video,g.sx,g.sy,g.cw,g.ch,useHiM?hi:lo,rotM),nm,ph%2?'g':false,o.max||10,stopMulti,true);
       if(out.some(function(d){return !d.two;})) S.rotPref=rotM;
     }else{
       /* 直條框:條碼沿著手機長邊擺,像素最多;這時以直向解碼為主 */
@@ -355,18 +373,32 @@ function create(o){
   }
   /* 拍照或選圖解碼(相機打不開時的備援)。src:檔案、<img> 或 <canvas> */
   function decodeImage(src){
-    return loadImg(src).then(function(L){
-      var img=L.img, w=img.naturalWidth||img.videoWidth||img.width, h=img.naturalHeight||img.videoHeight||img.height, m=Math.max(w,h);
-      var nm=fmts(), multi=!!o.multi, out=[];
+    var L, img, w, h, m, nm, multi=!!o.multi, out=[], wasPaused=S.paused;
+    S.paused=true;
+    var enough=function(){ return multi?!!(o.enough && o.enough(out)):out.some(function(d){return d.ok;}); };
+    var useNative=function(sizes){
+      if(!S.native || !sizes.length || enough()) return Promise.resolve();
+      var c=draw(img,0,0,w,h,Math.min(1,sizes[0]/m),false,cvPhoto);
+      return S.native.detect(c).then(function(rs){
+        Array.prototype.slice.call(rs||[]).forEach(function(r){ var f=NATIVE_NAME[r.format]; if(f && nm.indexOf(f)>=0) merge(out,[{text:r.rawValue,fmt:f,two:is2D(f),src:'native'}]); });
+      },function(){}).then(function(){ return useNative(sizes.slice(1)); });
+    };
+    return loadImg(src).then(function(LL){
+      L=LL; img=L.img; w=img.naturalWidth||img.videoWidth||img.width; h=img.naturalHeight||img.videoHeight||img.height; m=Math.max(w,h); nm=fmts();
+      return initNative();
+    }).then(function(){
+      if(o.nativeOpts){ try{ root.__BDOPT={tryRotate:true}; }catch(e){} }
+      /* 完整畫質最多 4000 px;照片本身較小時只做一次 */
+      return useNative(m>2600?[2600,4000]:[2600]);
+    }).then(function(){
       var tries=multi?[[2400,false],[2400,true],[1600,false],[1600,true],[1100,false],[1100,true]]:[[1600,false],[1000,false],[1600,true],[640,false],[2400,false],[1000,true]];
-      for(var i=0;i<tries.length;i++){
-        var c=draw(img,0,0,w,h,Math.min(1,tries[i][0]/m),tries[i][1]);
+      for(var i=0;i<tries.length && !enough();i++){
+        var c=draw(img,0,0,w,h,Math.min(1,tries[i][0]/m),tries[i][1],cvPhoto);
         merge(out,zxAll(c,nm,true,o.max||(multi?10:6),multi?null:function(d){ return acc(d); },true));
-        if(multi?(o.enough && o.enough(out)):out.some(function(d){return d.ok;})) break;
       }
-      L.done();
+      L.done(); S.paused=wasPaused;
       return out;
-    });
+    },function(e){ S.paused=wasPaused; throw e; });
   }
   /* 切到別的 App 或關螢幕時放開相機,回來再自動接上 */
   function onVis(){
@@ -402,6 +434,7 @@ function create(o){
      onFrameChange function(框代號):使用者切換框時通知(可用來記住上次用的框)
      need1d   function() → 是否在內建辨識之外再用內嵌解碼器補讀一維條碼(不給 = 自動)
      hybrid   true:內建辨識(或 polyfill)與內嵌解碼器輪流用,每 2 格有 1 格改用內嵌解碼器
+     nativeOpts function(格數) → 傳給 BarcodeDetector polyfill 的解碼選項(如 {tryRotate:false}),內建辨識會忽略
      accept   function(text, fmt) → 是否為要的條碼(不要的直接忽略,繼續找框內其他條碼)
      onScan   function(text, fmt) → 不回傳或回傳 true:收下
                                     回傳 false:不收;回傳文字:不收並顯示這段文字
@@ -481,7 +514,7 @@ function open(o){
     return true;
   }
   var sc=create({
-    video:video, box:cam, formats:o.formats||'all', multi:false, accept:o.accept, res:o.res, need1d:o.need1d, hybrid:o.hybrid,
+    video:video, box:cam, formats:o.formats||'all', multi:false, accept:o.accept, res:o.res, need1d:o.need1d, hybrid:o.hybrid, nativeOpts:o.nativeOpts,
     frame:function(cw,ch){ return frameRect(frameName,cw,ch); },
     onFrame:function(ds){
       if(closed) return;
