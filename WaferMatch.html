@@ -123,11 +123,18 @@ main{padding:10px;overflow-x:hidden;overflow-x:clip}
 .foot{font-size:12px;color:var(--dim);text-align:center;margin-top:14px;line-height:1.6}
 
 /* ---------- 底部操作列(拇指區) ---------- */
-#bar{display:flex;gap:8px;padding:8px 10px 0}
-#bar button{min-height:54px;font-size:15px;white-space:nowrap;padding:6px 10px;overflow:hidden;text-overflow:ellipsis}
-#bReset{flex:.9;font-size:14px!important;white-space:nowrap;padding:6px 8px}
-#bNext{flex:1.2;font-size:16px;font-weight:700;background:#1f6fa8;border-color:#1f6fa8;color:#fff}
-#bMain{flex:2;font-size:17px;font-weight:700;background:var(--amber);border-color:var(--amber);color:#221a08}
+/* 圖示按鈕(圓角正方形)集中在右側:右手拇指單手操作最順的位置 */
+#bar{display:flex;align-items:center;gap:10px;padding:8px 14px 0 12px}
+#barinfo{flex:1;min-width:0;font-size:13px;line-height:1.4;color:var(--dim)}
+#barinfo b{display:block;font-size:15px;color:var(--ink);font-family:var(--mono)}
+#bar .ic{flex:none;width:62px;height:62px;min-height:0;padding:0;border-radius:16px;border:2px solid var(--line);background:var(--panel-2);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+#bar .ic svg{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+#bar .ic small{font-size:11px;line-height:1;white-space:nowrap}
+#bar .ic.arm{border-color:var(--red);color:var(--red)}
+#bar #bNext{background:#1f6fa8;border-color:#5aa5dc;color:#fff}
+#bar #bNext svg{fill:currentColor;stroke-width:2}
+#bar #bMain{background:var(--amber);border-color:#ffd38a;color:#221a08}
+#bar #bMain svg{stroke-width:3}
 
 /* ---------- 結果 ---------- */
 #okflash{position:fixed;inset:0;z-index:20;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;background:rgba(10,90,80,.93);color:#fff;opacity:0;pointer-events:none;transition:opacity .12s}
@@ -177,9 +184,10 @@ main{padding:10px;overflow-x:hidden;overflow-x:clip}
 
   <!-- 操作按鈕緊接在掃描框下方:單手拿手機時拇指按得到,也不會被下面的資料推遠 -->
   <div id="bar">
-    <button type="button" id="bReset">整筆重來</button>
-    <button type="button" id="bNext" hidden>下一張</button>
-    <button type="button" id="bMain"></button>
+    <div id="barinfo"></div>
+    <button type="button" class="ic" id="bReset" aria-label="整筆重來" title="整筆重來"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/></svg><small>重來</small></button>
+    <button type="button" class="ic" id="bNext" aria-label="下一張" title="下一張" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5.5l9 6.5-9 6.5z"/><path d="M18.5 5.5v13"/></svg><small>下一張</small></button>
+    <button type="button" class="ic" id="bMain" aria-label="完成" title="完成"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 12.5l5 5L19.5 7"/></svg><small id="bMainTxt">完成</small></button>
   </div>
   <div id="now">
     <div class="steps" id="steps"></div>
@@ -371,6 +379,7 @@ function modeOut(){
   }
   reset();
   return {
+    hasData:function(){ return s.lbls.length>0||s.wfs.length>0||!!s.cur.lot||!!s.cur.eng; },
     id:'out', name:'委外測試', pdf:'WAFER比對工具-委外測試 比對紀錄', labelMode:true,
     cols:['標籤 LOT NO','標籤刻號(排序後)','WAFER LOT NO(排序後)','WAFER刻號(排序後)'],
     reset:reset, nsteps:2, stepNo:function(){ return s.phase==='lbl'?1:2; },
@@ -420,12 +429,12 @@ function modeOut(){
     },
     main:function(){
       var idle=s.held||(!s.cur.lot&&!s.cur.eng);
-      if(s.phase==='lbl') return {label:'分貨完成 '+engOf(s.lbls).length+' 片',enabled:s.lbls.length>0&&idle,fn:function(){
+      if(s.phase==='lbl') return {short:'分貨完成',label:'分貨標籤 '+s.lbls.length+' 張<b>'+engOf(s.lbls).length+' 片</b>',enabled:s.lbls.length>0&&idle,fn:function(){
         s.phase='wf'; s.held=false; s.cur=blank(); s.readyAt=Date.now()+800; pend1d=null;
         if(scanner && !typing()) scanner.pause(false);
         say('分貨標籤共 '+engOf(s.lbls).length+' 片，請對準第 1 張 WAFER 標籤','ok');
       }};
-      return {label:'完成比對 '+engOf(s.wfs).length+'/'+engOf(s.lbls).length,enabled:s.wfs.length>0&&idle,fn:compare};
+      return {short:'比對',label:'WAFER '+s.wfs.length+' 張 / 分貨 '+engOf(s.lbls).length+' 片<b>'+engOf(s.wfs).length+' / '+engOf(s.lbls).length+'</b>',enabled:s.wfs.length>0&&idle,fn:compare};
     },
     next:function(){
       return {label:'下一張',enabled:s.held,fn:function(){
@@ -502,6 +511,7 @@ function modeIn(){
   }
   reset();
   return {
+    hasData:function(){ return !!s.wip; },
     id:'in', name:'廠內測試', pdf:'WAFER比對工具-廠內測試 比對紀錄',
     cols:['Run Card WIP LOT','Run Card 刻號','Wafer LOT NO','WF ID'],
     reset:reset, nsteps:4, stepNo:function(){ return s.ph; },
@@ -572,6 +582,7 @@ function modeIC(){
   }
   reset();
   return {
+    hasData:function(){ return s.rcLot.length>0||s.bbLot.length>0; },
     id:'ic', name:'廠內IC測試比對', pdf:'廠內IC測試比對 比對紀錄',
     cols:['RUN CARD批號(排序後)','RUN CARD數量加總','黑箱批號(排序後)','黑箱原始加總','單次扣除','單次改量','黑箱最終數量'],
     reset:reset, nsteps:2, stepNo:function(){ return s.ph; },
@@ -592,8 +603,8 @@ function modeIC(){
         }};
     },
     main:function(){
-      if(s.ph===1) return {label:'RUN CARD 掃完了',enabled:s.rcLot.length>0&&s.sub==='lot',fn:function(){ s.ph=2; say('RUN CARD 共 '+sumQty(s.rcQty)+'，接著掃黑箱條碼','ok'); }};
-      return {label:'完成並比對',enabled:s.bbLot.length>0,fn:compare};
+      if(s.ph===1) return {short:'掃完了',label:'RUN CARD '+s.rcLot.length+' 張<b>'+sumQty(s.rcQty)+'</b>',enabled:s.rcLot.length>0&&s.sub==='lot',fn:function(){ s.ph=2; say('RUN CARD 共 '+sumQty(s.rcQty)+'，接著掃黑箱條碼','ok'); }};
+      return {short:'比對',label:'黑箱 '+s.bbLot.length+' 箱<b>'+adj().after+' / '+sumQty(s.rcQty)+'</b>',enabled:s.bbLot.length>0,fn:compare};
     },
     del:function(k,i){
       if(k==='rc'&&s.ph===1){ s.rcLot.splice(i,1); if(i<s.rcQty.length) s.rcQty.splice(i,1); s.sub=s.rcLot.length>s.rcQty.length?'qty':'lot'; }
@@ -721,9 +732,10 @@ function render(){
   $('data').innerHTML=cur.data();
   $('icopt').hidden=cur.id!=='ic';
   $('cam').classList.toggle('held',held());
-  var nb=cur.next&&cur.next(); $('bNext').hidden=!nb; if(nb){ $('bNext').textContent=nb.label; $('bNext').disabled=!nb.enabled; }
+  var nb=cur.next&&cur.next(); $('bNext').hidden=!nb; if(nb){ $('bNext').disabled=!nb.enabled; }
   $('bMain').hidden=!mb;
-  if(mb){ $('bMain').textContent=mb.label; $('bMain').disabled=!mb.enabled; }
+  if(mb){ $('bMainTxt').textContent=mb.short||'完成'; $('bMain').setAttribute('aria-label',mb.short||'完成'); $('bMain').disabled=!mb.enabled; }
+  $('barinfo').innerHTML=mb?mb.label:'';
   Array.prototype.forEach.call($('tabs').children,function(b){ b.className=b.getAttribute('data-m')===cur.id?'on':''; });
 }
 function renderLog(){
@@ -973,7 +985,15 @@ function twoStep(btn,label,fn){
     clearTimeout(t); armed=false; btn.textContent=label; btn.classList.remove('arm'); fn();
   });
 }
-$('bReset').addEventListener('click',function(){ if(busy) return; cur.reset(); clearSeen(); say('已清除這一筆',''); render(); syncPause(); });
+/* 「重來」就在「下一張」旁邊:這一筆已有資料時要按兩次,避免誤觸 */
+var rsArm=false, rsT=0;
+$('bReset').addEventListener('click',function(){
+  if(busy) return;
+  var hasData=cur.hasData();
+  if(hasData && !rsArm){ rsArm=true; this.classList.add('arm'); this.querySelector('small').textContent='再按一次'; var b=this; rsT=setTimeout(function(){ rsArm=false; b.classList.remove('arm'); b.querySelector('small').textContent='重來'; },3000); return; }
+  clearTimeout(rsT); rsArm=false; this.classList.remove('arm'); this.querySelector('small').textContent='重來';
+  cur.reset(); clearSeen(); say('已清除這一筆',''); render(); syncPause();
+});
 $('bNext').addEventListener('click',pressNext);
 twoStep($('bClear'),'清空',function(){ logs[cur.id]=[]; store('wm_log_'+cur.id,[]); renderLog(); });
 $('bPdf').addEventListener('click',function(){ exportPdf(cur.pdf,['時間'].concat(cur.cols,['結果']),logs[cur.id]); });
