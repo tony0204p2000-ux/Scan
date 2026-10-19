@@ -60,7 +60,7 @@
   .summary-line{font-size:14px;margin:6px 2px 10px}
 
   /* ----- 掃描 ----- */
-  .cam{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:4/3}
+  .cam{position:relative;background:#000;border-radius:12px;overflow:hidden;aspect-ratio:1/1;max-height:52vh;margin:0 auto}
   .cam video{width:100%;height:100%;object-fit:cover;display:block}
   .cam .frame{position:absolute;left:5%;top:8%;width:90%;height:84%;border:3px solid rgba(255,255,255,.9);border-radius:10px;
     box-shadow:0 0 0 2000px rgba(0,0,0,.35)}
@@ -99,7 +99,7 @@
 
   .camctl{display:flex;align-items:center;gap:10px;margin-top:8px}
   .chips{display:flex;gap:6px}
-  .chips button{border:1px solid var(--line);background:#fff;border-radius:16px;padding:5px 12px;font-size:13px;color:var(--sub)}
+  .chips button{white-space:nowrap;border:1px solid var(--line);background:#fff;border-radius:16px;padding:5px 12px;font-size:13px;color:var(--sub)}
   .chips button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
   .zoom{flex:1;display:flex;align-items:center;gap:6px;font-size:14px}
   .zoom input{flex:1}
@@ -169,7 +169,7 @@
 
 <!-- 2 掃描 -->
 <section class="screen" id="sc-scan">
-  <div class="cam" id="cam" data-frame="label">
+  <div class="cam" id="cam">
     <video id="video" playsinline muted></video>
     <div class="frame"></div>
     <div class="paused">已暫停，點畫面繼續</div>
@@ -178,7 +178,7 @@
   </div>
   <div class="camctl">
     <div class="chips" id="frameChips">
-      <button data-f="label" class="on">整張標籤</button><button data-f="rect">長方</button><button data-f="bar">橫條</button>
+      <button data-f="code" class="on">條碼區</button><button data-f="label">整張標籤</button><button data-f="bar">橫條</button>
     </div>
     <label class="zoom" id="zoomBox" hidden>🔍<input type="range" id="zoom" min="1" max="1" step="0.1" value="1"></label>
   </div>
@@ -188,7 +188,7 @@
     <div class="box" id="boxLot"><div class="k">批號 LOT NO</div><div class="v" id="vLot">—</div></div>
     <div class="box" id="boxWf"><div class="k">刻號 WF ID</div><div class="v" id="vWf">—</div></div>
   </div>
-  <div class="last" id="last">將 Wafer 盒標籤放進框內（LOT NO 條碼與 QR Code 都要在框內）</div>
+  <div class="last" id="last">把標籤右側的「條碼 + QR Code」區塊放進框內，盡量填滿框</div>
   <div class="tools">
     <button class="btn" id="undoBtn">↶ 復原</button>
     <button class="btn" id="manualBtn">⌨ 手動輸入</button>
@@ -328,6 +328,17 @@ function classifyCode(raw, fmt){
   }
   if(/[\/;,?]/.test(v) && fmt !== '1d'){ const l = parseWfList(v); if(l) return {type:'wf', value:l}; }
   return {type:null, value:v};
+}
+/* 格式錯誤的原因說明（防誤刷：不符格式一律不寫入，只提示重刷） */
+function badCodeReason(v){
+  v = toHalfWidth(v).trim().toUpperCase();
+  if(!v) return '空白內容';
+  if(/^\d+$/.test(v)) return +v > 25 ? `純數字 ${v}：不是批號（批號須英數混合），也不是刻號（01~25）` : '純數字：批號須英數混合';
+  if(/[\/;,?]/.test(v)) return '刻號清單格式錯誤（只能是 01~25，以 / 分隔）';
+  if(/[^A-Z0-9]/.test(v)) return `含符號或空白（${[...new Set(v.replace(/[A-Z0-9]/g,''))].join(' ')}）：批號只能是英文和數字`;
+  if(v.length !== 5) return `長度 ${v.length} 碼：批號須為 5 碼`;
+  if(/^[A-Z]+$/.test(v)) return '只有英文：批號須英數混合';
+  return '不符批號格式';
 }
 /* 給「手動輸入」與舊介面用 */
 function classify(raw){
@@ -632,13 +643,13 @@ const $ = id => document.getElementById(id);
 
 const EMPTY = () => ({lot:'', wf:null, t_lot:0, t_wf:0});
 let files = [], boxes = [], pending = EMPTY(), db = buildDb([]);
-let info = {handler:'', receiver:'', note:''}, settings = {frame:'label', zoom:0};
+let info = {handler:'', receiver:'', note:''}, settings = {frame:'code', zoom:0, v:2};
 let screen = 'load', modalOpen = false, completedShown = false;
 
 function persist(){ saveState(KEY, {files, boxes, info, settings, sound:SOUND.sound, vibrate:SOUND.vibrate}); }
 (function restore(){
   const s = loadState(KEY);
-  if(s){ if(s.files) files = s.files; boxes = s.boxes || []; if(s.info) info = s.info; if(s.settings) Object.assign(settings, s.settings);
+  if(s){ if(s.files) files = s.files; boxes = s.boxes || []; if(s.info) info = s.info; if(s.settings && s.settings.v === 2) Object.assign(settings, s.settings);
     if(s.sound === false) SOUND.sound = false; if(s.vibrate === false) SOUND.vibrate = false; }
   db = buildDb(files); completedShown = summarize(db, boxes).complete;
 })();
@@ -712,12 +723,12 @@ $('fileInput').onchange = async e => {
 
 /* ================= 2 掃描 ================= */
 const video = $('video'), cv = $('cv'), cam = $('cam');
-const FRAMES = {label:[.05,.08,.90,.84], rect:[.08,.22,.84,.56], bar:[.05,.38,.90,.24]};
+const FRAMES = {code:[.24,.04,.52,.92], label:[.04,.04,.92,.92], bar:[.05,.38,.90,.24]};
 let stream = null, track = null, detector = null, wasm = false, zx = null, loopTimer = null, paused = false, busy = false;
-let lastKey = '', coolUntil = 0, hold = null;
+let lastKey = '', coolUntil = 0, hold = null, lastHintAt = 0;
 
 function applyFrame(){
-  const f = FRAMES[settings.frame] || FRAMES.label, el = cam.querySelector('.frame');
+  const f = FRAMES[settings.frame] || FRAMES.code, el = cam.querySelector('.frame');
   el.style.left = f[0]*100 + '%'; el.style.top = f[1]*100 + '%'; el.style.width = f[2]*100 + '%'; el.style.height = f[3]*100 + '%';
   document.querySelectorAll('#frameChips button').forEach(b => b.classList.toggle('on', b.dataset.f === settings.frame));
 }
@@ -730,7 +741,8 @@ async function startCam(){
     $('camMsg').innerHTML = '此瀏覽器無法使用相機<br>請用 https 網址開啟，或改用「手動輸入」'; return;
   }
   try{
-    stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}});
+    // 解析度越高，細小的 LOT NO 一維條碼越容易讀
+    stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:'environment'}, width:{ideal:2560}, height:{ideal:1440}}});
     video.srcObject = stream; await video.play();
     track = stream.getVideoTracks()[0];
     const cap = track.getCapabilities ? track.getCapabilities() : {};
@@ -756,6 +768,15 @@ function stopCam(){
   if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; track = null; }
 }
 $('zoom').addEventListener('input', async e => { settings.zoom = +e.target.value; persist(); try{ await track.applyConstraints({advanced:[{zoom:settings.zoom}]}); }catch(err){} });
+/* 自動放大：鏡頭數位變焦會用感光元件較高的解析度，比靠程式放大畫面清楚 */
+function autoZoom(){
+  if(!track || $('zoomBox').hidden) return false;
+  const z = $('zoom'), cur = +z.value, target = Math.min(+z.max, Math.max(cur, +z.min) * 1.6);
+  if(target <= cur + 0.05 || cur >= 2.5) return false;
+  z.value = target; settings.zoom = target; persist();
+  track.applyConstraints({advanced:[{zoom:target}]}).catch(() => {});
+  return true;
+}
 let torchOn = false;
 $('torchBtn').onclick = async e => { e.stopPropagation(); torchOn = !torchOn; try{ await track.applyConstraints({advanced:[{torch:torchOn}]}); }catch(err){} $('torchBtn').classList.toggle('on', torchOn); };
 
@@ -764,7 +785,7 @@ async function initDecoder(){
   if('BarcodeDetector' in window){
     try{
       const fm = await BarcodeDetector.getSupportedFormats();
-      if(fm && fm.includes('qr_code')){ detector = new BarcodeDetector({formats:fm.filter(f => ['qr_code','code_128','code_39','code_93','codabar','ean_13','ean_8','itf','upc_a','upc_e','data_matrix'].includes(f))}); return; }
+      if(fm && fm.includes('qr_code')){ detector = new BarcodeDetector({formats:fm.filter(f => ['qr_code','code_128','code_39'].includes(f))}); }
     }catch(e){}
   }
   // iPhone 等不支援 BarcodeDetector：用 zxing-wasm（一次讀出畫面中所有條碼，速度快），檔案放在同資料夾可離線
@@ -781,60 +802,100 @@ async function initDecoder(){
     zx = {Z, reader:new Z.MultiFormatReader()}; zx.reader.setHints(hints);
   }catch(e){ zx = null; }
 }
-/* 只辨識框線內的範圍，降低誤讀 */
+/* ---------- 辨識流程 ----------
+   第 1 輪：框內畫面（長邊超過 1800 才縮小）找條碼
+   第 2 輪：LOT NO 一維條碼很細，若只讀到 QR Code，就依 QR Code 位置，用相機原始解析度放大 QR 旁的條碼區再讀 */
+const cvSmall = document.createElement('canvas'), cvRoi = document.createElement('canvas'), cvStrip = document.createElement('canvas');
+const c2d = c => c.getContext('2d', {willReadFrequently:true});
+const WOPT = {formats:['QRCode','Code128','Code39'], maxNumberOfSymbols:8, tryHarder:true};
+const BINS = ['LocalAverage', 'FixedThreshold', 'GlobalHistogram'];
+let frameNo = 0;
 function grabFrame(){
   const vw = video.videoWidth, vh = video.videoHeight; if(!vw || !vh) return null;
-  const f = FRAMES[settings.frame] || FRAMES.label;
+  const f = FRAMES[settings.frame] || FRAMES.code;
   const box = cam.getBoundingClientRect(), scale = Math.max(box.width / vw, box.height / vh);
   const ox = (vw * scale - box.width) / 2, oy = (vh * scale - box.height) / 2;
   const fx = (box.width * f[0] + ox) / scale, fy = (box.height * f[1] + oy) / scale;
   const fw = box.width * f[2] / scale, fh = box.height * f[3] / scale;
   cv.width = Math.round(fw); cv.height = Math.round(fh);
-  cv.getContext('2d', {willReadFrequently:true}).drawImage(video, fx, fy, fw, fh, 0, 0, cv.width, cv.height);
+  c2d(cv).drawImage(video, fx, fy, fw, fh, 0, 0, cv.width, cv.height);
   return cv;
 }
-async function decodeFrame(){
-  const c = grabFrame(); if(!c) return [];
-  if(detector){ const r = await detector.detect(c); return r.map(x => ({text:x.rawValue, fmt:x.format === 'qr_code' ? 'qr' : '1d'})); }
-  if(wasm){
-    // 先讀整個框；還缺 LOT NO 或 QR Code 時，再把框切成上下重疊的橫條補讀（一維條碼小時更容易讀到）
-    const ctx = c.getContext('2d', {willReadFrequently:true}), w = c.width, h = c.height, out = [];
-    const opt = {formats:['QRCode','Code128','Code39','Code93','Codabar','ITF','EAN13'], maxNumberOfSymbols:8, tryHarder:true};
-    const have = () => out.some(o => o.fmt === 'qr') && out.some(o => classifyCode(o.text, o.fmt).type === 'lot');
-    const regions = [[0,0,w,h]]; for(let i=0;i<7;i++) regions.push([0, Math.round(h*i/8), w, Math.round(h/4)]);
-    for(const r of regions){
-      const res = await ZXingWASM.readBarcodes(ctx.getImageData(r[0], r[1], r[2], r[3]), opt);
-      res.forEach(x => { if(x.isValid !== false && x.text && !out.some(o => o.text === x.text)) out.push({text:x.text, fmt:x.format === 'QRCode' ? 'qr' : '1d'}); });
-      if(have() || (pending.lot && out.some(o => o.fmt === 'qr')) || (pending.wf && out.some(o => classifyCode(o.text,o.fmt).type === 'lot'))) break;
-    }
-    // 標籤離鏡頭較遠、一維條碼太細時 wasm 會漏讀 LOT NO，改用 ZXing（JS 版）縮小畫面後逐條補讀
-    if(zx && !out.some(o => classifyCode(o.text, o.fmt).type === 'lot')){
-      const sc = Math.min(1, 1200 / w), sw = Math.round(w*sc), sh = Math.round(h*sc);
-      cv3.width = sw; cv3.height = sh; cv3.getContext('2d', {willReadFrequently:true}).drawImage(c, 0, 0, sw, sh);
-      for(let k=0;k<2;k++){ const v = zxDecode(cv3, zxStrips(sw, sh)[zxTurn++ % 24]); if(v && !out.some(o => o.text === v.text)) out.push(v); }
-    }
-    return out;
+function boxOf(pts){ const xs = pts.map(p => p.x), ys = pts.map(p => p.y); const x = Math.min(...xs), y = Math.min(...ys); return {x, y, w:Math.max(...xs) - x, h:Math.max(...ys) - y}; }
+/* 用目前的辨識引擎讀一張圖，回傳 [{text, fmt, box}] */
+async function readAll(c, bin){
+  if(detector){
+    const r = await detector.detect(c);
+    return r.map(x => ({text:x.rawValue, fmt:x.format === 'qr_code' ? 'qr' : '1d', box:{x:x.boundingBox.x, y:x.boundingBox.y, w:x.boundingBox.width, h:x.boundingBox.height}}));
   }
-  if(zx){
-    // ZXing 一次只讀一個條碼：整個框 + 輪流讀局部區塊，讓 LOT NO 與 QR Code 都讀得到
-    const out = [], w = c.width, h = c.height;
-    // 標籤上數個一維條碼上下緊鄰，整框只會讀到同一個，所以再切成上下重疊的細長條逐一讀
-    const tiles = [[0,0,w/2,h],[w/2,0,w/2,h]];
-    for(let i=0;i<11;i++) tiles.push([0, h*i/12, w, h/6], [w/2, h*i/12, w/2, h/6]);
-    [null, tiles[zxTurn++ % tiles.length], tiles[zxTurn++ % tiles.length]].forEach(r => { const v = zxDecode(c, r); if(v && !out.some(o => o.text === v.text)) out.push(v); });
-    return out;
+  if(wasm){
+    const r = await ZXingWASM.readBarcodes(c2d(c).getImageData(0, 0, c.width, c.height), bin ? {...WOPT, binarizer:bin} : WOPT);
+    return r.filter(x => x.isValid !== false && x.text).map(x => { const p = x.position;
+      return {text:x.text, fmt:x.format === 'QRCode' ? 'qr' : '1d', box:boxOf([p.topLeft, p.topRight, p.bottomLeft, p.bottomRight])}; });
   }
   return [];
 }
-let zxTurn = 0;
-const cv3 = document.createElement('canvas');
+const isLotCode = o => classifyCode(o.text, o.fmt).type === 'lot';
+function addUnique(out, list){ list.forEach(o => { if(!out.some(x => x.text === o.text && x.fmt === o.fmt)) out.push(o); }); }
+async function decodeFrame(){
+  const full = grabFrame(); if(!full) return [];
+  frameNo++;
+  if(!detector && !wasm) return zx ? readZxTiles(full) : [];
+  // 第 1 輪
+  const sc = Math.min(1, 1800 / Math.max(full.width, full.height));
+  let src = full;
+  if(sc < 1){ cvSmall.width = Math.round(full.width * sc); cvSmall.height = Math.round(full.height * sc); c2d(cvSmall).drawImage(full, 0, 0, cvSmall.width, cvSmall.height); src = cvSmall; }
+  const out = (await readAll(src)).map(o => ({...o, box:{x:o.box.x/sc, y:o.box.y/sc, w:o.box.w/sc, h:o.box.h/sc}}));
+  if(out.some(isLotCode) || pending.lot) return out;
+  // 第 2 輪：依 QR Code 位置放大條碼區（LOT NO 就在 QR Code 正上方）
+  for(const q of out.filter(o => o.fmt === 'qr').slice(0, 2)){
+    const s = Math.max(q.box.w, q.box.h), cx = q.box.x + q.box.w / 2, cy = q.box.y + q.box.h / 2, half = s * 2.1;
+    const rx = Math.max(0, cx - half), ry = Math.max(0, cy - half);
+    const rw = Math.min(full.width, cx + half) - rx, rh = Math.min(full.height, cy + half) - ry;
+    if(rw < 20 || rh < 20) continue;
+    // 用原始解析度裁切（實測放大反而讓細條碼變糊，所以不放大）
+    cvRoi.width = Math.round(rw); cvRoi.height = Math.round(rh);
+    c2d(cvRoi).drawImage(full, rx, ry, rw, rh, 0, 0, cvRoi.width, cvRoi.height);
+    // 細小一維條碼：不同的黑白判斷方式（binarizer）各有擅長的畫面，輪流試
+    for(const bin of BINS){ addUnique(out, (await readAll(cvRoi, bin)).filter(o => o.fmt !== 'qr')); if(out.some(isLotCode) || detector) break; }
+    if(out.some(isLotCode)) break;
+    // 條碼區四條一維條碼上下緊鄰：切成重疊橫條逐條讀
+    for(let i=0;i<6 && !out.some(isLotCode);i++){
+      const sh = Math.round(cvRoi.height / 4), sy = Math.round(cvRoi.height * i / 8);
+      cvStrip.width = cvRoi.width; cvStrip.height = Math.min(sh, cvRoi.height - sy);
+      c2d(cvStrip).drawImage(cvRoi, 0, sy, cvRoi.width, cvStrip.height, 0, 0, cvRoi.width, cvStrip.height);
+      addUnique(out, (await readAll(cvStrip, BINS[frameNo % 3])).filter(o => o.fmt !== 'qr'));
+    }
+    if(!out.some(isLotCode) && zx){ for(let k=0;k<2;k++){ const v = zxDecode(cvRoi, zxStrips(cvRoi.width, cvRoi.height)[zxTurnRoi++ % 24]); if(v && v.fmt !== 'qr') addUnique(out, [v]); } }
+    if(out.some(isLotCode)) break;
+  }
+  // 第 3 輪：整個框（原始解析度）切成上下重疊橫條逐條讀，LOT NO 在不同位置也讀得到
+  if(!out.some(isLotCode) && (out.length || pending.wf)){
+    for(let i=0;i<7 && !out.some(isLotCode);i++){
+      const sh = Math.round(full.height / 4), sy = Math.round(full.height * i / 8);
+      cvStrip.width = full.width; cvStrip.height = Math.min(sh, full.height - sy);
+      c2d(cvStrip).drawImage(full, 0, sy, full.width, cvStrip.height, 0, 0, full.width, cvStrip.height);
+      addUnique(out, (await readAll(cvStrip, BINS[(frameNo + 1) % 3])).filter(o => o.fmt !== 'qr'));
+    }
+    if(!out.some(isLotCode) && zx){ for(let k=0;k<2;k++){ const v = zxDecode(full, zxStrips(full.width, full.height)[zxTurn++ % 24]); if(v && v.fmt !== 'qr') addUnique(out, [v]); } }
+  }
+  return out;
+}
+/* 沒有 wasm 時的備援：ZXing（JS 版）一次只讀一個條碼，輪流讀局部區塊 */
+function readZxTiles(c){
+  const out = [], w = c.width, h = c.height;
+  const tiles = [[0,0,w/2,h],[w/2,0,w/2,h]];
+  for(let i=0;i<11;i++) tiles.push([0, h*i/12, w, h/6], [w/2, h*i/12, w/2, h/6]);
+  [null, tiles[zxTurn++ % tiles.length], tiles[zxTurn++ % tiles.length]].forEach(r => { const v = zxDecode(c, r); if(v) addUnique(out, [v]); });
+  return out;
+}
+let zxTurn = 0, zxTurnRoi = 0;   // 兩組各自輪流，確保每一條區塊都會輪到
 function zxStrips(w, h){ const t = []; for(let i=0;i<12;i++) t.push([0, h*i/13, w, h/6.5], [w/2, h*i/13, w/2, h/6.5]); return t; }
 const cv2 = document.createElement('canvas');
 function zxDecode(c, r){
   try{
     let src = c;
-    if(r){ cv2.width = Math.round(r[2]); cv2.height = Math.round(r[3]);
-      cv2.getContext('2d', {willReadFrequently:true}).drawImage(c, r[0], r[1], r[2], r[3], 0, 0, cv2.width, cv2.height); src = cv2; }
+    if(r){ cv2.width = Math.round(r[2]); cv2.height = Math.round(r[3]); c2d(cv2).drawImage(c, r[0], r[1], r[2], r[3], 0, 0, cv2.width, cv2.height); src = cv2; }
     const Z = zx.Z, res = zx.reader.decode(new Z.BinaryBitmap(new Z.HybridBinarizer(new Z.HTMLCanvasElementLuminanceSource(src))));
     return {text:res.getText(), fmt:res.getBarcodeFormat() === Z.BarcodeFormat.QR_CODE ? 'qr' : '1d'};
   }catch(e){ return null; }
@@ -871,13 +932,19 @@ function handleCodes(codes){
     // 剛刷完的同一張標籤還在畫面中：在讀到不同批號或離開畫面 1.5 秒前，不再顯示它的 WF ID
     if(hold){
       if(got.lot.size && ![...got.lot].includes(hold.lot)) hold = null;
-      else if(got.wf.has(hold.wf)){ got.wf.delete(hold.wf); hold.seen = now; }
+      else if(got.wf.has(hold.wf)){ got.wf.delete(hold.wf); got.lot.delete(hold.lot); hold.seen = now; }
       else if(now - hold.seen > 1500) hold = null;
     }
     multi = got.lot.size > 1 || got.wf.size > 1;
     if(got.lot.size === 1){ pending.lot = [...got.lot][0]; pending.t_lot = now; }
     if(got.wf.size === 1){ pending.wf = [...got.wf.values()][0]; pending.t_wf = now; }
     if(multi) setLast('warn', '框內有兩張以上的標籤，請靠近只對準一張');
+  }
+  // 只讀到 QR Code、一直讀不到 LOT NO：提示靠近
+  if(pending.wf && !pending.lot && now - pending.t_wf > 1200 && now - lastHintAt > 2500){
+    lastHintAt = now;
+    if(autoZoom()) setLast('warn', '已讀到刻號，LOT NO 條碼較細，已自動放大鏡頭，請保持對準');
+    else setLast('warn', '已讀到刻號（QR Code），LOT NO 條碼較細讀不到：請再靠近一點，讓條碼區填滿框');
   }
   if(pending.lot && pending.wf){
     const key = pending.lot + '|' + pending.wf.join('/');
