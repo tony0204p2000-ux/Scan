@@ -32,6 +32,7 @@ button:active:not(:disabled){filter:brightness(1.25)}
 .tabs button.on{color:#221a08;background:var(--amber);border-color:var(--amber)}
 
 #cam{position:relative;background:#000;overflow:hidden;height:30vh;height:30svh;min-height:190px}
+#cam.held::after{content:"已暫停讀取・按「下一張」繼續";position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);background:rgba(10,90,80,.92);color:#fff;font-size:15px;font-weight:700;padding:8px 14px;border-radius:10px;white-space:nowrap;pointer-events:none}
 #cam.off{height:auto;min-height:0;background:none;padding:2px 10px 6px}
 #cam.off video,#cam.off #frame,#cam.off .camtools{display:none}
 #cam:not(.off) .camoff{display:none}
@@ -122,7 +123,8 @@ main{padding:10px}
 /* ---------- 底部操作列(拇指區) ---------- */
 #bar{position:fixed;left:0;right:0;bottom:0;z-index:6;display:flex;gap:8px;padding:10px 10px calc(10px + env(safe-area-inset-bottom));background:var(--bg);border-top:1px solid var(--line)}
 #bar button{min-height:56px;font-size:15px}
-#bReset{flex:1}
+#bReset{flex:.9;font-size:14px!important;white-space:nowrap;padding:6px 8px}
+#bNext{flex:1.2;font-size:16px;font-weight:700;background:#1f6fa8;border-color:#1f6fa8;color:#fff}
 #bMain{flex:2;font-size:17px;font-weight:700;background:var(--amber);border-color:var(--amber);color:#221a08}
 /* 手動輸入時鍵盤會蓋住或推擠底部列:先收起來,空白送出 = 按主按鈕 */
 body.typing #bar{display:none}
@@ -208,7 +210,8 @@ body.typing #bar{display:none}
 </main>
 
 <footer id="bar">
-  <button type="button" id="bReset">重來這一筆</button>
+  <button type="button" id="bReset">整筆重來</button>
+  <button type="button" id="bNext" hidden>下一張</button>
   <button type="button" id="bMain"></button>
 </footer>
 
@@ -318,89 +321,154 @@ function chipList(key,list,opt){
      del(k,i)  刪掉一筆已掃的資料
    ===================================================================== */
 
-/* ---------- 委外測試:分貨標籤 ↔ WAFER ---------- */
+/* ---------- 委外測試:分貨標籤 ↔ WAFER(判斷方式同電腦版,手機改成一張一張讀) ----------
+   分貨標籤:第 1 張讀 LOT NO + 刻號,第 2 張起只讀刻號 → 按「分貨完成」= 全部刻號合計
+   WAFER 標籤:每張讀 LOT NO + 刻號,LOT NO 都必須和分貨標籤的 LOT NO 相同 → 按「完成並比對」
+   比對:LOT NO 全部相同,而且分貨標籤刻號合計 = WAFER 刻號合計(排序後)才算正確。
+   每張讀完才響一聲並暫停讀取,按「下一張」才讀下一張。 */
 function modeOut(){
-  var s;
-  function reset(){ s={ph:1,lbl:'',lblList:[],sub:'lot',wfLot:[],wf:[]}; }
-  function addEngrave(list,text,who){
-    text=normEng(text);
-    if(!isEngrave(text)) return {err:'刻號只能是數字與「/」'};
-    var tk=numTokens(text);
-    var dup=tk.filter(function(t){ return list.indexOf(t)>=0; });
-    if(dup.length) return {err:who+'刻號 '+dup.join('/')+' 已掃過，沒有重複加入',dup:true};
-    tk.forEach(function(t){ list.push(t); });
-    return {msg:who+'刻號 '+tk.join('/')};
+  var s, sig='';
+  function blank(){ return {lot:'',eng:'',tl:0,te:0}; }
+  function reset(){ s={phase:'lbl',lot:'',lbls:[],wfs:[],cur:blank(),held:false,readyAt:0,warnAt:0}; sig=''; }
+  function list(){ return s.phase==='lbl'?s.lbls:s.wfs; }
+  function who(){ return s.phase==='lbl'?'分貨標籤':'WAFER 標籤'; }
+  /* 這一張需不需要讀 LOT NO:分貨標籤只有第 1 張要,WAFER 每張都要 */
+  function needLot(){ return s.phase==='wf' || !s.lbls.length; }
+  function engOf(arr){ var o=[]; arr.forEach(function(x){ o=o.concat(x.eng); }); return sortNumeric(o); }
+  function complete(){
+    var c=s.cur, tk=numTokens(normEng(c.eng)), L=list(), lot=needLot()?norm(c.lot):s.lot;
+    s.cur=blank();
+    if(!needLot() && c.lot && norm(c.lot)!==s.lot) return {err:'這張分貨標籤的 LOT NO 是 '+norm(c.lot)+'，和第 1 張的 '+s.lot+' 不同，沒有收'};
+    var have=engOf(L), dup=tk.filter(function(t){ return have.indexOf(t)>=0; });
+    if(dup.length===tk.length){ var k=0; L.forEach(function(x,i){ if(x.eng.indexOf(tk[0])>=0) k=i+1; }); return {soft:'這張'+who()+'已讀過（第 '+k+' 張），請換下一張'}; }
+    if(dup.length) return {err:'刻號 '+dup.join('/')+' 前面的'+who()+'已經讀過，這張沒有收'};
+    if(s.phase==='lbl' && !s.lbls.length) s.lot=lot;
+    L.push({lot:lot,eng:tk}); s.held=true; sig='';
+    var warn=(s.phase==='wf' && lot!==s.lot)?'　⚠ LOT NO 和分貨標籤 '+s.lot+' 不同':'';
+    return {msg:who()+' 第 '+L.length+' 張：'+(needLot()||s.phase==='lbl'&&L.length===1?lot+'　':'')+'刻號 '+tk.join('/')+warn+'　（已暫停讀取）'};
   }
-  function newWf(t){ t=normEng(t); return isEngrave(t) && !numTokens(t).some(function(x){ return s.wf.indexOf(x)>=0; }); }
-  function newLbl(t){ t=normEng(t); return isEngrave(t) && !numTokens(t).some(function(x){ return s.lblList.indexOf(x)>=0; }); }
   function compare(){
-    var lblSorted=sortNumeric(s.lblList), wfLotSorted=sortAlpha(s.wfLot), wfSorted=sortNumeric(s.wf);
-    var labelLot=norm(s.lbl);
-    var lotMatch=labelLot!=='' && wfLotSorted.length>0 && wfLotSorted.every(function(v){ return v===labelLot; });
-    var lblLine=lblSorted.join(''), wfLine=wfSorted.join('');
-    var engMatch=lblLine===wfLine && lblLine!=='';
-    var cells=[s.lbl.trim(),lblLine,wfLotSorted.join('/'),wfLine];
-    finish(M.out,lotMatch&&engMatch,cells,[
-      {label:'標籤 LOT NO',value:labelLot||'(空白)',ok:true},
-      {label:'WAFER LOT NO(排序後)',value:cells[2]||'(空白)',ok:lotMatch},
-      {label:'標籤刻號(排序後)',value:lblSorted.join(' ')||'(空白)',ok:true},
-      {label:'WAFER刻號(排序後)',value:wfSorted.join(' ')||'(空白)',ok:engMatch}
-    ]);
+    var lblEng=engOf(s.lbls), wfEng=engOf(s.wfs), wfLots=[];
+    s.wfs.forEach(function(x){ if(wfLots.indexOf(x.lot)<0) wfLots.push(x.lot); });
+    var badLots=wfLots.filter(function(l){ return l!==s.lot; });
+    var lotMatch=s.lot!=='' && s.wfs.length>0 && !badLots.length;
+    var lblLine=lblEng.join(''), wfLine=wfEng.join(''), engMatch=lblLine===wfLine && lblLine!=='';
+    var miss=lblEng.filter(function(e){ return wfEng.indexOf(e)<0; }), extra=wfEng.filter(function(e){ return lblEng.indexOf(e)<0; });
+    var ok=lotMatch && engMatch;
+    var cells=[s.lot,lblLine,sortAlpha(s.wfs.map(function(x){ return x.lot; })).join('/'),wfLine];
+    var d=[
+      {label:'標籤 LOT NO',value:s.lot||'(空白)',ok:true},
+      {label:'WAFER LOT NO',value:wfLots.join('/')||'(空白)',ok:lotMatch},
+      {label:'標籤刻號(排序後)',value:lblEng.join(' ')||'(空白)',ok:true},
+      {label:'WAFER刻號(排序後)',value:wfEng.join(' ')||'(空白)',ok:engMatch}
+    ];
+    if(badLots.length) d.push({label:'原因：LOT NO 不同',value:'WAFER 的 '+badLots.join('/')+' ≠ 標籤 '+s.lot,ok:false});
+    if(miss.length) d.push({label:'原因：WAFER 少了刻號',value:miss.join(' '),ok:false});
+    if(extra.length) d.push({label:'原因：WAFER 多了刻號',value:extra.join(' '),ok:false});
+    finish(M.out,ok,cells,d);
   }
   reset();
   return {
-    id:'out', name:'委外測試', pdf:'WAFER比對工具-委外測試 比對紀錄',
+    id:'out', name:'委外測試', pdf:'WAFER比對工具-委外測試 比對紀錄', labelMode:true,
     cols:['標籤 LOT NO','標籤刻號(排序後)','WAFER LOT NO(排序後)','WAFER刻號(排序後)'],
-    reset:reset, nsteps:3, stepNo:function(){ return s.ph; },
+    reset:reset, nsteps:2, stepNo:function(){ return s.phase==='lbl'?1:2; },
+    isHeld:function(){ return s.held; },
     step:function(){
-      if(s.ph===1) return {key:'lblLot',kind:'lot',name:'分貨標籤 LOT NO',hint:'5 碼英數字；同一張標籤上的刻號會一起讀',ex:'A1B23',max:5,cam:camLot,
-        pair:{key:'lblEng',kind:'eng',cam:isEngrave},
+      var n=list().length+(s.held?0:1);
+      if(s.held) return {key:'hold',kind:'hold',name:who()+' 第 '+n+' 張已讀完',hint:'按「下一張」讀下一張'+who()+(s.phase==='lbl'?'；全部讀完按「分貨完成」開始讀 WAFER 標籤':'；全部讀完按「完成並比對」'),ex:'',
+        cam:function(){ return false; }, submit:function(){ return {err:'這張已讀完，請先按「下一張」或「完成」'}; }};
+      var nl=needLot();
+      return {key:'cur',kind:'label',name:who()+' 第 '+n+' 張',
+        hint:nl?'對準標籤，LOT NO 和刻號都讀到才算完成（手動輸入：先 LOT NO 再刻號）':'第 2 張起只讀刻號（LOT NO 沿用第 1 張 '+s.lot+'）',
+        ex:(nl&&!s.cur.lot)?'LOT NO A1B23':'刻號 01/02', max:(nl&&!s.cur.lot)?5:0,
+        cam:function(){ return false; },
         submit:function(t){
-          if(!isLot5(t)) return {err:'LOT NO 必須是 5 碼英數字'};
-          s.lbl=t.trim(); s.ph=2; return {msg:'標籤 LOT NO '+norm(t)};
+          if(nl && !s.cur.lot){ if(!isLot5(t)) return {err:'LOT NO 必須是 5 碼英數字'}; s.cur.lot=t.trim(); s.cur.tl=Date.now()+1e9; return {msg:'LOT NO '+norm(t)+'，接著輸入刻號',partial:true}; }
+          if(!isEngrave(t)) return {err:'刻號只能是數字與「/」'};
+          s.cur.eng=t; var r=complete(); if(r.soft) r={err:r.soft}; return r;
         }};
-      if(s.ph===2) return {key:'lblEng',kind:'eng',name:'分貨標籤 刻號',hint:'可連續掃多筆，掃完按下方「標籤刻號掃完了」',ex:'12',cam:newLbl,
-        submit:function(t){ return addEngrave(s.lblList,t,'標籤'); }};
-      if(s.sub==='lot') return {key:'wfLot',kind:'lot',name:'WAFER LOT NO',hint:'對準 WAFER 標籤，LOT NO 與刻號 QR Code 會一起讀；全部掃完按「完成並比對」',ex:'A1B23',max:5,cam:camLot,
-        pair:{key:'wfEng',kind:'eng',cam:newWf},
-        submit:function(t){
-          if(!isLot5(t)) return {err:'LOT NO 必須是 5 碼英數字'};
-          s.wfLot.push(norm(t)); s.sub='eng'; return {msg:'WAFER LOT NO '+norm(t)};
-        }};
-      return {key:'wfEng',kind:'eng',name:'WAFER 刻號',hint:'接著掃同一片的刻號',ex:'12',cam:newWf,
-        submit:function(t){
-          var r=addEngrave(s.wf,t,'WAFER');
-          /* 這一片已經掃過:把剛才那筆 LOT NO 一起取消,LOT NO 與刻號的筆數才會對得上 */
-          if(r.dup){ s.wfLot.pop(); s.sub='lot'; r.err+='（剛才的 LOT NO 已一起取消）'; return r; }
-          if(!r.err) s.sub='lot';
-          return r;
-        }};
+    },
+    /* 鏡頭:這一格畫面讀到的條碼 → 填入目前這張的 LOT NO / 刻號 */
+    scan:function(lst,now){
+      if(s.held || now<s.readyAt) return;
+      var c=s.cur, nl=needLot();
+      if(c.lot && !c.eng && now-c.tl>4000) c.lot='';       /* 只讀到一半太久:作廢,避免和下一張配錯 */
+      if(c.eng && !c.lot && nl && now-c.te>4000) c.eng='';
+      var lots=lst.filter(function(x){ return camLot(x.t); });
+      var e2=lst.filter(function(x){ return x.two && isEngrave(x.t); });
+      var e1=lst.filter(function(x){ return !x.two && isEngrave(x.t); });
+      if(lots.length){ if(norm(lots[0].t)!==norm(c.lot)) c.lot=lots[0].t; c.tl=now; }
+      if(e2.length){ if(c.eng!==e2[0].t) c.eng=e2[0].t; c.te=now; pend1d=null; }
+      else if(e1.length && !c.eng){
+        /* 標籤上沒有刻號 QR Code 時才用一維條碼,且要連續穩定讀到 */
+        var t=e1[0].t;
+        if(!pend1d || pend1d.t!==t || now-pend1d.last>600) pend1d={t:t,first:now,last:now};
+        else{ pend1d.last=now; if(now-pend1d.first>=600){ c.eng=t; c.te=now; pend1d=null; } }
+      }
+      /* 讀到刻號 QR Code 卻一直讀不到 LOT NO(細的一維條碼):提示靠近/自動放大 */
+      if(nl && !c.lot && c.eng && !lots.length){ if(!lotMiss) lotMiss=now; else if(now-lotMiss>1500 && now-hintAt>4000){ hintAt=now; lotHint(); } } else lotMiss=0;
+      if(c.eng && (c.lot || !nl)){
+        var r=complete();
+        if(r.soft){ if(now-s.warnAt>2500){ s.warnAt=now; say(r.soft,'warn',3000); } }
+        else if(r.err){ beep(false); flashFrame(false); say('✕ '+r.err,'bad',5000); }
+        else{ beep(true); flashFrame(true); say('✓ '+r.msg,r.msg.indexOf('⚠')>=0?'warn':'ok',6000); if(scanner) scanner.pause(true); }
+        render(); return;
+      }
+      var g=c.lot+'|'+c.eng; if(g!==sig){ sig=g; render(); }
     },
     main:function(){
-      if(s.ph<3) return {label:'標籤刻號掃完了'+(s.lblList.length?'（'+s.lblList.length+'）':''),enabled:s.ph===2&&s.lblList.length>0,fn:function(){ s.ph=3; s.sub='lot'; say('標籤共 '+s.lblList.length+' 片，接著掃 WAFER','ok'); }};
-      return {label:'完成並比對',enabled:s.wfLot.length>0&&s.wf.length>0&&s.sub==='lot',fn:compare};
+      var idle=s.held||(!s.cur.lot&&!s.cur.eng);
+      if(s.phase==='lbl') return {label:'分貨完成（'+engOf(s.lbls).length+' 片）',enabled:s.lbls.length>0&&idle,fn:function(){
+        s.phase='wf'; s.held=false; s.cur=blank(); s.readyAt=Date.now()+800; pend1d=null;
+        if(scanner && !typing()) scanner.pause(false);
+        say('分貨標籤共 '+engOf(s.lbls).length+' 片，請對準第 1 張 WAFER 標籤','ok');
+      }};
+      return {label:'完成並比對（'+engOf(s.wfs).length+' / '+engOf(s.lbls).length+'）',enabled:s.wfs.length>0&&idle,fn:compare};
+    },
+    next:function(){
+      return {label:'下一張',enabled:s.held,fn:function(){
+        s.held=false; s.cur=blank(); pend1d=null;
+        if(scanner && !typing()) scanner.pause(false);
+        say('請對準下一張'+who()+(needLot()?'':'（只讀刻號）'),'');
+      }};
     },
     del:function(k,i){
-      if(k==='lbl'&&s.ph===2) s.lblList.splice(i,1);
-      if(k==='wfLot'&&s.ph===3){ s.wfLot.splice(i,1); s.sub=s.wfLot.length>s.wf.length?'eng':'lot'; }
-      if(k==='wf'&&s.ph===3) s.wf.splice(i,1);
+      if(k==='cur'){ if(s.held){ list().pop(); if(!s.lbls.length) s.lot=''; s.held=false; if(scanner && !typing()) scanner.pause(false); } s.cur=blank(); pend1d=null; say('已清除，請重新讀這張',''); }
+      if(k==='lbl' && s.phase==='lbl'){ s.lbls.splice(i,1); if(!s.lbls.length) s.lot=''; else s.lbls[0].lot=s.lot; }
+      if(k==='wf' && s.phase==='wf'){ s.wfs.splice(i,1); }
     },
     data:function(){
-      var lot=norm(s.lbl);
-      var h='<div class="card'+(s.ph<3?' cur':'')+'"><h2><i>1</i>分貨標籤<em>'+(s.lblList.length?s.lblList.length+' 片':'')+'</em></h2>'+
-        '<div class="kv"><span>LOT NO</span>'+(lot?'<b>'+esc(lot)+'</b>':'<b class="wait">尚未掃描</b>')+'</div>'+
-        '<div class="lbl"><span>刻號'+(s.ph===2?'（點一下可刪除）':'')+'</span></div>'+
-        chipList('lbl',s.lblList,{lock:s.ph!==2,empty:'尚未掃描刻號'})+'</div>';
-      if(s.ph===3){
-        var left=s.lblList.filter(function(v){ return s.wf.indexOf(v)<0; });
-        h+='<div class="card cur"><h2><i>2</i>WAFER<em>'+s.wf.length+' / '+s.lblList.length+' 片</em></h2>'+
-          '<div class="lbl"><span>LOT NO（'+s.wfLot.length+'）</span></div>'+
-          chipList('wfLot',s.wfLot,{alpha:true,empty:'尚未掃描 LOT NO',cls:function(v){ return v===lot?'ok':'bad'; }})+
-          '<div class="lbl"><span>刻號（點一下可刪除）</span></div>'+
-          chipList('wf',s.wf,{empty:'尚未掃描刻號',cls:function(v){ return s.lblList.indexOf(v)>=0?'ok':'warn'; }})+
-          (left.length?'<div class="lbl"><span>標籤上還沒掃到的刻號</span></div>'+chipList('',sortNumeric(left),{lock:true}):
-            (s.wf.length?'<div class="sum"><span>標籤上的刻號都掃到了</span><b class="eq">✓</b></div>':''))+
-          '</div>';
+      var c=s.cur, h='', n=list().length+(s.held?0:1), nl=needLot();
+      var lblEng=engOf(s.lbls), wfEng=engOf(s.wfs);
+      /* 目前這張 */
+      h+='<div class="card cur"><h2><i>'+(s.phase==='lbl'?'1':'2')+'</i>'+who()+' 第 '+n+' 張<em>'+(s.held?'已讀完・暫停讀取':(c.lot||c.eng?'讀取中…':'等待對準'))+'</em></h2>';
+      if(s.held){
+        var last=list()[list().length-1], bad=s.phase==='wf'&&last.lot!==s.lot;
+        h+='<div class="kv"><span>LOT NO</span><b style="color:var('+(bad?'--red':'--cyan')+')">'+esc(last.lot)+(bad?' ✕ ≠ '+esc(s.lot):' ✓')+'</b></div><div class="kv"><span>刻號</span><b style="color:var(--cyan)">'+esc(last.eng.join('/'))+' ✓</b></div>';
+      }else{
+        h+='<div class="kv"><span>LOT NO</span>'+(!nl?'<b class="wait">沿用第 1 張 '+esc(s.lot)+'</b>':c.lot?'<b>'+esc(norm(c.lot))+' ✓</b>':'<b class="wait">尚未讀到</b>')+'</div>'+
+           '<div class="kv"><span>刻號</span>'+(c.eng?'<b>'+esc(numTokens(normEng(c.eng)).join('/'))+' ✓</b>':'<b class="wait">尚未讀到</b>')+'</div>';
+      }
+      if(s.held||c.lot||c.eng) h+='<div class="sum"><span>'+(s.held?'讀錯了？':'')+'</span><button type="button" data-del="cur:0" style="min-height:36px;font-size:14px">'+(s.held?'刪除這張重讀':'清除重讀')+'</button></div>';
+      h+='</div>';
+      /* 分貨標籤 */
+      h+='<div class="card"><h2><i>1</i>分貨標籤<em>'+s.lbls.length+' 張・'+lblEng.length+' 片</em></h2>'+
+        '<div class="kv"><span>LOT NO</span>'+(s.lot?'<b>'+esc(s.lot)+'</b>':'<b class="wait">尚未讀到</b>')+'</div>';
+      s.lbls.forEach(function(x,i){ h+='<div class="pair"><b>第 '+(i+1)+' 張</b><u>'+esc(x.eng.join('/'))+'</u>'+(s.phase==='lbl'?'<button type="button" data-del="lbl:'+i+'">×</button>':'')+'</div>'; });
+      if(lblEng.length) h+='<div class="sum"><span>刻號合計（排序後）</span><b style="font-size:15px">'+esc(lblEng.join(' '))+'</b></div>';
+      h+='</div>';
+      /* WAFER 標籤 */
+      if(s.phase==='wf'){
+        var left=lblEng.filter(function(e){ return wfEng.indexOf(e)<0; });
+        h+='<div class="card"><h2><i>2</i>WAFER 標籤<em>'+s.wfs.length+' 張・'+wfEng.length+' / '+lblEng.length+' 片</em></h2>';
+        if(!s.wfs.length) h+='<div class="chips"><span>尚未讀到</span></div>';
+        s.wfs.forEach(function(x,i){
+          var okLot=x.lot===s.lot, okEng=x.eng.every(function(e){ return lblEng.indexOf(e)>=0; });
+          h+='<div class="pair"><b style="color:var('+(okLot?'--cyan':'--red')+')">'+(i+1)+'.　'+esc(x.lot)+(okLot?'':' ✕')+'</b><u style="color:var('+(okEng?'--cyan':'--amber')+')">'+esc(x.eng.join('/'))+'</u><button type="button" data-del="wf:'+i+'">×</button></div>';
+        });
+        h+=left.length?'<div class="sum"><span>分貨標籤上還沒讀到的刻號</span><b style="font-size:15px;color:var(--amber)">'+esc(left.join(' '))+'</b></div>'
+                      :(wfEng.length?'<div class="sum"><span>分貨標籤上的刻號都讀到了</span><b class="eq">✓</b></div>':'');
+        h+='</div>';
       }
       return h;
     }
@@ -438,12 +506,12 @@ function modeIn(){
     step:function(){
       if(s.ph===1) return {key:'wip',kind:'wip',name:'Run Card WIP LOT',hint:'需含「-」，取前段比對；同一張 Run Card 上的刻號會一起讀',ex:'ABC12-01',cam:camWip,
         pair:{key:'rcEng',kind:'rcEng',cam:camRcEng},
-        submit:function(t){ if(t.indexOf('-')<0) return {err:'WIP LOT 必須含「-」'}; s.wip=t; s.ph=2; return {msg:'WIP LOT '+t}; }};
+        submit:function(t){ if(t.indexOf('-')<0) return {err:'WIP LOT 必須含「-」'}; s.wip=t; s.ph=2; return {msg:'WIP LOT '+t+'，等待刻號',partial:true}; }};
       if(s.ph===2) return {key:'rcEng',kind:'rcEng',name:'Run Card 刻號',hint:'需含「WF」，取 WF- 後段，字母轉數字',ex:'WF-A12',cam:camRcEng,
         submit:function(t){ if(t.toUpperCase().indexOf('WF')<0) return {err:'刻號必須含「WF」'}; s.eng=t; s.ph=3; return {msg:'刻號 '+t+' → '+engraveNumber(t)}; }};
       if(s.ph===3) return {key:'inLot',kind:'lot',name:'Wafer LOT NO',hint:'5 碼英數字；同一張標籤上的 WF ID 會一起讀並立即比對',ex:'A1B23',max:5,cam:camLot,
         pair:{key:'wfid',kind:'eng',cam:isEngrave},
-        submit:function(t){ if(!isLot5(t)) return {err:'LOT NO 必須是 5 碼英數字'}; s.lot=t; s.ph=4; return {msg:'LOT NO '+norm(t)}; }};
+        submit:function(t){ if(!isLot5(t)) return {err:'LOT NO 必須是 5 碼英數字'}; s.lot=t; s.ph=4; return {msg:'LOT NO '+norm(t)+'，等待 WF ID',partial:true}; }};
       return {key:'wfid',kind:'eng',name:'WF ID',hint:'只能是數字與「/」，掃到就立即比對',ex:'112',cam:isEngrave,
         submit:function(t){ t=normEng(t); if(!isEngrave(t)) return {err:'WF ID 只能是數字與「/」'}; s.wf=t; compare(); return {done:true}; }};
     },
@@ -508,7 +576,7 @@ function modeIC(){
     step:function(){
       if(s.ph===1 && s.sub==='lot') return {key:'rcLot',kind:'rcLot',name:'RUN CARD 批號',hint:'格式「批號-流水碼」，取前段；全部掃完按「RUN CARD 掃完了」',ex:'A1B23-001',
         cam:function(t){ return validRc(t) && !parseBB(t) && t.length<=40; },
-        submit:function(t){ if(!validRc(t)) return {err:'批號格式需為「批號-流水碼」'}; var l=lotPrefix(t).toUpperCase(); s.rcLot.push(l); s.sub='qty'; return {msg:'RUN CARD 批號 '+l}; }};
+        submit:function(t){ if(!validRc(t)) return {err:'批號格式需為「批號-流水碼」'}; var l=lotPrefix(t).toUpperCase(); s.rcLot.push(l); s.sub='qty'; return {msg:'RUN CARD 批號 '+l+'，等待數量',partial:true}; }};
       if(s.ph===1) return {key:'rcQty',kind:'qty',name:'RUN CARD 數量',hint:'接著掃（或輸入）這張 RUN CARD 的數量',ex:'100',num:true,cam:function(t){ return isQty(t) && t.length<=7; },
         submit:function(t){ if(!isQty(t)) return {err:'數量只能是數字'}; s.rcQty.push(t.trim()); s.sub='lot'; return {msg:'數量 '+t.trim()+'，累計 '+sumQty(s.rcQty)}; }};
       return {key:'bb',kind:'bb',name:'黑箱條碼',hint:'格式「料號?批號?數量」，可連續掃多箱；掃完按「完成並比對」',ex:'P001?A1B23?100',
@@ -580,6 +648,7 @@ function tone(f,dur,when,vol){
   }catch(e){}
 }
 function beep(kind){
+  (window.__beeps=window.__beeps||[]).push(kind);   /* 給自動測試用 */
   try{
     if(PS) PS.beep(kind,{sound:false});
     else if(navigator.vibrate) navigator.vibrate(kind===true?60:kind==='done'?[60,50,120]:[90,60,90]);
@@ -603,11 +672,17 @@ function feed(text){
   if(!st || !text) return null;
   var r=st.submit(text)||{};
   if(r.err){ beep(false); flashFrame(false); say('✕ '+r.err,'bad',5000); var i=$('minp'); i.classList.add('bad'); setTimeout(function(){ i.classList.remove('bad'); },700); }
+  else if(r.partial){ say(r.msg+'…',''); }          /* 只讀到一半:不出聲,整張讀完才響 */
   else if(!r.done){ beep(true); flashFrame(true); say('✓ '+r.msg,'ok'); }
+  if(held() && scanner) scanner.pause(true);
   render();
   return r;
 }
 /* 空白送出(手動輸入或條碼槍只按 Enter)= 按底部主按鈕,和電腦版一樣 */
+function held(){ return !!(cur.isHeld && cur.isHeld()); }
+/* 相機要不要讀:比對結果顯示中、手動輸入中、這張已讀完等按鈕時都暫停 */
+function syncPause(){ if(scanner) scanner.pause(busy || typing() || held()); }
+function pressNext(){ var nb=cur.next&&cur.next(); if(nb && nb.enabled && !busy){ nb.fn(); render(); syncPause(); } }
 function pressMain(){ var mb=cur.main(); if(mb && mb.enabled && !busy){ mb.fn(); if(!busy) render(); return true; } return false; }
 
 /* ---------- 比對結果 ---------- */
@@ -621,14 +696,14 @@ function finish(mode,ok,cells,detail){
     beep('done'); $('okflash').classList.add('show');
     setTimeout(function(){ $('okflash').classList.remove('show'); mode.reset(); resume(); say('✓ 上一筆比對相符','ok'); },900);
   }else{
-    beep(false); setTimeout(function(){ beep(false); },800);
+    beep(false); setTimeout(function(){ if($('err').classList.contains('show')) beep(false); },800);
     $('errDetail').innerHTML=detail.map(function(l){ return '<div><span>'+esc(l.label)+'</span><b class="'+(l.ok?'ok':'bad')+'">'+esc(l.value)+'</b></div>'; }).join('');
     $('err').classList.add('show'); errAt=Date.now();
     errCb=function(){ mode.reset(); clearSeen(); resume(); say('已清除，請重新掃描這一筆',''); };
   }
   renderLog();
 }
-function resume(){ busy=false; if(scanner && !typing()) scanner.pause(false); render(); }
+function resume(){ busy=false; syncPause(); render(); }
 $('errOk').addEventListener('click',function(){ $('err').classList.remove('show'); var f=errCb; errCb=null; if(f) f(); });
 
 /* ---------- 畫面 ---------- */
@@ -638,11 +713,13 @@ function render(){
   $('steps').innerHTML=h;
   $('askname').textContent=st?st.name:'';
   $('askhint').textContent=st?st.hint:'';
-  inp.placeholder=st?'手動輸入，例：'+st.ex:'';
+  inp.placeholder=st?(st.ex?'手動輸入，例：'+st.ex:'請先按「下一張」或「完成」'):'';
   if(st&&st.max) inp.maxLength=st.max; else inp.removeAttribute('maxlength');
   inp.setAttribute('inputmode',st&&st.num?'numeric':'text');
   $('data').innerHTML=cur.data();
   $('icopt').hidden=cur.id!=='ic';
+  $('cam').classList.toggle('held',held());
+  var nb=cur.next&&cur.next(); $('bNext').hidden=!nb; if(nb){ $('bNext').textContent=nb.label; $('bNext').disabled=!nb.enabled; }
   $('bMain').hidden=!mb;
   if(mb){ $('bMain').textContent=mb.label; $('bMain').disabled=!mb.enabled; }
   Array.prototype.forEach.call($('tabs').children,function(b){ b.className=b.getAttribute('data-m')===cur.id?'on':''; });
@@ -659,7 +736,7 @@ function setMode(id){
   if(!M[id]) return;
   cur=M[id]; store('wm_mode',id);
   var f=store('wm_frame2_'+id); frameName=(PS && PS.FRAMES[f])?f:'R';
-  say(''); render(); renderLog(); layoutFrame();
+  say(''); render(); renderLog(); layoutFrame(); syncPause();
 }
 
 /* =====================================================================
@@ -713,7 +790,9 @@ function onCodes(ds){
 }
 function decide(list,now){
   if(++frameN%300===0){ for(var k in lastSeen) if(now-lastSeen[k]>60000){ delete lastSeen[k]; delete stale[k]; } }
-  if(busy || typing() || now-lastTake<GAP) return;
+  if(busy || typing()) return;
+  if(cur.labelMode){ cur.scan(list,now); return; }
+  if(now-lastTake<GAP) return;
   var st=cur.step(); if(!st) return;
 
   /* 同一張標籤一次收兩個:畫面中這一步的條碼只有一個、下一步的新條碼也只有一個時才配對(避免和隔壁標籤配錯) */
@@ -781,7 +860,7 @@ function setZoom(z){
 }
 /* 一直沒讀到任何條碼:依平台提示 */
 setInterval(function(){
-  if(!scanner || !scanner.isRunning() || busy || typing()) return;
+  if(!scanner || !scanner.isRunning() || busy || typing() || held()) return;
   var now=Date.now();
   if(now-lastAny>6000 && now-hintAt>12000){
     hintAt=now;
@@ -814,7 +893,7 @@ function makeScanner(){
         clearSeen(); lastAny=Date.now(); autoZoomed=false;
         var z=store('wm_zoom');
         if(c.zoom && z>1.05) setZoom(Math.min(z,c.zoom.max));
-        if(typing()) scanner.pause(true);
+        syncPause();
       }
       if(s==='stopped') $('cam').classList.add('off');
       foot();
@@ -877,7 +956,7 @@ $('mform').addEventListener('submit',function(e){
 $('minp').addEventListener('compositionend',function(){ if(/[㐀-鿿豈-﫿]/.test(this.value)){ this.value=''; say('✕ 請切換成英數輸入','bad'); } });
 $('data').addEventListener('click',function(e){
   var b=e.target.closest('[data-del]'); if(!b || busy) return;
-  var p=b.getAttribute('data-del').split(':'); cur.del(p[0],+p[1]); render();
+  var p=b.getAttribute('data-del').split(':'); cur.del(p[0],+p[1]); render(); syncPause();
 });
 $('bMain').addEventListener('click',pressMain);
 ['deduct','override'].forEach(function(id){
@@ -892,7 +971,8 @@ function twoStep(btn,label,fn){
     clearTimeout(t); armed=false; btn.textContent=label; btn.classList.remove('arm'); fn();
   });
 }
-$('bReset').addEventListener('click',function(){ if(busy) return; cur.reset(); clearSeen(); say('已清除這一筆',''); render(); });
+$('bReset').addEventListener('click',function(){ if(busy) return; cur.reset(); clearSeen(); say('已清除這一筆',''); render(); syncPause(); });
+$('bNext').addEventListener('click',pressNext);
 twoStep($('bClear'),'清空',function(){ logs[cur.id]=[]; store('wm_log_'+cur.id,[]); renderLog(); });
 $('bPdf').addEventListener('click',function(){ exportPdf(cur.pdf,['時間'].concat(cur.cols,['結果']),logs[cur.id]); });
 
@@ -905,7 +985,7 @@ document.addEventListener('focusout',function(){
   clearTimeout(typeT);
   typeT=setTimeout(function(){
     if(document.activeElement && document.activeElement.tagName==='INPUT') return;
-    document.body.classList.remove('typing'); if(scanner && !busy) scanner.pause(false); layoutFrame();
+    document.body.classList.remove('typing'); syncPause(); layoutFrame();
   },200);
 });
 
