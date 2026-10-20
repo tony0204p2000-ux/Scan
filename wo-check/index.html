@@ -364,7 +364,7 @@ function buildDb(files){
 }
 
 /* status：ok 正確 / noslot 刻號不在工單 / nolot 批號不在工單 / cancelled 屬於已取消工單 / dup 重複刷讀（不計入實刷） */
-const STATUS_TEXT = {ok:'正確', noslot:'刻號不在工單', nolot:'批號不在工單', cancelled:'屬於已取消工單', dup:'重複刷讀', qty:'QTY與WF ID片數不符'};
+const STATUS_TEXT = {ok:'正確', noslot:'刻號不在工單', nolot:'批號不在工單', cancelled:'屬於已取消工單', dup:'重複刷讀', overlap:'刻號重複（標籤異常）', qty:'QTY與WF ID片數不符'};
 
 /* 每片 Wafer 以「批號 + 刻號」比對，自動對到含有該刻號的工單 */
 function evaluate(db, scans, lot, slot){
@@ -376,10 +376,7 @@ function evaluate(db, scans, lot, slot){
     if(!free) return {status:'dup', woText:cands[0].wo, partText:cands[0].part};
     return {status:'ok', woText:free.wo, partText:free.part};
   }
-  if(scans.some(s => s.lot === lot && s.slot === slot && s.status !== 'dup')){
-    const p = scans.find(s => s.lot === lot && s.slot === slot);
-    return {status:'dup', woText:p.wo, partText:p.part};
-  }
+  // 有問題的 Wafer 不管刷幾次，都顯示真正的錯誤原因（不會變成「重複刷讀」）
   const can = (db.byLotCancel.get(lot) || []).filter(r => r.slots.includes(slot));
   if(can.length) return {status:'cancelled', woText:can.map(r => r.wo).join(' / '), partText:can[0].part};
   if(!recs.length) return {status:'nolot', woText:'', partText:''};
@@ -392,15 +389,28 @@ function deriveScans(db, boxes){
   const scans = [];
   boxes.forEach(bx => bx.slots.forEach(slot => {
     const ev = evaluate(db, scans, bx.lot, slot);
-    scans.push({n:scans.length + 1, b:bx.b, lot:bx.lot, slot, status:ev.status, wo:ev.woText, part:ev.partText, time:bx.time});
+    let status = ev.status, dupOf = null;
+    // 同一刻號出現在兩盒（不是整盒重刷）：每片刻號是唯一的，代表其中一盒標籤刻號錯誤
+    if(status === 'dup'){ status = 'overlap'; const p = scans.find(x => x.lot === bx.lot && x.slot === slot && x.status === 'ok'); dupOf = p ? p.b : null; }
+    scans.push({n:scans.length + 1, b:bx.b, lot:bx.lot, slot, status, dupOf, wo:ev.woText, part:ev.partText, time:bx.time});
   }));
   return scans;
 }
+/* 刷完一盒時先分出「已刷過的正確 Wafer」（重複刷讀：只提醒、不記錄、不計入） */
+/* 整盒重刷：批號和刻號與先前某一盒完全相同，且那盒全部正確 → 只是刷了兩次，只提醒、不記錄 */
+function findRepeatBox(db, boxes, lot, slots){
+  const key = [...slots].sort().join('/');
+  const prev = boxes.find(b => b.lot === lot && [...b.slots].sort().join('/') === key);
+  if(!prev) return null;
+  const row = summarize(db, boxes).boxRows.find(r => r.b === prev.b);
+  return row && !row.bad.length ? prev : null;
+}
+function dupNotice(lot, slots, b){ return `重複刷讀：${lot}　刻號 ${compress(slots)} 與第 ${b} 盒完全相同，已刷過，不重複計算`; }
 function boxQtyBad(bx){ return false; }   // QTY 不刷，片數以刻號數計算
 function nowText(){ const d = new Date(); return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()); }
 function okCount(scans){ return scans.filter(s => s.status === 'ok').length; }
 /* 問題 Wafer（批號不在工單 / 刻號多了 / 屬於已取消工單）刷到時就要求取出，不算點交片數 */
-const REMOVE = ['nolot','noslot','cancelled'];
+const REMOVE = ['nolot','noslot','cancelled','overlap'];
 function countedCount(scans){ return scans.filter(s => s.status === 'ok').length; }
 
 function summarize(db, boxes){
@@ -439,7 +449,7 @@ function summarize(db, boxes){
   boxes.forEach(bx => {
     if(boxQtyBad(bx)) errors.push({b:bx.b, n:'', lot:bx.lot, slot:'', status:'qty', wo:'', part:'', time:bx.time,
       note:`QTY ${bx.qty}，WF ID ${bx.slots.length} 片`});
-    scans.filter(s => s.b === bx.b && s.status !== 'ok').forEach(s => errors.push(s));
+    scans.filter(s => s.b === bx.b && s.status !== 'ok' && s.status !== 'dup').forEach(s => errors.push(s));
   });
   const boxRows = boxes.map(bx => {
     const ss = scans.filter(s => s.b === bx.b);
@@ -452,11 +462,13 @@ function summarize(db, boxes){
   const issues = {
     nolot:  groupBy(scans.filter(s => s.status === 'nolot'), s => s.lot),
     extra:  groupBy(scans.filter(s => s.status === 'noslot' || s.status === 'cancelled'), s => s.status + '|' + s.lot + '|' + s.wo),
+    overlap: groupBy(scans.filter(s => s.status === 'overlap'), s => s.lot + '|' + s.b + '|' + s.dupOf),
     short:  missing.filter(m => !m.all),
     unscanned: missing.filter(m => m.all),
-    dup:    groupBy(scans.filter(s => s.status === 'dup'), s => s.lot + '|' + s.wo)
+    dup:    []
   };
-  const removed = scans.filter(s => REMOVE.includes(s.status)).length;
+  // 同一片問題 Wafer 重複刷到只算一次
+  const removed = new Set(scans.filter(s => REMOVE.includes(s.status)).map(s => s.lot + '|' + s.slot)).size;
   return {scans, total:countedCount(scans), ok, removed, issues, expected:db.expected, partRows, missing, errors, boxRows,
           complete: ok >= db.expected && db.expected > 0};
 }
@@ -579,34 +591,39 @@ function issueSections(sm){
   const I = sm.issues;
   return [
     {key:'nolot', title:'批號不在工單', note:'刷到時已要求取出', rows:I.nolot.map(g => ({lot:g.lot, part:'—', wo:'—', slots:g.slots}))},
+    {key:'overlap', title:'刻號重複（標籤異常）', note:'同一刻號出現在兩盒以上，其中有標籤刻號錯誤，請核對這些盒', rows:I.overlap.map(g => ({lot:g.lot, part:g.part, wo:`第 ${g.b} 盒與第 ${g.dupOf} 盒重複`, slots:g.slots}))},
     {key:'extra', title:'刻號多了', note:'刷到時已要求取出', rows:I.extra.map(g => ({lot:g.lot, part:g.part, wo:g.status === 'cancelled' ? g.wo + '（已取消工單）' : g.wo, slots:g.slots}))},
     {key:'short', title:'刻號少了', note:'工單上有，但該批號只刷到部分刻號', rows:I.short.map(m => ({lot:m.lot, part:m.part, wo:m.wo, slots:m.slots}))},
-    {key:'unscanned', title:'未刷讀', note:'整筆工單一片都沒刷到', rows:I.unscanned.map(m => ({lot:m.lot, part:m.part, wo:m.wo, slots:m.slots}))},
-    {key:'dup', title:'重複刷讀', note:'同一片刷了兩次以上，不重複計算', rows:I.dup.map(g => ({lot:g.lot, part:g.part, wo:g.wo, slots:g.slots}))}
+    {key:'unscanned', title:'未刷讀', note:'整筆工單一片都沒刷到', rows:I.unscanned.map(m => ({lot:m.lot, part:m.part, wo:m.wo, slots:m.slots}))}
   ];
 }
 /* 刷完一盒有問題時的提醒視窗內容（兩版共用） */
 function boxAlert(bx, row){
   const rm = row.bad.filter(s => REMOVE.includes(s.status)), dup = row.bad.filter(s => s.status === 'dup');
-  const why = {nolot:'批號不在工單', noslot:'刻號多了（不在工單刻號內）', cancelled:'屬於已取消工單'};
+  const why = {nolot:'批號不在工單', noslot:'刻號多了（不在工單刻號內）', cancelled:'屬於已取消工單', overlap:'刻號重複（標籤異常）'};
   const groups = {};
   rm.forEach(s => (groups[s.status] = groups[s.status] || []).push(s));
   const lines = Object.entries(groups).map(([st, list]) => {
+    if(st === 'overlap'){
+      const prev = [...new Set(list.map(s => s.dupOf).filter(Boolean))];
+      return `<li><b>${why[st]}</b><div class="pull">刻號 ${esc(compress(list.map(s => s.slot)))} 與第 ${prev.join('、')} 盒重複</div>
+        <div>每片刻號是唯一的，${prev.length > 1 ? '這幾盒' : '這兩盒'}其中有標籤刻號錯誤。<b>請將本盒和第 ${prev.join('、')} 盒都取出</b>，核對標籤與實物刻號。</div>
+        <div class="muted">重複的刻號不計入片數，結算時會列在錯誤清單「刻號重複（標籤異常）」。</div></li>`;
+    }
     const wos = [...new Set(list.map(s => s.wo).filter(Boolean))].join(' / ');
     return `<li><b>${why[st]}</b><div class="pull">刻號 ${esc(compress(list.map(s => s.slot)))}（${list.length} 片）</div>${wos ? `<div class="muted">${esc(wos)}</div>` : ''}</li>`;
   });
-  if(dup.length) lines.push(`<li><b>重複刷讀</b>：刻號 ${esc(compress(dup.map(s => s.slot)))}（已刷過，不重複計算，不用取出）</li>`);
   const allOut = rm.length && rm.length === bx.slots.length;
-  const head = rm.length
-    ? `<div class="pullhead">請將以下 Wafer 取出，不要點交${allOut ? '（整盒取出）' : ''}</div>`
-    : '';
+  const onlyOverlap = rm.length && rm.every(s => s.status === 'overlap');
+  const head = !rm.length ? '' : onlyOverlap ? `<div class="pullhead">標籤刻號異常，請取出核對</div>`
+    : `<div class="pullhead">請將以下 Wafer 取出，不要點交${allOut ? '（整盒取出）' : ''}</div>`;
   return {
     kind: rm.length ? 'err' : 'warn',
-    title: rm.length ? `⚠ 第 ${bx.b} 盒：請取出問題 Wafer` : `⚠ 第 ${bx.b} 盒：重複刷讀`,
+    title: !rm.length ? `⚠ 第 ${bx.b} 盒：重複刷讀` : onlyOverlap ? `⚠ 第 ${bx.b} 盒：刻號重複（標籤異常）` : `⚠ 第 ${bx.b} 盒：請取出問題 Wafer`,
     body: `${head}<div class="big">批號 ${esc(bx.lot)}</div>
       <div>${bx.slots.length === 1 ? `此盒僅有 1 片，刻號為 ${bx.slots[0]}` : `刻號 ${esc(compress(bx.slots))}（${bx.slots.length} 片），正確 ${row.ok} 片`}</div>
       <ul class="elist">${lines.join('')}</ul><div class="muted">已記錄在錯誤紀錄</div>`,
-    button: rm.length ? '已取出，繼續刷下一盒' : '確認，繼續刷下一盒'
+    button: !rm.length ? '確認，繼續刷下一盒' : onlyOverlap ? '已取出核對，繼續刷下一盒' : '已取出，繼續刷下一盒'
   };
 }
 function errNote(s){ return s.status === 'qty' ? s.note : (s.wo || ''); }
@@ -953,15 +970,19 @@ function handleCodes(codes){
   } else if(codes.length) renderPend();
 }
 function commitBox(lot, slots){
-  const bx = {b:boxes.length + 1, lot, slots, qty:null, time:nowText()};
-  boxes.push(bx); lastKey = lot + '|' + slots.join('/'); hold = {lot, wf:slots.join('/'), seen:Date.now()};
+  lastKey = lot + '|' + slots.join('/'); hold = {lot, wf:slots.join('/'), seen:Date.now()};
   pending = EMPTY(); coolUntil = Date.now() + 800;
+  // 與先前某盒完全相同（批號、刻號都一樣）：只是刷了兩次 → 只提醒、不記錄、不用按確認
+  const rep = findRepeatBox(db, boxes, lot, slots);
+  if(rep){ flashFrame('bad'); beep('warn'); setLast('warn', '⚠ ' + dupNotice(lot, slots, rep.b) + '，請直接刷下一盒'); renderScan(); return; }
+  const bx = {b:boxes.length + 1, lot, slots, qty:null, time:nowText()};
+  boxes.push(bx);
   persist();
   const sm = summarize(db, boxes), {row, groups} = boxReport(sm, bx.b);
   renderScan();
   if(!row.bad.length && !row.qtyBad){
     flashFrame('hit'); beep('ok');
-    setLast('ok', slots.length === 1 ? `✔ 第 ${bx.b} 盒　${lot}　此盒僅有 1 片，刻號為 ${slots[0]}，正確` : `✔ 第 ${bx.b} 盒　${lot}　刻號 ${compress(slots)}　${row.ok} 片正確`);
+    setLast('ok', (slots.length === 1 ? `✔ 第 ${bx.b} 盒　${lot}　此盒僅有 1 片，刻號為 ${slots[0]}，正確` : `✔ 第 ${bx.b} 盒　${lot}　刻號 ${compress(slots)}　${row.ok} 片正確`));
     if(sm.complete && !completedShown){ completedShown = true; setTimeout(showComplete, 300); }
     return;
   }
