@@ -266,7 +266,7 @@ details.card[open] summary{margin-bottom:10px}
     </div>
 
     <div class="card">
-      <h2>手動輸入 / 藍牙條碼槍 <small>按 Enter 核對</small></h2>
+      <h2>手動輸入 / 藍牙條碼槍 <small>不用點輸入框也能直接掃</small></h2>
       <form class="inrow" id="manForm" autocomplete="off">
         <input id="manInput" enterkeyhint="go" autocapitalize="characters" spellcheck="false" placeholder="輸入或貼上條碼內容">
         <button class="pri" type="submit">核對</button>
@@ -453,6 +453,37 @@ function diMap(segs){
   });
   return m;
 }
+/* ---------- 分隔字元被吃掉時的備援拆解(手機外接條碼槍) ----------
+   條碼槍通常打不出 GS/RS 等控制字元,華邦電、旺宏的二維碼內容會黏成一串,例如
+     華邦電 [)>061PW634GU6RE-092PJAA118VQW AH1TK4241J4000315Q5050614Q24…
+     旺宏   DN0081931048SD2026/09/22…PMX25V2033FWJI1T5U1415001P6752E-99W812IRQ6259519D202630…
+   1) 先用收料清單比對:黏在一起的內容裡找「1T+清單的 Lot」與「15Q/Q+該筆數量」,最準確
+   2) 清單找不到時,依各廠商欄位順序切:華邦電 1T…15Q、15Q…14Q;旺宏 1T…1P、Q…9D */
+var RUNON={
+  '華邦電':{qp:'15Q',lot:/1T(.+?)15Q/,qty:[/15Q(\d+)14Q/,/15Q(\d+?)(?=\d{0,2}[A-Z]|$)/],part:/1P(.+?)(?=2P|1T|$)/},
+  '旺宏':{qp:'Q',lot:/1T(.+?)1P/,qty:[/[^0-9]Q(\d+)9D/,/[^0-9]Q(\d+?)(?=\d{0,2}[A-Z]|$)/],part:/PMX(.+?)(?=1T|$)/}
+};
+function runOn(raw,vendor,strict){
+  var c=String(raw).toUpperCase().replace(/[\x00-\x1F\s]+/g,''), R=RUNON[vendor];
+  if(!R || c.indexOf('1T')<0) return null;
+  var best=null, m, q='';
+  recs.forEach(function(r,i){
+    var L=normLot(r.lot).replace(/\s+/g,''); if(L.length<4) return;
+    if(c.indexOf('1T'+L)>=0 && (!best || L.length>best.L.length)) best={i:i,L:L};
+  });
+  if(best){
+    var want=String(normQty(recs[best.i].qty));
+    var hit=new RegExp((R.qp==='Q'?'[^0-9]':'')+R.qp+want+'(?=$|[^0-9]|\\d{1,2}[A-Z])').test(c);
+    if(hit) q=want;
+  }
+  if(!q){ for(var j=0;j<R.qty.length && !q;j++){ m=R.qty[j].exec(c); if(m) q=m[1]; } }
+  /* strict:不是華邦電 [)> 開頭的,清單裡找不到時只接受旺宏固定開頭(DN…PMX),避免誤判其他長條碼 */
+  if(!best && strict && !(vendor==='旺宏' && /^DN\d/.test(c) && c.indexOf('PMX')>0)) return null;
+  var lot=best?best.L:((m=R.lot.exec(c))?m[1]:'');
+  if(!lot || !q) return null;
+  var pm=R.part.exec(c);
+  return {vendor:vendor,lot:lot,qty:q,part:pm?(vendor==='旺宏'?'MX':'')+pm[1]:'',runon:true};
+}
 function parseLabel(raw){
   var t=String(raw==null?'':raw).replace(/\r/g,'').trim();
   if(!t) return null;
@@ -463,6 +494,7 @@ function parseLabel(raw){
     var s=t.slice(k+3).replace(/\^[RSEDG]/g,'\x1D');
     di=diMap(s.split(/[\x1C\x1D\x1E\x04\n]+/));
     if(di['1T'] && (di['15Q']||di['Q'])) return {vendor:'華邦電',lot:di['1T'],qty:di['15Q']||di['Q'],part:di['1P']||''};
+    var wb=runOn(t.slice(k),'華邦電'); if(wb) return wb;
   }
   /* 晶豪科:(ESMT P/N)…;(Foundry Lot No)…;(Total die)… */
   if(/\(\s*Foundry\s*Lot\s*No\s*\)/i.test(t)){
@@ -484,6 +516,11 @@ function parseLabel(raw){
   if(t.indexOf(';')>=0){
     f=t.split(';').map(function(x){ return x.trim(); });
     if(f.length>=6 && /^\d[\d,]*$/.test(f[4]) && f[5]) return {vendor:'鈺創',lot:f[5],qty:f[4],part:f[0]};
+  }
+  /* 華邦電/旺宏 分隔字元被條碼槍吃掉(內容黏成一長串) */
+  if(/1T/i.test(t) && t.replace(/\s/g,'').length>=20){
+    var ro=runOn(t,/15Q/i.test(t)?'華邦電':'旺宏',true) || runOn(t,/15Q/i.test(t)?'旺宏':'華邦電',true);
+    if(ro) return ro;
   }
   /* LG(韓國):Lot  Qty  其他 */
   p=t.split(/\s+/);
@@ -554,7 +591,7 @@ function handle(raw,fromCamera){
     }
   }else{
     pending=-1;
-    res=check(p.lot,p.qty,p.vendor,p.part);
+    res=check(p.lot,p.qty,p.vendor,p.part); if(p.runon) res.runon=true;
   }
   showResult(res); save(); render();
   return res;
@@ -606,7 +643,7 @@ function seenList(){
 function showResult(r){
   var el=$('result'); el.className=r.cls;
   var h='<div class="rt">'+esc(r.title)+'</div>';
-  if(r.vendor) h+='<div class="rv">'+esc(r.vendor)+(r.vendor==='分開掃描'?'':' 標籤')+'</div>';
+  if(r.vendor) h+='<div class="rv">'+esc(r.vendor)+(r.vendor==='分開掃描'?'':' 標籤')+(r.runon?'（分隔字元遺失，已自動拆解）':'')+'</div>';
   if(r.rec || r.scanLot){
     h+='<div class="rk">';
     var lot=r.rec?r.rec.lot:r.scanLot;
@@ -1084,6 +1121,38 @@ $('manForm').onsubmit=function(e){
   handle(v,false);
   $('result').scrollIntoView({behavior:'smooth',block:'center'});
 };
+/* ---------- 外接條碼槍(藍牙/OTG) ----------
+   1) 沒點輸入框也能掃:畫面沒有在打字時,快速連續輸入且以 Enter/Tab 結尾,就當成一筆條碼
+   2) 條碼槍若把 GS/RS/EOT 送成 Ctrl+] / Ctrl+^ / Ctrl+D,保留成分隔字元,華邦電、旺宏可照正常格式拆 */
+var CTRLS={']':'\x1D','BracketRight':'\x1D','^':'\x1E','6':'\x1E','d':'\x04','D':'\x04'};
+function ctrlChar(e){ if(!e.ctrlKey || e.altKey || e.metaKey) return ''; return CTRLS[e.key]||CTRLS[e.code]||''; }
+$('manInput').addEventListener('keydown',function(e){
+  var c=ctrlChar(e); if(!c) return;
+  e.preventDefault();
+  try{ this.setRangeText(c,this.selectionStart,this.selectionEnd,'end'); }catch(x){ this.value+=c; }
+});
+var wedge={buf:'',t:0};
+document.addEventListener('keydown',function(e){
+  var a=document.activeElement, tag=a&&a.tagName;
+  if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||(a&&a.isContentEditable)) return;
+  if($('work').hidden || !$('modal').hidden || !$('hand').hidden || document.querySelector('.psx') || !$('ocr').hidden) return;
+  var now=Date.now();
+  if(now-wedge.t>120) wedge.buf='';      /* 條碼槍每個字間隔很短;人手打字太慢就重來 */
+  wedge.t=now;
+  var c=ctrlChar(e);
+  if(c){ wedge.buf+=c; e.preventDefault(); return; }
+  if(e.key==='Enter'||e.key==='Tab'){
+    if(wedge.buf.replace(/[\x00-\x1F]/g,'').length>=3){
+      e.preventDefault();
+      var v=wedge.buf; wedge.buf='';
+      handle(v,false);
+      $('result').scrollIntoView({behavior:'smooth',block:'center'});
+    }
+    wedge.buf=''; return;
+  }
+  if(e.key && e.key.length===1 && !e.ctrlKey && !e.metaKey){ wedge.buf+=e.key; }
+});
+
 $('resetBtn').onclick=function(){ modal('重新上傳？','目前的核對進度會全部清除。',clearAll,'清除並重新上傳'); };
 
 if(restore()){ showWork(); render(); showResult({cls:'',title:'已恢復上次的進度',detail:'共 '+recs.length+' 筆，已核對 '+order.length+' 筆。要換一批貨請按「重新上傳」。'}); }
