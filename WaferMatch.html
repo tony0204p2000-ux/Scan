@@ -556,16 +556,20 @@ function modeIC(){
     if(partNo===''||lot===''||!q) return null;
     return {partNo:partNo,lot:lot,qty:q[0]};
   }
+  /* 鏡頭用的黑箱條碼判斷(比手動輸入嚴格):料號 ≥3 碼、批號 ≥3 碼、數量是數字,分隔符號不能是空白。
+     外箱標籤最下方「BOX: 2 OF 3」條碼內容是「2 OF 3」,用空白分隔會被當成批號 OF,所以排除。 */
+  function camBB(t){ return /^[A-Za-z0-9][A-Za-z0-9\-]{2,}([^A-Za-z0-9\-\s])[A-Za-z0-9\-]{3,}\1[0-9]+/.test((t||'').trim()); }
   function adj(){
     var d=$('deduct').value.trim(), o=$('override').value.trim();
     var hasO=o!==''&&isQty(o), dv=(d!==''&&isQty(d))?parseInt(d,10):0, sum=sumQty(s.bbQty);
     return {hasO:hasO,ov:hasO?parseInt(o,10):null,dv:dv,dRaw:d,sum:sum,after:hasO?parseInt(o,10):sum-dv};
   }
-  function mismatch(expected,scanned){
+  function mismatch(expected,scanned,raw){
     var sum=sumQty(s.bbQty), rcSorted=sortAlpha(s.rcLot);
     finish(M.ic,false,[rcSorted.join('/'),String(sumQty(s.rcQty)),expected,String(sum),'0','',String(sum)],[
       {label:'先前掃描批號',value:expected,ok:true},
-      {label:'本次掃描批號',value:scanned,ok:false}
+      {label:'本次掃描批號',value:scanned,ok:false},
+      {label:'本次條碼內容',value:raw||'',ok:false}
     ]);
   }
   function compare(){
@@ -593,12 +597,12 @@ function modeIC(){
         submit:function(t){ if(!validRc(t)) return {err:'批號格式需為「批號-流水碼」'}; var l=lotPrefix(t).toUpperCase(); s.rcLot.push(l); s.sub='qty'; return {msg:'RUN CARD 批號 '+l+'，等待數量',partial:true}; }};
       if(s.ph===1) return {key:'rcQty',kind:'qty',name:'RUN CARD 數量',hint:'接著掃（或輸入）這張 RUN CARD 的數量',ex:'100',num:true,cam:function(t){ return isQty(t) && t.length<=7; },
         submit:function(t){ if(!isQty(t)) return {err:'數量只能是數字'}; s.rcQty.push(t.trim()); s.sub='lot'; return {msg:'數量 '+t.trim()+'，累計 '+sumQty(s.rcQty)}; }};
-      return {key:'bb',kind:'bb',name:'黑箱條碼',hint:'格式「料號?批號?數量」，可連續掃多箱；掃完按「完成並比對」',ex:'P001?A1B23?100',
-        cam:function(t){ return !!parseBB(t); },
+      return {key:'bb',kind:'bb',name:'黑箱條碼',hint:'把橫條框對準外箱標籤上「料號?批號?數量」那一條長條碼；可連續掃多箱，掃完按「比對」',ex:'P001?A1B23?100',
+        cam:camBB,
         submit:function(t){
           var p=parseBB(t); if(!p) return {err:'黑箱條碼格式不符（料號、批號、數量）'};
           var lot=p.lot.toUpperCase();
-          if(s.bbLot.length>0 && lot!==s.bbLot[0]){ mismatch(s.bbLot[0],lot); return {done:true}; }   /* 批號和第一箱不同:立即判定錯誤 */
+          if(s.bbLot.length>0 && lot!==s.bbLot[0]){ mismatch(s.bbLot[0],lot,t); return {done:true}; }   /* 批號和第一箱不同:立即判定錯誤 */
           s.bbLot.push(lot); s.bbQty.push(p.qty);
           return {msg:'黑箱 '+lot+' × '+p.qty+'，共 '+s.bbLot.length+' 箱'};
         }};
@@ -750,7 +754,7 @@ function renderLog(){
 function setMode(id){
   if(!M[id]) return;
   cur=M[id]; store('wm_mode',id);
-  var f=store('wm_frame3_'+id); frameName=(PS && FRAME_CYCLE.indexOf(f)>=0)?f:(id==='ic'?'R':'W');
+  var f=store('wm_frame3_'+id); frameName=(PS && FRAME_CYCLE.indexOf(f)>=0)?f:(id==='ic'?'B':'W');
   say(''); render(); renderLog(); layoutFrame(); syncPause();
 }
 
