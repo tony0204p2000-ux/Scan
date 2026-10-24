@@ -113,9 +113,10 @@
   .elist li{margin:4px 0}
   .plist label.row{align-items:center}
   .plist input[type=checkbox]{width:22px;height:22px}
-  .info{padding:10px 14px;margin-bottom:10px;display:grid;gap:8px}
-  .info label{display:grid;grid-template-columns:70px 1fr;align-items:center;font-size:14px;color:var(--sub)}
-  .info input{font:inherit;font-size:16px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;color:var(--ink)}
+  .rtitle{font-size:16px;font-weight:700;margin:2px 2px 10px}
+  .vhead .vst{display:flex;align-items:center;gap:8px;flex:1 1 100%;margin-top:2px}
+  .vhead .vst .tag{font-size:12px}
+  .vhead .rbtn{border:1px solid #57606a;background:#fff;color:#24292f;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:600}
   .pullhead{background:var(--danger);color:#fff;font-weight:700;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:16px}
   .pull{font-size:20px;font-weight:700;font-family:Consolas,monospace;color:var(--danger)}
   .rrow.ihead{background:#fafbfc}
@@ -211,18 +212,15 @@
   <details class="card"><summary>錯誤紀錄 <span class="muted" id="errSum"></span></summary><div class="plist" id="errList"></div></details>
   <details class="card"><summary>設定</summary><div class="plist">
     <label class="row"><span>音效</span><input type="checkbox" id="optSound"></label>
-    <label class="row"><span>震動</span><input type="checkbox" id="optVib"></label>
+    <label class="row"><span>震動（錯誤時）</span><input type="checkbox" id="optVib"></label>
+    <label class="row"><span>鏡頭</span><select id="optCam" style="max-width:62%;font-size:14px"><option value="auto">自動（建議）</option></select></label>
+    <div class="row muted" style="font-size:12px">iPhone 讀不到 LOT NO 時，可試試「後置三鏡頭相機」或「後置雙鏡頭相機」，近距離較清楚</div>
   </div></details>
 </section>
 
 <!-- 3 結果 -->
 <section class="screen" id="sc-result">
-  <div class="vbar">核對廠商：<b class="curV"></b></div>
-  <div class="card info">
-    <label>點交人員<input id="iHandler" autocomplete="off"></label>
-    <label>簽收人<input id="iReceiver" autocomplete="off"></label>
-    <label>備註<input id="iNote" autocomplete="off"></label>
-  </div>
+  <div class="rtitle curV"></div>
   <div id="resContent"></div>
 </section>
 
@@ -613,20 +611,59 @@ function boxReport(sm, b){
 /* ---------- 音效 / 震動 ---------- */
 let _ac = null;
 const SOUND = {sound:true, vibrate:true};
+/* iPhone / Android 的瀏覽器規定：聲音要先經過一次使用者點擊才能播放。
+   第一次點畫面時先「解鎖」音效；iPhone 另外設定成播放模式，靜音開關打開時也能出聲（iOS 17 以上） */
+function audioCtx(){
+  if(!_ac){ const AC = window.AudioContext || window.webkitAudioContext; if(!AC) return null; _ac = new AC(); }
+  if(_ac.state !== 'running') _ac.resume().catch(() => {});
+  return _ac;
+}
+function unlockAudio(){
+  try{ if(navigator.audioSession) navigator.audioSession.type = 'playback'; }catch(e){}
+  try{
+    const ac = audioCtx(); if(!ac) return;
+    const b = ac.createBuffer(1, 1, 22050), src = ac.createBufferSource();
+    src.buffer = b; src.connect(ac.destination); src.start(0);
+  }catch(e){}
+}
+['touchstart','touchend','pointerdown','click','keydown'].forEach(ev => document.addEventListener(ev, unlockAudio, {capture:true, passive:true}));
+
+/* iPhone 的 Safari 不支援網頁震動（navigator.vibrate）。
+   iOS 18 以上切換「switch 開關」時會有觸覺回饋，借用它來震動（較舊的 iOS 沒有效果） */
+let _hapticLabel = null;
+function iosHaptic(times){
+  try{
+    if(!_hapticLabel){
+      const inp = document.createElement('input'); inp.type = 'checkbox'; inp.setAttribute('switch', ''); inp.id = '__haptic';
+      const lb = document.createElement('label'); lb.htmlFor = '__haptic';
+      [inp, lb].forEach(el => { el.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;pointer-events:none'; document.body.appendChild(el); });
+      _hapticLabel = lb;
+    }
+    for(let k=0;k<times;k++) setTimeout(() => _hapticLabel.click(), k * 120);
+  }catch(e){}
+}
+function vibrate(kind){
+  const pat = kind === 'warn' ? [150, 80, 150] : [400];
+  try{ if(navigator.vibrate && navigator.vibrate(pat)) return; }catch(e){}
+  if(/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) iosHaptic(kind === 'warn' ? 2 : 3);
+}
+/* ok：成功（短高音，不震動）；warn：提醒（兩聲 + 震動）；err：錯誤（低長音 + 震動） */
 function beep(kind){
   if(SOUND.sound) try{
-    _ac = _ac || new (window.AudioContext || window.webkitAudioContext)();
-    const seq = kind === 'ok' ? [[1200,.08]] : kind === 'warn' ? [[700,.15],[0,.06],[700,.15]] : [[260,.35]];
-    let t = _ac.currentTime;
-    seq.forEach(([f,d]) => {
-      if(f){ const o = _ac.createOscillator(), g = _ac.createGain();
-        o.type = kind === 'ok' ? 'sine' : 'square'; o.frequency.value = f;
-        g.gain.setValueAtTime(.18, t); g.gain.exponentialRampToValueAtTime(.001, t + d);
-        o.connect(g); g.connect(_ac.destination); o.start(t); o.stop(t + d); }
-      t += d;
-    });
+    const ac = audioCtx();
+    if(ac){
+      const seq = kind === 'ok' ? [[1320,.07],[0,.03],[1760,.09]] : kind === 'warn' ? [[700,.15],[0,.06],[700,.15]] : [[260,.18],[0,.05],[200,.35]];
+      let t = ac.currentTime + 0.01;
+      seq.forEach(([f,d]) => {
+        if(f){ const o = ac.createOscillator(), g = ac.createGain();
+          o.type = kind === 'ok' ? 'sine' : 'square'; o.frequency.value = f;
+          g.gain.setValueAtTime(kind === 'ok' ? .3 : .22, t); g.gain.exponentialRampToValueAtTime(.001, t + d);
+          o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + d + .02); }
+        t += d;
+      });
+    }
   }catch(e){}
-  if(SOUND.vibrate) try{ if(navigator.vibrate) navigator.vibrate(kind === 'ok' ? 60 : kind === 'warn' ? [150,80,150] : [400]); }catch(e){}
+  if(SOUND.vibrate && kind !== 'ok') vibrate(kind);
 }
 
 /* ---------- 暫存（避免重新整理後進度消失） ---------- */
@@ -773,6 +810,14 @@ function boxAlert(bx, row){
     button: !rm.length ? '確認，繼續刷下一盒' : onlyOverlap ? '已取出核對，繼續刷下一盒' : '已取出，繼續刷下一盒'
   };
 }
+/* 某家廠商目前的核對狀態（給工單清單的廠商卡片用）；沒有刷讀紀錄回傳 null */
+function vendorStatus(files, v, vBoxes){
+  if(!vBoxes || !vBoxes.length) return null;
+  const sm = summarize(buildDb(vFiles(files, v)), vBoxes);
+  const clean = sm.complete && !sm.errors.length;
+  return {ok:sm.ok, expected:sm.expected, errors:sm.errors.length, boxes:vBoxes.length, complete:sm.complete, clean,
+    text: clean ? '核對完成・相符' : sm.complete ? `核對完成・錯誤 ${sm.errors.length} 筆` : `核對中 ${sm.ok}/${sm.expected}`};
+}
 function errNote(s){ return s.status === 'qty' ? s.note : (s.wo || ''); }
 
 /* 核對結果工作表；info = {handler, receiver, note} 點交資訊 */
@@ -780,7 +825,6 @@ function resultSheets(db, boxes, files, info){
   const sm = summarize(db, boxes); info = info || {};
   const s1 = [['項目','內容']];
   s1.push(['廠商', vendorsText(files)], ['核對時間', new Date().toLocaleString('zh-TW', {hour12:false})],
-    ['點交人員', info.handler || ''], ['簽收人', info.receiver || ''], ['備註', info.note || ''],
     ['已取消工單', cancelledText(files)], ['實刷 Wafer 片數（點交）', sm.total], ['應刷 Wafer 片數', sm.expected],
     ['未刷到片數', sm.expected - sm.ok], ['已取出問題片數', sm.removed], []);
   s1.push(['料號','應刷片數','實刷片數','差異','問題批號 / 刻號']);
@@ -881,9 +925,11 @@ function renderLoad(){
   const el = $('woList');
   if(!files.length){ el.innerHTML = '<div class="none">尚未載入工單</div>'; renderBottom(); return; }
   el.innerHTML = vendorGroups(files).map(g => `<div class="vcard">
-    <div class="vhead"><div class="vname">${esc(g.name)}${g.name === curVendor ? ' <span class="tag o">核對中</span>' : ''}</div>
+    <div class="vhead"><div class="vname">${esc(g.name)}</div>
       <div class="vmeta">${esc([...g.kinds].join('、'))}${g.dates.size ? '　' + esc([...g.dates].join('、')) : ''}　有效 <b>${g.active}</b> / ${g.total} 筆</div>
-      <button class="tg" data-delv="${esc(g.name)}">移除</button></div>
+      <button class="tg" data-delv="${esc(g.name)}">移除</button>
+      ${(() => { const st = vendorStatus(files, g.name, g.name === curVendor ? boxes : (scanStore[g.name] || {}).boxes);
+        return st ? `<div class="vst"><span class="tag ${st.clean ? 'o' : st.complete ? 'c' : 'w'}">${st.text}</span><button class="rbtn" data-resv="${esc(g.name)}">查看核對結果</button></div>` : ''; })()}</div>
     ${g.files.map(fi => files[fi].records.map((r,ri) => `<div class="card wo ${r.cancel?'cancel':''}">
       <div class="info"><div class="t1">${esc(r.wo)} ${r.cancel?'<span class="tag c">已取消</span>':''}${qtyMismatch(r)?'<span class="tag w">刻號數≠數量</span>':''}</div>
         <div class="t2">${esc(r.part)}　批號 <b style="color:var(--ink)">${esc(r.lot)}</b>　${esc(fabText(r))}</div>
@@ -893,6 +939,8 @@ function renderLoad(){
   renderBottom();
 }
 $('woList').addEventListener('click', e => {
+  const rv = e.target.closest('button[data-resv]');
+  if(rv){ setVendor(rv.dataset.resv); go('result'); return; }
   const d = e.target.closest('button[data-delv]');
   if(d){ const v = d.dataset.delv; if(confirm(`移除「${v}」的所有工單與刷讀紀錄？`)){ files = files.filter(f => vName(f) !== v); delete scanStore[v]; if(curVendor === v) curVendor = ''; dbChanged(); } return; }
   const b = e.target.closest('button[data-f]'); if(!b) return;
@@ -938,7 +986,19 @@ async function startCam(){
   }
   try{
     // 解析度越高，細小的 LOT NO 一維條碼越容易讀
-    stream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:'environment'}, width:{ideal:2560}, height:{ideal:1440}}});
+    const res = {width:{ideal:2560}, height:{ideal:1440}};
+    const want = settings.cam && settings.cam !== 'auto' ? settings.cam : '';
+    stream = await navigator.mediaDevices.getUserMedia({audio:false, video: want ? {deviceId:{exact:want}, ...res} : {facingMode:{ideal:'environment'}, ...res}})
+      .catch(() => navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:'environment'}, ...res}}));
+    // iPhone：預設的「後置相機」近距離對不到焦（Pro 機種最近約 15~20 公分），
+    // 改用「後置三鏡頭 / 雙鏡頭相機」，系統會自動切換到微距鏡頭，近拍細條碼才清楚
+    if(!want && IS_IOS){
+      const better = await pickIosCamera();
+      if(better && better !== stream.getVideoTracks()[0].getSettings().deviceId){
+        try{ const s2 = await navigator.mediaDevices.getUserMedia({audio:false, video:{deviceId:{exact:better}, ...res}}); stream.getTracks().forEach(t => t.stop()); stream = s2; }catch(e){}
+      }
+    }
+    fillCamList();
     video.srcObject = stream; await video.play();
     track = stream.getVideoTracks()[0];
     const cap = track.getCapabilities ? track.getCapabilities() : {};
@@ -958,6 +1018,19 @@ async function startCam(){
   if(!detector && !wasm && !zx){ $('camMsg').innerHTML = '無法載入條碼辨識<br>請確認網路後重新整理，或改用「手動輸入」'; return; }
   $('camMsg').style.display = 'none';
   paused = false; cam.classList.remove('pause'); loop();
+}
+const IS_IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+async function camList(){ try{ return (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput'); }catch(e){ return []; } }
+async function pickIosCamera(){
+  const list = await camList(), find = re => list.find(d => re.test(d.label));
+  const d = find(/三鏡頭|Triple/i) || find(/雙鏡頭廣角|Dual Wide/i) || find(/雙鏡頭|Dual/i);
+  return d ? d.deviceId : null;
+}
+async function fillCamList(){
+  const sel = $('optCam'), list = await camList();
+  const cur = stream && stream.getVideoTracks()[0].getSettings().deviceId;
+  sel.innerHTML = `<option value="auto">自動（建議）</option>` + list.map((d,i) => `<option value="${esc(d.deviceId)}">${esc(d.label || '相機 ' + (i+1))}${d.deviceId === cur ? '（使用中）' : ''}</option>`).join('');
+  sel.value = settings.cam && list.some(d => d.deviceId === settings.cam) ? settings.cam : 'auto';
 }
 function stopCam(){
   clearTimeout(loopTimer); loopTimer = null;
@@ -1246,12 +1319,12 @@ $('undoBtn').onclick = () => {
 $('optSound').checked = SOUND.sound; $('optVib').checked = SOUND.vibrate;
 $('optSound').onchange = e => { SOUND.sound = e.target.checked; persist(); if(SOUND.sound) beep('ok'); };
 $('optVib').onchange = e => { SOUND.vibrate = e.target.checked; persist(); };
+$('optCam').onchange = e => { settings.cam = e.target.value; persist(); stopCam(); if(screen === 'scan') startCam(); };
 
 /* ================= 3 結果 ================= */
 function renderResult(){
   document.querySelectorAll('.curV').forEach(e => e.textContent = curVendor || '—');
   const sm = summarize(db, boxes);
-  $('iHandler').value = info.handler; $('iReceiver').value = info.receiver; $('iNote').value = info.note;
   const good = sm.complete && !sm.errors.length && sm.partRows.every(p => p.diff === 0);
   $('resContent').innerHTML = (good
     ? `<div class="card verdict ok">✔ 核對相符：實刷 ${sm.total} 片（${boxes.length} 盒），與工單一致</div>`
@@ -1270,7 +1343,6 @@ function renderResult(){
   + `<button class="btn danger" id="resetBtn" style="width:100%;margin-top:4px">清除刷讀紀錄，重新核對</button>`;
   $('resetBtn').onclick = () => { if(confirm('清除所有刷讀紀錄重新核對？（工單保留）')){ boxes = []; pending = EMPTY(); lastKey=''; completedShown = false; persist(); renderResult(); } };
 }
-[['iHandler','handler'],['iReceiver','receiver'],['iNote','note']].forEach(([id,k]) => $(id).addEventListener('input', e => { info[k] = e.target.value; persist(); }));
 
 document.addEventListener('visibilitychange', () => { if(document.hidden) stopCam(); else if(screen === 'scan') startCam(); });
 
