@@ -161,8 +161,8 @@
 
 <!-- 1 工單 -->
 <section class="screen on" id="sc-load">
-  <label class="pick" for="fileInput">＋ 選擇加工單 txt<small>可一次選多個檔案</small></label>
-  <input id="fileInput" type="file" accept=".txt,text/plain" multiple hidden>
+  <label class="pick" for="fileInput">＋ 選擇加工單 txt / WF 出貨單 xlsx<small>可一次選多個檔案</small></label>
+  <input id="fileInput" type="file" accept=".txt,.xlsx,.xlsm,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
   <div id="loadMsg" class="muted" style="color:var(--danger);font-size:13px;margin-top:6px"></div>
   <div id="woList"></div>
 </section>
@@ -270,7 +270,108 @@ function parseWorkOrder(text, name){
       w.slots = m[2];
     }
   }
+  // 只保留領料廠為 RT2 的工單
+  const all = out.records.length;
+  out.records = out.records.filter(r => String(r.plant).trim().toUpperCase() === 'RT2');
+  out.excluded = all - out.records.length; out.kind = '加工單';
   return out;
+}
+
+/* ---------- 讀取 Excel（.xlsx）：不需外部函式庫，用瀏覽器內建解壓縮 ---------- */
+async function unzipEntries(buf){
+  const dv = new DataView(buf), u8 = new Uint8Array(buf), dec = new TextDecoder();
+  let eocd = -1;
+  for(let i = buf.byteLength - 22; i >= Math.max(0, buf.byteLength - 70000); i--){ if(dv.getUint32(i, true) === 0x06054b50){ eocd = i; break; } }
+  if(eocd < 0) throw new Error('不是有效的 Excel 檔（xlsx）');
+  const count = dv.getUint16(eocd + 10, true); let p = dv.getUint32(eocd + 16, true);
+  const files = {};
+  for(let k=0;k<count;k++){
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true);
+    const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true), off = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nlen));
+    files[name] = {method, csize, off};
+    p += 46 + nlen + xlen + clen;
+  }
+  const read = async name => {
+    const f = files[name]; if(!f) return null;
+    const start = f.off + 30 + dv.getUint16(f.off + 26, true) + dv.getUint16(f.off + 28, true);
+    const data = u8.subarray(start, start + f.csize);
+    if(f.method === 0) return dec.decode(data);
+    const ds = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+    return await new Response(ds).text();
+  };
+  return {names:Object.keys(files), read};
+}
+function colIndex(ref){ const m = /^([A-Z]+)/.exec(ref || ''); if(!m) return -1; let n = 0; for(const ch of m[1]) n = n * 26 + ch.charCodeAt(0) - 64; return n - 1; }
+async function readXlsx(buf){
+  const z = await unzipEntries(buf), xml = t => new DOMParser().parseFromString(t, 'application/xml');
+  const tags = (node, name) => [...node.getElementsByTagName('*')].filter(e => e.localName === name);
+  const shared = [];
+  const sst = await z.read('xl/sharedStrings.xml');
+  if(sst) tags(xml(sst), 'si').forEach(si => shared.push(tags(si, 't').filter(t => t.parentNode.localName !== 'rPh').map(t => t.textContent).join('')));
+  const wb = xml(await z.read('xl/workbook.xml')), rels = xml(await z.read('xl/_rels/workbook.xml.rels'));
+  const target = {}; tags(rels, 'Relationship').forEach(r => target[r.getAttribute('Id')] = r.getAttribute('Target'));
+  const sheets = [];
+  for(const sh of tags(wb, 'sheet')){
+    const rid = sh.getAttribute('r:id') || [...sh.attributes].find(a => a.localName === 'id').value;
+    let path = (target[rid] || '').replace(/^\//, ''); if(!path.startsWith('xl/')) path = 'xl/' + path;
+    const txt = await z.read(path); if(!txt) continue;
+    const rows = [];
+    tags(xml(txt), 'row').forEach(rw => {
+      const ri = (+rw.getAttribute('r') || rows.length + 1) - 1, row = [];
+      tags(rw, 'c').forEach(c => {
+        const t = c.getAttribute('t'), v = tags(c, 'v')[0], ci = colIndex(c.getAttribute('r'));
+        let val = null;
+        if(t === 's') val = shared[+(v && v.textContent)];
+        else if(t === 'inlineStr') val = tags(c, 't').map(x => x.textContent).join('');
+        else if(v) val = (t === 'str' || t === 'e') ? v.textContent : (isNaN(+v.textContent) ? v.textContent : +v.textContent);
+        if(ci >= 0) row[ci] = val;
+      });
+      rows[ri] = row;
+    });
+    sheets.push({name:sh.getAttribute('name'), rows:rows.map(r => r || [])});
+  }
+  return sheets;
+}
+function excelDate(v){
+  if(typeof v !== 'number') return String(v || '');
+  const d = new Date(Math.round((v - 25569) * 86400000));
+  return pad2(d.getUTCMonth() + 1) + '/' + pad2(d.getUTCDate()) + '/' + String(d.getUTCFullYear()).slice(2);
+}
+/* WF 出貨單（1024）：撈出領料庫位 = WF 且領料廠 = RT2 的資料 */
+function parseShipXlsx(sheets, name){
+  const need = ['委外採購單號','委外採購單項次','領料庫位','領料廠','領料料號','領料批號','領料Wafer ID'];
+  let best = null;
+  sheets.forEach(sh => {
+    const head = (sh.rows[0] || []).map(x => String(x == null ? '' : x).trim());
+    if(!need.every(k => head.includes(k))) return;
+    const data = sh.rows.slice(1).filter(r => r && r[head.indexOf('領料批號')]);
+    if(!best || data.length > best.data.length) best = {head, data};
+  });
+  const out = {name, vendor:'', printDate:'', records:[], excluded:0, kind:'WF出貨單'};
+  if(!best) return out;
+  const col = k => best.head.indexOf(k), get = (r, k) => { const i = col(k); return i < 0 || r[i] == null ? '' : r[i]; };
+  const up = v => String(v).trim().toUpperCase();
+  best.data.forEach(r => {
+    if(up(get(r, '領料庫位')) !== 'WF' || up(get(r, '領料廠')) !== 'RT2'){ out.excluded++; return; }
+    const item = String(get(r, '委外採購單項次')).trim().replace(/\.0+$/, '');
+    const wid = get(r, '領料Wafer ID');
+    const slots = (typeof wid === 'number' ? [wid] : String(wid).split(/[,，;\/\s]+/)).filter(x => x !== '' && !isNaN(parseInt(x, 10))).map(x => pad2(parseInt(x, 10)));
+    const fab = String(get(r, '領料Fab批號')).trim();
+    const q = parseFloat(get(r, '刻號數'));
+    out.records.push({wo:String(get(r, '委外採購單號')).trim() + '-' + item, part:String(get(r, '領料料號')).trim(), lot:up(get(r, '領料批號')),
+      plant:'RT2', qty:isNaN(q) ? slots.length : q, wafers:[{die:'', fab, slots:slots.join(',')}], cancel:false});
+    if(!out.vendor) out.vendor = String(get(r, '供應商')).trim();
+    if(!out.printDate) out.printDate = excelDate(get(r, '開單日期'));
+  });
+  return out;
+}
+/* 依副檔名讀取：.txt 加工單 / .xlsx WF 出貨單 */
+async function parseAnyFile(file){
+  const buf = await file.arrayBuffer();
+  if(/\.xls[xm]$/i.test(file.name)) return parseShipXlsx(await readXlsx(buf), file.name);
+  if(/\.xls$/i.test(file.name)) return {name:file.name, vendor:'', printDate:'', records:[], excluded:0, error:'舊版 .xls 格式無法讀取，請在 Excel 另存為 .xlsx'};
+  return parseWorkOrder(decodeText(buf), file.name);
 }
 
 /* ---------- 刻號工具 ---------- */
@@ -359,8 +460,10 @@ function buildDb(files){
     if(!r.cancel) records.push(rec);
     add(map, rec.lot, rec);
   }));
-  const expected = records.reduce((a,r) => a + r.slots.length, 0);
-  return {byLot, byLotCancel, records, expected};
+  // 應刷 Wafer 以「批號 + 刻號」不重複計算：同一片 Wafer 出現在多個項次（例如同一片供多個產品使用），實物只有一片，刷一次即可
+  const need = new Map();
+  records.forEach(r => r.slots.forEach(sl => { const k = r.lot + '|' + sl; if(!need.has(k)) need.set(k, {lot:r.lot, slot:sl, part:r.part, wos:[]}); need.get(k).wos.push(r.wo); }));
+  return {byLot, byLotCancel, records, need, expected:need.size};
 }
 
 /* status：ok 正確 / noslot 刻號不在工單 / nolot 批號不在工單 / cancelled 屬於已取消工單 / dup 重複刷讀（不計入實刷） */
@@ -371,10 +474,9 @@ function evaluate(db, scans, lot, slot){
   const recs = db.byLot.get(lot) || [];
   const cands = recs.filter(r => r.slots.includes(slot));
   if(cands.length){
-    const done = r => scans.some(s => s.status === 'ok' && s.wo === r.wo && s.slot === slot);
-    const free = cands.find(r => !done(r));
-    if(!free) return {status:'dup', woText:cands[0].wo, partText:cands[0].part};
-    return {status:'ok', woText:free.wo, partText:free.part};
+    const woText = [...new Set(cands.map(r => r.wo))].join(' / ');
+    if(scans.some(s => s.status === 'ok' && s.lot === lot && s.slot === slot)) return {status:'dup', woText, partText:cands[0].part};
+    return {status:'ok', woText, partText:cands[0].part};
   }
   // 有問題的 Wafer 不管刷幾次，都顯示真正的錯誤原因（不會變成「重複刷讀」）
   const can = (db.byLotCancel.get(lot) || []).filter(r => r.slots.includes(slot));
@@ -417,16 +519,13 @@ function summarize(db, boxes){
   const scans = deriveScans(db, boxes);
   const parts = new Map();
   const get = p => { if(!parts.has(p)) parts.set(p, {part:p, expected:0, actual:0}); return parts.get(p); };
-  db.records.forEach(r => get(r.part).expected += r.slots.length);
+  db.need.forEach(n => get(n.part).expected++);
+  const okKeys = new Set(scans.filter(s => s.status === 'ok').map(s => s.lot + '|' + s.slot));
   scans.forEach(s => { if(s.status === 'ok') get(s.part).actual++; else if(REMOVE.includes(s.status)) get(s.part || '（不明料號）'); });
   // 各料號底下逐批號列出問題：少了哪些刻號、多了哪些刻號
   const lotMap = new Map();   // key 料號|批號
   const lotOf = (part, lot) => { const k = part + '|' + lot; if(!lotMap.has(k)) lotMap.set(k, {part, lot, expected:0, actual:0, missing:[], extra:[]}); return lotMap.get(k); };
-  db.records.forEach(r => {
-    const L = lotOf(r.part, r.lot); L.expected += r.slots.length;
-    const got = new Set(scans.filter(s => s.wo === r.wo && s.status === 'ok').map(s => s.slot));
-    r.slots.forEach(sl => { if(!got.has(sl)) L.missing.push(sl); });
-  });
+  db.need.forEach((n, k) => { const L = lotOf(n.part, n.lot); L.expected++; if(!okKeys.has(k)) L.missing.push(n.slot); });
   scans.forEach(s => {
     if(s.status === 'dup') return;
     const L = lotOf(s.part || '（不明料號）', s.lot);
@@ -440,11 +539,16 @@ function summarize(db, boxes){
     return {...p, diff:p.actual - p.expected, lots};
   });
   const missing = [];
+  // 未刷到：同一批相同刻號在多個項次時合併成一列（工單欄列出所有項次）
+  const missMap = new Map();
   db.records.forEach(r => {
-    const got = new Set(scans.filter(s => s.wo === r.wo && s.status === 'ok').map(s => s.slot));
-    const miss = r.slots.filter(s => !got.has(s));
-    if(miss.length) missing.push({wo:r.wo, part:r.part, lot:r.lot, fab:r.fab, slots:miss, all:miss.length === r.slots.length});
+    const miss = r.slots.filter(sl => !okKeys.has(r.lot + '|' + sl));
+    if(!miss.length) return;
+    const all = miss.length === r.slots.length, k = r.lot + '|' + miss.join(',') + '|' + all;
+    if(missMap.has(k)) missMap.get(k).wo += ' / ' + r.wo;
+    else missMap.set(k, {wo:r.wo, part:r.part, lot:r.lot, fab:r.fab, slots:miss, all});
   });
+  missing.push(...missMap.values());
   const errors = [];
   boxes.forEach(bx => {
     if(boxQtyBad(bx)) errors.push({b:bx.b, n:'', lot:bx.lot, slot:'', status:'qty', wo:'', part:'', time:bx.time,
@@ -474,7 +578,8 @@ function summarize(db, boxes){
 }
 function orderProgress(db, scans){
   return db.records.map(r => {
-    const got = new Set(scans.filter(s => s.wo === r.wo && s.status === 'ok').map(s => s.slot));
+    const okKeys = new Set(scans.filter(s => s.status === 'ok').map(s => s.lot + '|' + s.slot));
+    const got = new Set(r.slots.filter(sl => okKeys.has(r.lot + '|' + sl)));
     return {...r, done:got.size, got};
   });
 }
@@ -705,7 +810,7 @@ function renderLoad(){
   const el = $('woList');
   if(!files.length){ el.innerHTML = '<div class="none">尚未載入工單</div>'; renderBottom(); return; }
   el.innerHTML = files.map((f,fi) => `
-    <div class="fmeta"><span><b>${esc(f.vendor||'—')}</b></span><span>${esc(f.name)}</span><span>列印 ${esc(f.printDate||'—')}</span>
+    <div class="fmeta"><span><b>${esc(f.vendor||'—')}</b></span><span>${esc(f.name)}</span><span>${f.kind === 'WF出貨單' ? 'WF出貨單 開單' : '列印'} ${esc(f.printDate||'—')}</span>${f.excluded ? `<span>已排除非 RT2${f.kind === 'WF出貨單' ? '／非 WF' : ''} ${f.excluded} 筆</span>` : ''}
       <span>有效 <b>${f.records.filter(r=>!r.cancel).length}</b> / ${f.records.length} 筆</span></div>
     ${f.records.map((r,ri) => `<div class="card wo ${r.cancel?'cancel':''}">
       <div class="info"><div class="t1">${esc(r.wo)} ${r.cancel?'<span class="tag c">已取消</span>':''}${qtyMismatch(r)?'<span class="tag w">刻號數≠數量</span>':''}</div>
@@ -730,8 +835,8 @@ $('fileInput').onchange = async e => {
   if(boxes.length && !confirm('已有刷讀紀錄，加入新檔案後會依新的工單重新比對，確定？')) return;
   const bad = [];
   for(const f of list){
-    const p = parseWorkOrder(decodeText(await f.arrayBuffer()), f.name);
-    if(!p.records.length) bad.push(f.name);
+    const p = await parseAnyFile(f).catch(e => ({name:f.name, records:[], error:e.message}));
+    if(!p.records.length) bad.push(f.name + (p.error ? '（' + p.error + '）' : ''));
     const i = files.findIndex(x => x.name === f.name); if(i >= 0) files[i] = p; else files.push(p);
   }
   $('loadMsg').textContent = bad.length ? '找不到工單資料：' + bad.join(', ') : '';
