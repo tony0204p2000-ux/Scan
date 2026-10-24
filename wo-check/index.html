@@ -197,7 +197,7 @@
   </div>
   <div class="prog"><div class="num" id="pNum">0 <small>/ 0</small></div><div class="bar"><i id="pBar"></i></div></div>
   <div class="pend">
-    <div class="no">第<b id="wNo">1</b>盒</div>
+    <div class="no">第<b id="wNo">1</b>顆</div>
     <div class="box" id="boxLot"><div class="k">批號 LOT NO</div><div class="v" id="vLot">—</div></div>
     <div class="box" id="boxWf"><div class="k">刻號 WF ID</div><div class="v" id="vWf">—</div></div>
   </div>
@@ -417,9 +417,9 @@ function qtyMismatch(r){
 }
 
 /* ---------- 條碼格式判斷 ----------
-   Wafer 盒標籤：
+   Wafer 顆標籤：
      LOT NO（一維條碼）：5 碼英數混合，例：Q7J99            → 批號
-     WF ID （QR Code）：刻號清單，例：01/02/03/…/25         → 刻號（整盒一次登記）
+     WF ID （QR Code）：刻號清單，例：01/02/03/…/25         → 刻號（整顆一次登記）
      QTY   （一維條碼）：不需刷，片數直接用 WF ID 刻號數計算
      STOCK NO / ITEM NO：不需刷，刷到視為格式錯誤
    fmt：'qr' 或 '1d'（手機知道條碼類型），電腦版條碼槍不知道類型時為 undefined   */
@@ -441,7 +441,7 @@ function classifyCode(raw, fmt){
   if(/^\d{1,3}$/.test(v)){
     const n = +v;
     if(fmt === '1d') return {type:'qty', value:n};   // 手機讀到的一維數字條碼是 QTY，不需比對，直接忽略
-    if(n >= 1 && n <= 25) return {type:'wf', value:[pad2(n)], single:true};   // 單片盒
+    if(n >= 1 && n <= 25) return {type:'wf', value:[pad2(n)], single:true};   // 單片顆
     return {type:null, value:v};
   }
   if(/[\/;,?]/.test(v) && fmt !== '1d'){ const l = parseWfList(v); if(l) return {type:'wf', value:l}; }
@@ -503,20 +503,20 @@ function evaluate(db, scans, lot, slot){
   return {status:'noslot', woText:recs.map(r => r.wo).join(' / '), partText:parts[0]};
 }
 
-/* boxes：[{b, lot, slots:[...], qty, time}] —— 每次刷完一張盒標籤記一筆，刷讀明細由它推算 */
+/* boxes：[{b, lot, slots:[...], qty, time}] —— 每次刷完一張顆標籤記一筆，刷讀明細由它推算 */
 function deriveScans(db, boxes){
   const scans = [];
   boxes.forEach(bx => bx.slots.forEach(slot => {
     const ev = evaluate(db, scans, bx.lot, slot);
     let status = ev.status, dupOf = null;
-    // 同一刻號出現在兩盒（不是整盒重刷）：每片刻號是唯一的，代表其中一盒標籤刻號錯誤
+    // 同一刻號出現在兩顆（不是整顆重刷）：每片刻號是唯一的，代表其中一顆標籤刻號錯誤
     if(status === 'dup'){ status = 'overlap'; const p = scans.find(x => x.lot === bx.lot && x.slot === slot && x.status === 'ok'); dupOf = p ? p.b : null; }
     scans.push({n:scans.length + 1, b:bx.b, lot:bx.lot, slot, status, dupOf, wo:ev.woText, part:ev.partText, time:bx.time});
   }));
   return scans;
 }
-/* 刷完一盒時先分出「已刷過的正確 Wafer」（重複刷讀：只提醒、不記錄、不計入） */
-/* 整盒重刷：批號和刻號與先前某一盒完全相同，且那盒全部正確 → 只是刷了兩次，只提醒、不記錄 */
+/* 刷完一顆時先分出「已刷過的正確 Wafer」（重複刷讀：只提醒、不記錄、不計入） */
+/* 整顆重刷：批號和刻號與先前某一顆完全相同，且那顆全部正確 → 只是刷了兩次，只提醒、不記錄 */
 function findRepeatBox(db, boxes, lot, slots){
   const key = [...slots].sort().join('/');
   const prev = boxes.find(b => b.lot === lot && [...b.slots].sort().join('/') === key);
@@ -524,7 +524,7 @@ function findRepeatBox(db, boxes, lot, slots){
   const row = summarize(db, boxes).boxRows.find(r => r.b === prev.b);
   return row && !row.bad.length ? prev : null;
 }
-function dupNotice(lot, slots, b){ return `重複刷讀：${lot}　刻號 ${compress(slots)} 與第 ${b} 盒完全相同，已刷過，不重複計算`; }
+function dupNotice(lot, slots, b){ return `重複刷讀：${lot}　刻號 ${compress(slots)} 與第 ${b} 顆完全相同，已刷過，不重複計算`; }
 function boxQtyBad(bx){ return false; }   // QTY 不刷，片數以刻號數計算
 function nowText(){ const d = new Date(); return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()); }
 function okCount(scans){ return scans.filter(s => s.status === 'ok').length; }
@@ -600,7 +600,7 @@ function orderProgress(db, scans){
     return {...r, done:got.size, got};
   });
 }
-/* 一盒刷完後的說明文字 */
+/* 一顆刷完後的說明文字 */
 function boxReport(sm, b){
   const row = sm.boxRows.find(x => x.b === b);
   const groups = {};
@@ -789,13 +789,13 @@ function issueSections(sm){
   const I = sm.issues;
   return [
     {key:'nolot', title:'批號不在工單', note:'刷到時已要求取出', rows:I.nolot.map(g => ({lot:g.lot, part:'—', wo:'—', slots:g.slots}))},
-    {key:'overlap', title:'刻號重複（標籤異常）', note:'同一刻號出現在兩盒以上，其中有標籤刻號錯誤，請核對這些盒', rows:I.overlap.map(g => ({lot:g.lot, part:g.part, wo:`第 ${g.b} 盒與第 ${g.dupOf} 盒重複`, slots:g.slots}))},
+    {key:'overlap', title:'刻號重複（標籤異常）', note:'同一刻號出現在兩顆以上，其中有標籤刻號錯誤，請核對這些顆', rows:I.overlap.map(g => ({lot:g.lot, part:g.part, wo:`第 ${g.b} 顆與第 ${g.dupOf} 顆重複`, slots:g.slots}))},
     {key:'extra', title:'刻號多了', note:'刷到時已要求取出', rows:I.extra.map(g => ({lot:g.lot, part:g.part, wo:g.status === 'cancelled' ? g.wo + '（已取消工單）' : g.wo, slots:g.slots}))},
     {key:'short', title:'刻號少了', note:'工單上有，但該批號只刷到部分刻號', rows:I.short.map(m => ({lot:m.lot, part:m.part, wo:m.wo, slots:m.slots}))},
     {key:'unscanned', title:'未刷讀', note:'整筆工單一片都沒刷到', rows:I.unscanned.map(m => ({lot:m.lot, part:m.part, wo:m.wo, slots:m.slots}))}
   ];
 }
-/* 刷完一盒有問題時的提醒視窗內容（兩版共用） */
+/* 刷完一顆有問題時的提醒視窗內容（兩版共用） */
 function boxAlert(bx, row){
   const rm = row.bad.filter(s => REMOVE.includes(s.status)), dup = row.bad.filter(s => s.status === 'dup');
   const why = {nolot:'批號不在工單', noslot:'刻號多了（不在工單刻號內）', cancelled:'屬於已取消工單', overlap:'刻號重複（標籤異常）'};
@@ -804,8 +804,8 @@ function boxAlert(bx, row){
   const lines = Object.entries(groups).map(([st, list]) => {
     if(st === 'overlap'){
       const prev = [...new Set(list.map(s => s.dupOf).filter(Boolean))];
-      return `<li><b>${why[st]}</b><div class="pull">刻號 ${esc(compress(list.map(s => s.slot)))} 與第 ${prev.join('、')} 盒重複</div>
-        <div>每片刻號是唯一的，${prev.length > 1 ? '這幾盒' : '這兩盒'}其中有標籤刻號錯誤。<b>請將本盒和第 ${prev.join('、')} 盒都取出</b>，核對標籤與實物刻號。</div>
+      return `<li><b>${why[st]}</b><div class="pull">刻號 ${esc(compress(list.map(s => s.slot)))} 與第 ${prev.join('、')} 顆重複</div>
+        <div>每片刻號是唯一的，${prev.length > 1 ? '這幾顆' : '這兩顆'}其中有標籤刻號錯誤。<b>請將本顆和第 ${prev.join('、')} 顆都取出</b>，核對標籤與實物刻號。</div>
         <div class="muted">重複的刻號不計入片數，結算時會列在錯誤清單「刻號重複（標籤異常）」。</div></li>`;
     }
     const wos = [...new Set(list.map(s => s.wo).filter(Boolean))].join(' / ');
@@ -814,14 +814,14 @@ function boxAlert(bx, row){
   const allOut = rm.length && rm.length === bx.slots.length;
   const onlyOverlap = rm.length && rm.every(s => s.status === 'overlap');
   const head = !rm.length ? '' : onlyOverlap ? `<div class="pullhead">標籤刻號異常，請取出核對</div>`
-    : `<div class="pullhead">請將以下 Wafer 取出，不要點交${allOut ? '（整盒取出）' : ''}</div>`;
+    : `<div class="pullhead">請將以下 Wafer 取出，不要點交${allOut ? '（整顆取出）' : ''}</div>`;
   return {
     kind: rm.length ? 'err' : 'warn',
-    title: !rm.length ? `⚠ 第 ${bx.b} 盒：重複刷讀` : onlyOverlap ? `⚠ 第 ${bx.b} 盒：刻號重複（標籤異常）` : `⚠ 第 ${bx.b} 盒：請取出問題 Wafer`,
+    title: !rm.length ? `⚠ 第 ${bx.b} 顆：重複刷讀` : onlyOverlap ? `⚠ 第 ${bx.b} 顆：刻號重複（標籤異常）` : `⚠ 第 ${bx.b} 顆：請取出問題 Wafer`,
     body: `${head}<div class="big">批號 ${esc(bx.lot)}</div>
-      <div>${bx.slots.length === 1 ? `此盒僅有 1 片，刻號為 ${bx.slots[0]}` : `刻號 ${esc(compress(bx.slots))}（${bx.slots.length} 片），正確 ${row.ok} 片`}</div>
+      <div>${bx.slots.length === 1 ? `此顆僅有 1 片，刻號為 ${bx.slots[0]}` : `刻號 ${esc(compress(bx.slots))}（${bx.slots.length} 片），正確 ${row.ok} 片`}</div>
       <ul class="elist">${lines.join('')}</ul><div class="muted">已記錄在錯誤紀錄</div>`,
-    button: !rm.length ? '確認，繼續刷下一盒' : onlyOverlap ? '已取出核對，繼續刷下一盒' : '已取出，繼續刷下一盒'
+    button: !rm.length ? '確認，繼續刷下一顆' : onlyOverlap ? '已取出核對，繼續刷下一顆' : '已取出，繼續刷下一顆'
   };
 }
 /* 某家廠商目前的核對狀態（給工單清單的廠商卡片用）；沒有刷讀紀錄回傳 null */
@@ -832,6 +832,45 @@ function vendorStatus(files, v, vBoxes){
   return {ok:sm.ok, expected:sm.expected, errors:sm.errors.length, boxes:vBoxes.length, complete:sm.complete, clean,
     text: clean ? '核對完成・相符' : sm.complete ? `核對完成・錯誤 ${sm.errors.length} 筆` : `核對中 ${sm.ok}/${sm.expected}`};
 }
+/* 結果頁最上方的大字結論（綠：相符；不符時 綠 正確 / 紅 錯誤 / 黃 未刷讀） */
+function verdictHtml(sm){
+  const okBox = sm.boxRows.filter(r => !r.bad.length).length, badBox = sm.boxRows.filter(r => r.bad.length).length;
+  const unscanned = sm.expected - sm.ok;
+  const good = sm.complete && !sm.errors.length && sm.partRows.every(p => p.diff === 0);
+  if(good) return `<div class="vd vd-ok"><div class="vt">✔ 核對相符</div><div class="vbig">正確 <b>${okBox}</b> 顆</div><div class="vsub">共 ${sm.total} 片 Wafer，與工單一致</div></div>`;
+  return `<div class="vd vd-ng"><div class="vt">✖ 核對不符</div>
+    <div class="vgrid"><div class="vb vb-g"><span>正確</span><b>${okBox}</b><span>顆</span></div>
+      <div class="vb vb-r"><span>錯誤</span><b>${badBox}</b><span>顆</span></div>
+      <div class="vb vb-y"><span>未刷讀</span><b>${unscanned}</b><span>片</span></div></div>
+    <div class="vsub">實刷 ${sm.total} 片 / 應刷 ${sm.expected} 片${sm.removed ? `　已取出問題片 ${sm.removed} 片` : ''}</div></div>`;
+}
+/* 可收合的區塊：預設收起，按 ＋ 展開 */
+function foldHtml(title, inner, extraClass){
+  return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="pm"></span></summary>${inner}</details>`;
+}
+const RESULT_CSS = `
+  .vd{border-radius:12px;padding:16px 18px;margin-bottom:14px;border:2px solid}
+  .vd .vt{font-size:24px;font-weight:800;letter-spacing:1px}
+  .vd .vsub{margin-top:6px;font-size:14px;opacity:.85}
+  .vd-ok{background:#dafbe1;border-color:#2da44e;color:#116329}
+  .vd-ok .vbig{font-size:22px;margin-top:6px} .vd-ok .vbig b{font-size:34px}
+  .vd-ng{background:#fff;border-color:#cf222e;color:#cf222e}
+  .vgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:10px}
+  .vb{border:2px solid;border-radius:10px;padding:8px 6px;text-align:center;display:flex;flex-direction:column;align-items:center;font-size:15px;font-weight:600}
+  .vb b{font-size:32px;line-height:1.1}
+  .vb-g{background:#dafbe1;border-color:#2da44e;color:#116329}
+  .vb-r{background:#ffebe9;border-color:#cf222e;color:#a40e26}
+  .vb-y{background:#fff8c5;border-color:#d4a72c;color:#7d4e00}
+  details.fold{background:var(--card);border:1px solid var(--line);border-radius:10px;margin-bottom:12px;overflow:hidden}
+  details.fold > summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;padding:12px 14px;font-weight:600;font-size:15px;background:#fafbfc}
+  details.fold > summary::-webkit-details-marker{display:none}
+  details.fold > summary .pm{width:28px;height:28px;border-radius:50%;border:1px solid var(--line);background:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:20px;line-height:1;color:var(--accent)}
+  details.fold > summary .pm::before{content:'+'}
+  details.fold[open] > summary .pm::before{content:'−'}
+  details.fold[open] > summary{border-bottom:1px solid var(--line)}
+  details.fold .ft small{font-weight:400;color:var(--sub);margin-left:6px}
+`;
+(function(){ try{ const st = document.createElement('style'); st.textContent = RESULT_CSS; document.head.appendChild(st); }catch(e){} })();
 function errNote(s){ return s.status === 'qty' ? s.note : (s.wo || ''); }
 
 /* 核對結果工作表；info = {handler, receiver, note} 點交資訊 */
@@ -845,9 +884,9 @@ function resultSheets(db, boxes, files, info){
   sm.partRows.forEach(p => s1.push([p.part, p.expected, p.actual, p.diff, p.lots.length ? lotIssueText(p) : '相符']));
   const s2 = [['類別','批號','料號','工單','刻號','片數','說明']];
   issueSections(sm).forEach(sec => sec.rows.forEach(r => s2.push([sec.title, r.lot, r.part, r.wo, compress(r.slots), r.slots.length, sec.note]))); 
-  const s3 = [['盒序','時間','批號','刻號','片數','正確片數','異常片數','料號']];
+  const s3 = [['第幾顆','時間','批號','刻號','片數','正確片數','異常片數','料號']];
   sm.boxRows.forEach(r => s3.push([r.b, r.time, r.lot, compress(r.slots), r.slots.length, r.ok, r.bad.length, r.parts]));
-  const s4 = [['序號','盒序','時間','批號','刻號','工單','料號','結果']];
+  const s4 = [['序號','第幾顆','時間','批號','刻號','工單','料號','結果']];
   sm.scans.forEach(s => s4.push([s.n, s.b, s.time, s.lot, s.slot, s.wo, s.part, STATUS_TEXT[s.status]]));
   return [
     {name:'核對結果', rows:s1, widths:[18,24,10,8,60]},
@@ -1248,9 +1287,9 @@ function handleCodes(codes){
 function commitBox(lot, slots){
   lastKey = lot + '|' + slots.join('/'); hold = {lot, wf:slots.join('/'), seen:Date.now()};
   pending = EMPTY(); coolUntil = Date.now() + 800;
-  // 與先前某盒完全相同（批號、刻號都一樣）：只是刷了兩次 → 只提醒、不記錄、不用按確認
+  // 與先前某顆完全相同（批號、刻號都一樣）：只是刷了兩次 → 只提醒、不記錄、不用按確認
   const rep = findRepeatBox(db, boxes, lot, slots);
-  if(rep){ flashFrame('bad'); beep('warn'); setLast('warn', '⚠ ' + dupNotice(lot, slots, rep.b) + '，請直接刷下一盒'); renderScan(); return; }
+  if(rep){ flashFrame('bad'); beep('warn'); setLast('warn', '⚠ ' + dupNotice(lot, slots, rep.b) + '，請直接刷下一顆'); renderScan(); return; }
   const bx = {b:boxes.length + 1, lot, slots, qty:null, time:nowText()};
   boxes.push(bx);
   persist();
@@ -1258,13 +1297,13 @@ function commitBox(lot, slots){
   renderScan();
   if(!row.bad.length && !row.qtyBad){
     flashFrame('hit'); beep('ok');
-    setLast('ok', (slots.length === 1 ? `✔ 第 ${bx.b} 盒　${lot}　此盒僅有 1 片，刻號為 ${slots[0]}，正確` : `✔ 第 ${bx.b} 盒　${lot}　刻號 ${compress(slots)}　${row.ok} 片正確`));
+    setLast('ok', (slots.length === 1 ? `✔ 第 ${bx.b} 顆　${lot}　此顆僅有 1 片，刻號為 ${slots[0]}，正確` : `✔ 第 ${bx.b} 顆　${lot}　刻號 ${compress(slots)}　${row.ok} 片正確`));
     if(sm.complete && !completedShown){ completedShown = true; setTimeout(showComplete, 300); }
     return;
   }
   flashFrame('bad'); beep(row.bad.some(s => REMOVE.includes(s.status)) ? 'err' : 'warn');
   const al = boxAlert(bx, row);
-  setLast(al.kind, `✖ 第 ${bx.b} 盒　${lot}　正確 ${row.ok} 片，問題 ${row.bad.length} 片`);
+  setLast(al.kind, `✖ 第 ${bx.b} 顆　${lot}　正確 ${row.ok} 片，問題 ${row.bad.length} 片`);
   openSheet(al.kind, al.title, al.body,
     [[al.button, 'primary', () => { if(summarize(db, boxes).complete && !completedShown){ completedShown = true; setTimeout(showComplete, 200); } }]]);
 }
@@ -1287,13 +1326,13 @@ function renderScan(){
   const prog = orderProgress(db, sm.scans);
   $('progSum').textContent = `${prog.filter(r => r.done === r.slots.length).length} / ${prog.length} 筆完成`;
   $('progList').innerHTML = prog.map(r => `<div class="row ${r.done===r.slots.length?'done':''}"><span>${esc(r.wo.replace(/^.*-(\d+)$/,'-$1'))}　${esc(r.part)}　${esc(r.lot)}</span><b>${r.done} / ${r.slots.length}</b></div>`).join('');
-  $('boxSum').textContent = `${boxes.length} 盒`;
+  $('boxSum').textContent = `${boxes.length} 顆`;
   $('boxList').innerHTML = sm.boxRows.length ? sm.boxRows.slice().reverse().map(r =>
     `<div class="row"><span>#${r.b}　${esc(r.lot)}　${esc(compress(r.slots))}</span>${!r.bad.length && !r.qtyBad ? `<span class="tag o">${r.ok} 片</span>` : `<span class="tag c">異常 ${r.bad.length}${r.qtyBad?'・QTY':''}</span>`}</div>`).join('')
     : '<div class="row muted">尚未刷讀</div>';
   $('errSum').textContent = sm.errors.length ? `${sm.errors.length} 筆` : '無';
   $('errList').innerHTML = sm.errors.length ? sm.errors.slice().reverse().map(s =>
-    `<div class="row"><span>盒${s.b}　${esc(s.lot)}${s.slot ? ' - ' + esc(s.slot) : ''}${s.status === 'qty' ? '　' + esc(s.note) : ''}</span><span class="tag ${s.status==='dup'||s.status==='qty'?'w':'c'}">${STATUS_TEXT[s.status]}</span></div>`).join('')
+    `<div class="row"><span>顆${s.b}　${esc(s.lot)}${s.slot ? ' - ' + esc(s.slot) : ''}${s.status === 'qty' ? '　' + esc(s.note) : ''}</span><span class="tag ${s.status==='dup'||s.status==='qty'?'w':'c'}">${STATUS_TEXT[s.status]}</span></div>`).join('')
     : '<div class="row muted">無</div>';
 }
 
@@ -1309,7 +1348,7 @@ function closeSheet(){ $('mask').classList.remove('on'); modalOpen = false; cool
 function showComplete(){
   const sm = summarize(db, boxes);
   beep('done');
-  openSheet('ok', '✔ 全部 Wafer 已刷完', `<div>實刷 <span class="big">${sm.total}</span> 片（${boxes.length} 盒），應刷 ${sm.expected} 片</div><div>已取出問題片 ${sm.removed} 片</div>`,
+  openSheet('ok', '✔ 全部 Wafer 已刷完', `<div>實刷 <span class="big">${sm.total}</span> 片（${boxes.length} 顆），應刷 ${sm.expected} 片</div><div>已取出問題片 ${sm.removed} 片</div>`,
     [['留在掃描', '', null], ['看結果', 'primary', () => { setTimeout(() => go('result'), 0); }]]);
 }
 /* 手動輸入：刻號可輸入 01/02/03 或 1-5,8 */
@@ -1337,8 +1376,8 @@ $('manualBtn').onclick = () => {
 };
 $('switchV').onclick = () => pickVendor('切換到哪家廠商？', v => { setVendor(v); setLast('', `已切換到 ${v}`); renderScan(); });
 $('undoBtn').onclick = () => {
-  if(pending.lot || pending.wf){ pending = EMPTY(); setLast('', '已清除本盒'); }
-  else if(boxes.length){ const b = boxes.pop(); lastKey = ''; setLast('', `已復原第 ${b.b} 盒（${b.lot}　${compress(b.slots)}）`); completedShown = summarize(db, boxes).complete; }
+  if(pending.lot || pending.wf){ pending = EMPTY(); setLast('', '已清除本顆'); }
+  else if(boxes.length){ const b = boxes.pop(); lastKey = ''; setLast('', `已復原第 ${b.b} 顆（${b.lot}　${compress(b.slots)}）`); completedShown = summarize(db, boxes).complete; }
   persist(); renderScan();
 };
 $('optSound').checked = SOUND.sound; $('optVib').checked = SOUND.vibrate;
@@ -1350,21 +1389,18 @@ $('optCam').onchange = e => { settings.cam = e.target.value; persist(); stopCam(
 function renderResult(){
   document.querySelectorAll('.curV').forEach(e => e.textContent = labelOf(curVendor) || '—');
   const sm = summarize(db, boxes);
-  const good = sm.complete && !sm.errors.length && sm.partRows.every(p => p.diff === 0);
-  $('resContent').innerHTML = (good
-    ? `<div class="card verdict ok">✔ 核對相符：實刷 ${sm.total} 片（${boxes.length} 盒），與工單一致</div>`
-    : `<div class="card verdict ng">⚠ 實刷 ${sm.total} 片（應刷 ${sm.expected}，${boxes.length} 盒）<br>未刷到 ${sm.expected - sm.ok} 片　已取出 ${sm.removed} 片</div>`)
-  + `<div class="card rsec"><h3>各料號片數</h3>${sm.partRows.map(p => `<div class="rrow"><div class="a"><span>${esc(p.part)}</span>
+  const secs = issueSections(sm).filter(x => x.rows.length);
+  $('resContent').innerHTML = verdictHtml(sm)
+  + foldHtml(`各料號片數<small>${sm.partRows.some(p => p.lots.length) ? '有差異' : '全部相符'}</small>`, sm.partRows.map(p => `<div class="rrow"><div class="a"><span>${esc(p.part)}</span>
       <span class="${p.diff>0?'plus':p.diff<0?'minus':'zero'}">${p.diff===0?'相符':p.diff>0?'多 '+p.diff+' 片':'少 '+(-p.diff)+' 片'}</span></div>
-      <div class="b">應刷 ${p.expected}　實刷 ${p.actual}</div>${p.lots.length ? `<div class="lots">${lotIssueHtml(p)}</div>` : ''}</div>`).join('')}</div>`
-  + `<div class="card rsec"><h3>錯誤詳細清單</h3>${(() => { const secs = issueSections(sm).filter(x => x.rows.length);
-      return secs.length ? secs.map(sec => `<div class="rrow ihead i-${sec.key}"><div class="a"><span>${sec.title}</span><span>${sec.rows.reduce((a,r) => a + r.slots.length, 0)} 片</span></div><div class="b">${sec.note}</div></div>`
+      <div class="b">應刷 ${p.expected}　實刷 ${p.actual}</div>${p.lots.length ? `<div class="lots">${lotIssueHtml(p)}</div>` : ''}</div>`).join(''))
+  + foldHtml(`錯誤詳細清單<small>${secs.length ? secs.length + ' 類' : '無'}</small>`, secs.length ? secs.map(sec => `<div class="rrow ihead i-${sec.key}"><div class="a"><span>${sec.title}</span><span>${sec.rows.reduce((a,r) => a + r.slots.length, 0)} 片</span></div><div class="b">${sec.note}</div></div>`
         + sec.rows.map(r => `<div class="rrow"><div class="a"><span>${esc(r.lot)}</span><span>${r.slots.length} 片</span></div>
           <div class="b">${esc(r.part)}　${esc(r.wo)}</div><div class="b">刻號 ${esc(compress(r.slots))}</div></div>`).join('')).join('')
-        : '<div class="none">沒有任何錯誤</div>'; })()}</div>`
-  + `<div class="card rsec"><h3>刷讀順序（${boxes.length} 盒）</h3>${sm.boxRows.length ? sm.boxRows.map(r => `<div class="rrow">
-      <div class="a"><span>#${r.b}　${esc(r.lot)}</span><span>${r.slots.length} 片${!r.bad.length && !r.qtyBad ? '' : ` <span class="tag c">異常 ${r.bad.length}${r.qtyBad?'・QTY':''}</span>`}</span></div>
-      <div class="b">${r.time}　刻號 ${esc(compress(r.slots))}　${esc(r.parts)}</div></div>`).join('') : '<div class="none">尚未刷讀</div>'}</div>`
+        : '<div class="none">沒有任何錯誤</div>')
+  + foldHtml(`刷讀順序<small>${boxes.length} 顆</small>`, sm.boxRows.length ? sm.boxRows.map(r => `<div class="rrow">
+      <div class="a"><span>#${r.b}　${esc(r.lot)}</span><span>${r.slots.length} 片${!r.bad.length ? '' : ` <span class="tag c">異常 ${r.bad.length}</span>`}</span></div>
+      <div class="b">${r.time}　刻號 ${esc(compress(r.slots))}　${esc(r.parts)}</div></div>`).join('') : '<div class="none">尚未刷讀</div>')
   + `<button class="btn danger" id="resetBtn" style="width:100%;margin-top:4px">清除刷讀紀錄，重新核對</button>`;
   $('resetBtn').onclick = () => { if(confirm('清除所有刷讀紀錄重新核對？（工單保留）')){ boxes = []; pending = EMPTY(); lastKey=''; completedShown = false; persist(); renderResult(); } };
 }
@@ -1379,7 +1415,7 @@ if('serviceWorker' in navigator && location.protocol === 'https:'){
 /* ---------- 啟動 ---------- */
 applyFrame();
 renderLoad();
-if(boxes.length){ go('scan'); setLast('', `已還原上次的核對進度（已刷 ${boxes.length} 盒）`); } else go('load');
+if(boxes.length){ go('scan'); setLast('', `已還原上次的核對進度（已刷 ${boxes.length} 顆）`); } else go('load');
 })();
 </script>
 </body>
