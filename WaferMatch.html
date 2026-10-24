@@ -544,8 +544,13 @@ function modeIn(){
 
 /* ---------- 廠內IC測試比對:RUN CARD ↔ 黑箱條碼 ---------- */
 function modeIC(){
-  var s;
-  function reset(){ s={ph:1,sub:'lot',rcLot:[],rcQty:[],bbLot:[],bbQty:[]}; $('deduct').value=''; $('override').value=''; }
+  /* 廠內IC:RUN CARD 與黑箱都「一張一張讀」(和委外測試同一套操作)
+     RUN CARD:批號(批號-流水碼)與數量兩條條碼都讀到 → 這張完成、響一聲、暫停 → 「下一張」或「掃完了」
+     黑箱:合併條碼(料號?批號?數量)讀到 → 這箱完成、響一聲、暫停 → 「下一張」或「比對」
+     判斷方式同電腦版:RUN CARD 批號(取前段)都要等於黑箱批號,數量加總 = 黑箱加總(可扣除/改量)。 */
+  var s, sig='';
+  function blank(){ return {lot:'',raw:'',qty:'',tl:0,tq:0}; }
+  function reset(){ s={ph:'rc',rc:[],bb:[],cur:blank(),held:false,readyAt:0,warnAt:0,lastBB:'',lastBBSeen:0}; sig=''; $('deduct').value=''; $('override').value=''; }
   function validRc(v){ v=(v||'').trim(); var i=v.indexOf('-'); return i>0 && i<v.length-1; }
   function lotPrefix(v){ v=(v||'').trim(); var i=v.indexOf('-'); return i===-1?v:v.slice(0,i); }
   function parseBB(v){
@@ -559,76 +564,159 @@ function modeIC(){
   /* 鏡頭用的黑箱條碼判斷(比手動輸入嚴格):料號 ≥3 碼、批號 ≥3 碼、數量是數字,分隔符號不能是空白。
      外箱標籤最下方「BOX: 2 OF 3」條碼內容是「2 OF 3」,用空白分隔會被當成批號 OF,所以排除。 */
   function camBB(t){ return /^[A-Za-z0-9][A-Za-z0-9\-]{2,}([^A-Za-z0-9\-\s])[A-Za-z0-9\-]{3,}\1[0-9]+/.test((t||'').trim()); }
+  function camRc(t){ return validRc(t) && !parseBB(t) && t.length<=40; }
+  function camQty(t){ return isQty(t) && t.length<=7; }
+  function rcSum(){ return sumQty(s.rc.map(function(x){ return x.qty; })); }
+  function bbSum(){ return sumQty(s.bb.map(function(x){ return x.qty; })); }
   function adj(){
     var d=$('deduct').value.trim(), o=$('override').value.trim();
-    var hasO=o!==''&&isQty(o), dv=(d!==''&&isQty(d))?parseInt(d,10):0, sum=sumQty(s.bbQty);
+    var hasO=o!==''&&isQty(o), dv=(d!==''&&isQty(d))?parseInt(d,10):0, sum=bbSum();
     return {hasO:hasO,ov:hasO?parseInt(o,10):null,dv:dv,dRaw:d,sum:sum,after:hasO?parseInt(o,10):sum-dv};
   }
+  function rcLots(){ return sortAlpha(s.rc.map(function(x){ return x.lot; })); }
   function mismatch(expected,scanned,raw){
-    var sum=sumQty(s.bbQty), rcSorted=sortAlpha(s.rcLot);
-    finish(M.ic,false,[rcSorted.join('/'),String(sumQty(s.rcQty)),expected,String(sum),'0','',String(sum)],[
+    var sum=bbSum();
+    finish(M.ic,false,[rcLots().join('/'),String(rcSum()),expected,String(sum),'0','',String(sum)],[
       {label:'先前掃描批號',value:expected,ok:true},
       {label:'本次掃描批號',value:scanned,ok:false},
       {label:'本次條碼內容',value:raw||'',ok:false}
     ]);
   }
   function compare(){
-    var rcSorted=sortAlpha(s.rcLot), rcSum=sumQty(s.rcQty), bbLot=s.bbLot[0]||'', a=adj();
-    var lotMatch=rcSorted.length>0 && bbLot!=='' && rcSorted.every(function(v){ return v===bbLot; });
-    var qtyMatch=rcSum===a.after;
-    finish(M.ic,lotMatch&&qtyMatch,[rcSorted.join('/'),String(rcSum),bbLot,String(a.sum),(!a.hasO&&a.dRaw!=='')?String(a.dv):'0',a.hasO?String(a.ov):'',String(a.after)],[
-      {label:'RUN CARD批號(排序後)',value:rcSorted.join('/')||'(空白)',ok:true},
+    var rs=rcLots(), sum=rcSum(), bbLot=(s.bb[0]||{}).lot||'', a=adj();
+    var lotMatch=rs.length>0 && bbLot!=='' && rs.every(function(v){ return v===bbLot; });
+    var qtyMatch=sum===a.after;
+    finish(M.ic,lotMatch&&qtyMatch,[rs.join('/'),String(sum),bbLot,String(a.sum),(!a.hasO&&a.dRaw!=='')?String(a.dv):'0',a.hasO?String(a.ov):'',String(a.after)],[
+      {label:'RUN CARD批號(排序後)',value:rs.join('/')||'(空白)',ok:true},
       {label:'黑箱批號',value:bbLot||'(空白)',ok:lotMatch},
-      {label:'RUN CARD數量加總',value:String(rcSum),ok:true},
+      {label:'RUN CARD數量加總',value:String(sum),ok:true},
       {label:'黑箱原始加總',value:String(a.sum),ok:true},
       {label:a.hasO?'單次改量':'單次扣除',value:a.hasO?String(a.ov):String(a.dv),ok:true},
       {label:'黑箱最終數量',value:String(a.after),ok:qtyMatch}
     ]);
   }
+  /* RUN CARD 批號與數量都有了:收下這張 */
+  function completeRc(){
+    var c=s.cur; s.cur=blank();
+    var k=-1; s.rc.forEach(function(x,i){ if(x.raw===c.raw) k=i; });
+    if(k>=0) return {soft:'這張 RUN CARD 已讀過（第 '+(k+1)+' 張），請換下一張'};
+    s.rc.push({lot:c.lot,raw:c.raw,qty:c.qty}); s.held=true; sig='';
+    return {msg:'RUN CARD 第 '+s.rc.length+' 張：'+c.lot+' × '+c.qty+'，累計 '+rcSum()+'　（已暫停讀取）'};
+  }
+  /* 黑箱合併條碼:收下這箱(批號和第一箱不同就立即判定錯誤) */
+  function takeBB(t){
+    var p=parseBB(t); if(!p) return {err:'黑箱條碼格式不符（料號、批號、數量）'};
+    var lot=p.lot.toUpperCase();
+    if(s.bb.length>0 && lot!==s.bb[0].lot){ mismatch(s.bb[0].lot,lot,t); return {done:true}; }
+    s.bb.push({lot:lot,qty:p.qty,raw:t}); s.held=true; s.lastBB=t; s.lastBBSeen=Date.now(); sig='';
+    return {msg:'黑箱第 '+s.bb.length+' 箱：'+lot+' × '+p.qty+'，累計 '+bbSum()+'　（已暫停讀取）'};
+  }
+  function report(r,now){
+    if(r.soft){ if(now-s.warnAt>2500){ s.warnAt=now; say(r.soft,'warn',3000); } }
+    else if(r.err){ beep(false); flashFrame(false); say('✕ '+r.err,'bad',5000); }
+    else if(r.msg){ beep(true); flashFrame(true); say('✓ '+r.msg,'ok',6000); if(scanner) scanner.pause(true); }
+    render();
+  }
   reset();
   return {
-    hasData:function(){ return s.rcLot.length>0||s.bbLot.length>0; },
-    id:'ic', name:'廠內IC測試比對', pdf:'廠內IC測試比對 比對紀錄',
+    hasData:function(){ return s.rc.length>0||s.bb.length>0||!!s.cur.lot||!!s.cur.qty; },
+    id:'ic', name:'廠內IC測試比對', pdf:'廠內IC測試比對 比對紀錄', labelMode:true,
     cols:['RUN CARD批號(排序後)','RUN CARD數量加總','黑箱批號(排序後)','黑箱原始加總','單次扣除','單次改量','黑箱最終數量'],
-    reset:reset, nsteps:2, stepNo:function(){ return s.ph; },
+    reset:reset, nsteps:2, stepNo:function(){ return s.ph==='rc'?1:2; },
+    isHeld:function(){ return s.held; },
     step:function(){
-      if(s.ph===1 && s.sub==='lot') return {key:'rcLot',kind:'rcLot',name:'RUN CARD 批號',hint:'格式「批號-流水碼」，取前段；全部掃完按「RUN CARD 掃完了」',ex:'A1B23-001',
-        cam:function(t){ return validRc(t) && !parseBB(t) && t.length<=40; },
-        submit:function(t){ if(!validRc(t)) return {err:'批號格式需為「批號-流水碼」'}; var l=lotPrefix(t).toUpperCase(); s.rcLot.push(l); s.sub='qty'; return {msg:'RUN CARD 批號 '+l+'，等待數量',partial:true}; }};
-      if(s.ph===1) return {key:'rcQty',kind:'qty',name:'RUN CARD 數量',hint:'接著掃（或輸入）這張 RUN CARD 的數量',ex:'100',num:true,cam:function(t){ return isQty(t) && t.length<=7; },
-        submit:function(t){ if(!isQty(t)) return {err:'數量只能是數字'}; s.rcQty.push(t.trim()); s.sub='lot'; return {msg:'數量 '+t.trim()+'，累計 '+sumQty(s.rcQty)}; }};
-      return {key:'bb',kind:'bb',name:'黑箱條碼',hint:'把橫條框對準外箱標籤上「料號?批號?數量」那一條長條碼；可連續掃多箱，掃完按「比對」',ex:'P001?A1B23?100',
-        cam:camBB,
+      var rc=s.ph==='rc', n=(rc?s.rc.length:s.bb.length)+(s.held?0:1);
+      if(s.held) return {key:'hold',kind:'hold',name:(rc?'RUN CARD 第 '+n+' 張':'黑箱第 '+n+' 箱')+'已讀完',
+        hint:rc?'按「下一張」讀下一張 RUN CARD；全部讀完按「掃完了」開始讀黑箱':'按「下一張」讀下一箱；全部讀完按「比對」',ex:'',
+        cam:function(){ return false; }, submit:function(){ return {err:'這張已讀完，請先按「下一張」或「完成」'}; }};
+      if(rc) return {key:'rc',kind:'label',name:'RUN CARD 第 '+n+' 張',hint:'批號（批號-流水碼）和數量兩條條碼都讀到才算完成（手動輸入：先批號再數量）',
+        ex:s.cur.lot?'數量 100':'批號 A1B23-001', num:!!s.cur.lot, cam:function(){ return false; },
         submit:function(t){
-          var p=parseBB(t); if(!p) return {err:'黑箱條碼格式不符（料號、批號、數量）'};
-          var lot=p.lot.toUpperCase();
-          if(s.bbLot.length>0 && lot!==s.bbLot[0]){ mismatch(s.bbLot[0],lot,t); return {done:true}; }   /* 批號和第一箱不同:立即判定錯誤 */
-          s.bbLot.push(lot); s.bbQty.push(p.qty);
-          return {msg:'黑箱 '+lot+' × '+p.qty+'，共 '+s.bbLot.length+' 箱'};
+          if(!s.cur.lot){ if(!validRc(t)) return {err:'批號格式需為「批號-流水碼」'}; s.cur.raw=t.trim().toUpperCase(); s.cur.lot=lotPrefix(t).toUpperCase(); s.cur.tl=Date.now()+1e9; return {msg:'RUN CARD 批號 '+s.cur.lot+'，接著輸入數量',partial:true}; }
+          if(!isQty(t)) return {err:'數量只能是數字'};
+          s.cur.qty=t.trim(); var r=completeRc(); if(r.soft) r={err:r.soft}; return r;
         }};
+      return {key:'bb',kind:'label',name:'黑箱第 '+n+' 箱',hint:'把橫條框對準外箱標籤上「料號?批號?數量」那一條長條碼',ex:'P001?A1B23?100',
+        cam:function(){ return false; }, submit:function(t){ return takeBB(t); }};
+    },
+    /* 鏡頭 */
+    scan:function(lst,now){
+      if(s.held || now<s.readyAt) return;
+      if(s.ph==='bb'){
+        var cands=lst.filter(function(x){ return camBB(x.t); });
+        /* 剛收的那箱還在畫面裡:要先離開鏡頭一下(兩箱內容可能完全一樣,不能用內容判斷) */
+        if(s.lastBB){
+          var same=cands.some(function(x){ return x.t===s.lastBB; });
+          if(same && now-s.lastBBSeen<1000){               /* 一直都看得到:還是同一箱 */
+            s.lastBBSeen=now;
+            if(!s.blkAt) s.blkAt=now;
+            else if(now-s.blkAt>1200 && now-s.warnAt>3500){ s.warnAt=now; say('這箱已讀過，請把鏡頭移到下一箱','warn',3000); }
+            return;
+          }
+          s.lastBB=''; s.blkAt=0;                           /* 離開鏡頭超過 1 秒再出現,或換成別的條碼:當成下一箱 */
+        }
+        if(cands.length) report(takeBB(cands[0].t),now);
+        return;
+      }
+      var c=s.cur;
+      if(c.lot && !c.qty && now-c.tl>4000) c.lot='';      /* 只讀到一半太久:作廢,避免和下一張配錯 */
+      if(c.qty && !c.lot && now-c.tq>4000) c.qty='';
+      var lots=lst.filter(function(x){ return camRc(x.t); }), qs=lst.filter(function(x){ return camQty(x.t); });
+      if(lots.length){ var raw=lots[0].t.toUpperCase(); if(raw!==c.raw){ c.raw=raw; c.lot=lotPrefix(raw); } c.tl=now; }
+      /* 數量是純數字:畫面裡只有一個數字條碼才收,避免拿到別的數字 */
+      var qd=[]; qs.forEach(function(x){ if(qd.indexOf(x.t)<0) qd.push(x.t); });
+      if(qd.length===1){ c.qty=qd[0]; c.tq=now; }
+      if(c.lot && c.qty){ report(completeRc(),now); return; }
+      var g=c.lot+'|'+c.qty; if(g!==sig){ sig=g; render(); }
     },
     main:function(){
-      if(s.ph===1) return {short:'掃完了',label:'RUN CARD '+s.rcLot.length+' 張<b>'+sumQty(s.rcQty)+'</b>',enabled:s.rcLot.length>0&&s.sub==='lot',fn:function(){ s.ph=2; say('RUN CARD 共 '+sumQty(s.rcQty)+'，接著掃黑箱條碼','ok'); }};
-      return {short:'比對',label:'黑箱 '+s.bbLot.length+' 箱<b>'+adj().after+' / '+sumQty(s.rcQty)+'</b>',enabled:s.bbLot.length>0,fn:compare};
+      var idle=s.held||(!s.cur.lot&&!s.cur.qty);
+      if(s.ph==='rc') return {short:'掃完了',label:'RUN CARD '+s.rc.length+' 張<b>'+rcSum()+'</b>',enabled:s.rc.length>0&&idle,fn:function(){
+        s.ph='bb'; s.held=false; s.cur=blank(); s.readyAt=Date.now()+800;
+        if(scanner && !typing()) scanner.pause(false);
+        say('RUN CARD 共 '+s.rc.length+' 張、'+rcSum()+'，請對準第 1 箱黑箱條碼','ok');
+      }};
+      return {short:'比對',label:'黑箱 '+s.bb.length+' 箱<b>'+adj().after+' / '+rcSum()+'</b>',enabled:s.bb.length>0,fn:compare};
+    },
+    next:function(){
+      return {label:'下一張',enabled:s.held,fn:function(){
+        s.held=false; s.cur=blank();
+        if(scanner && !typing()) scanner.pause(false);
+        say(s.ph==='rc'?'請對準下一張 RUN CARD':'請對準下一箱','');
+      }};
     },
     del:function(k,i){
-      if(k==='rc'&&s.ph===1){ s.rcLot.splice(i,1); if(i<s.rcQty.length) s.rcQty.splice(i,1); s.sub=s.rcLot.length>s.rcQty.length?'qty':'lot'; }
-      if(k==='bb'&&s.ph===2){ s.bbLot.splice(i,1); s.bbQty.splice(i,1); }
+      if(k==='cur'){ if(s.held){ (s.ph==='rc'?s.rc:s.bb).pop(); s.lastBB=''; s.held=false; if(scanner && !typing()) scanner.pause(false); } s.cur=blank(); say('已清除，請重新讀這張',''); }
+      if(k==='rc' && s.ph==='rc') s.rc.splice(i,1);
+      if(k==='bb' && s.ph==='bb') s.bb.splice(i,1);
     },
     data:function(){
-      var rcSum=sumQty(s.rcQty), a=adj(), h;
-      h='<div class="card'+(s.ph===1?' cur':'')+'"><h2><i>1</i>RUN CARD<em>'+(s.rcLot.length?s.rcLot.length+' 張':'')+'</em></h2>';
-      if(!s.rcLot.length) h+='<div class="chips"><span>尚未掃描批號</span></div>';
-      s.rcLot.forEach(function(l,i){
-        h+='<div class="pair"><b>'+esc(l)+'</b><u>'+(i<s.rcQty.length?esc(s.rcQty[i]):'<span style="color:var(--amber)">待掃數量</span>')+'</u>'+(s.ph===1?'<button type="button" data-del="rc:'+i+'">×</button>':'')+'</div>';
-      });
-      h+='<div class="sum"><span>RUN CARD 數量加總</span><b>'+rcSum+'</b></div></div>';
-      if(s.ph===2){
-        h+='<div class="card cur"><h2><i>2</i>黑箱條碼<em>'+(s.bbLot.length?s.bbLot.length+' 箱':'')+'</em></h2>';
-        if(!s.bbLot.length) h+='<div class="chips"><span>尚未掃描黑箱條碼</span></div>';
-        s.bbLot.forEach(function(l,i){ h+='<div class="pair"><b>'+esc(l)+'</b><u>'+esc(s.bbQty[i])+'</u><button type="button" data-del="bb:'+i+'">×</button></div>'; });
+      var c=s.cur, rc=s.ph==='rc', a=adj(), sum=rcSum(), h='', n=(rc?s.rc.length:s.bb.length)+(s.held?0:1);
+      /* 目前這張 */
+      h+='<div class="card cur"><h2><i>'+(rc?'1':'2')+'</i>'+(rc?'RUN CARD 第 '+n+' 張':'黑箱第 '+n+' 箱')+'<em>'+(s.held?'已讀完・暫停讀取':(c.lot||c.qty?'讀取中…':'等待對準'))+'</em></h2>';
+      if(rc){
+        var last=s.held?s.rc[s.rc.length-1]:null;
+        h+='<div class="kv"><span>批號</span>'+(last?'<b style="color:var(--cyan)">'+esc(last.raw)+' ✓</b>':c.lot?'<b>'+esc(c.raw)+' ✓</b>':'<b class="wait">尚未讀到</b>')+'</div>'+
+           '<div class="kv"><span>數量</span>'+(last?'<b style="color:var(--cyan)">'+esc(last.qty)+' ✓</b>':c.qty?'<b>'+esc(c.qty)+' ✓</b>':'<b class="wait">尚未讀到</b>')+'</div>';
+      }else{
+        var lb=s.held?s.bb[s.bb.length-1]:null;
+        h+='<div class="kv"><span>黑箱條碼</span>'+(lb?'<b style="color:var(--cyan)">'+esc(lb.lot)+' × '+esc(lb.qty)+' ✓</b>':'<b class="wait">尚未讀到</b>')+'</div>';
+      }
+      if(s.held||c.lot||c.qty) h+='<div class="sum"><span>'+(s.held?'讀錯了？':'')+'</span><button type="button" data-del="cur:0" style="min-height:36px;font-size:14px">'+(s.held?'刪除這張重讀':'清除重讀')+'</button></div>';
+      h+='</div>';
+      /* RUN CARD */
+      h+='<div class="card"><h2><i>1</i>RUN CARD<em>'+s.rc.length+' 張</em></h2>';
+      if(!s.rc.length) h+='<div class="chips"><span>尚未讀到</span></div>';
+      s.rc.forEach(function(x,i){ h+='<div class="pair"><b>'+(i+1)+'.　'+esc(x.raw)+'</b><u>'+esc(x.qty)+'</u>'+(rc?'<button type="button" data-del="rc:'+i+'">×</button>':'')+'</div>'; });
+      h+='<div class="sum"><span>RUN CARD 數量加總</span><b>'+sum+'</b></div></div>';
+      /* 黑箱 */
+      if(!rc){
+        var bl=(s.bb[0]||{}).lot, rl=rcLots();
+        h+='<div class="card"><h2><i>2</i>黑箱條碼<em>'+s.bb.length+' 箱</em></h2>';
+        if(!s.bb.length) h+='<div class="chips"><span>尚未讀到</span></div>';
+        s.bb.forEach(function(x,i){ var okl=rl.every(function(v){ return v===x.lot; }); h+='<div class="pair"><b style="color:var('+(okl?'--cyan':'--red')+')">'+(i+1)+'.　'+esc(x.lot)+(okl?'':' ✕')+'</b><u>'+esc(x.qty)+'</u><button type="button" data-del="bb:'+i+'">×</button></div>'; });
         h+='<div class="sum"><span>黑箱原始加總'+(a.hasO?'　→ 改量':(a.dv?'　− 扣除 '+a.dv:''))+'</span><b>'+a.sum+'</b></div>'+
-           '<div class="sum"><span>黑箱最終數量（RUN CARD '+rcSum+'）</span><b class="'+(s.bbLot.length?(a.after===rcSum?'eq':'ne'):'')+'">'+a.after+'</b></div></div>';
+           '<div class="sum"><span>黑箱最終數量（RUN CARD '+sum+'）</span><b class="'+(s.bb.length?(a.after===sum?'eq':'ne'):'')+'">'+a.after+'</b></div></div>';
       }
       return h;
     }
