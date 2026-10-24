@@ -254,7 +254,7 @@ function parseWorkOrder(text, name){
   let spans = null, cur = null;
   for(let i=0;i<lines.length;i++){
     const line = lines[i]; let m;
-    if(!out.vendor && (m = line.match(/^\s*廠\s*商\s*[:：]\s*(.+?)\s*$/))) { out.vendor = m[1]; continue; }
+    if(!out.vendor && (m = line.match(/^\s*廠\s*商\s*[:：]\s*(.+?)\s*$/))) { out.vendor = normVendor(m[1]); continue; }
     if(!out.printDate && (m = line.match(/列印日期\s*[:：]\s*(\S+)/))) out.printDate = m[1];
     if(/^-+(\s+-+){3,}\s*$/.test(line) && i>0 && /工單/.test(lines[i-1]) && /料號/.test(lines[i-1])){
       spans = sepSpans(line); continue;
@@ -361,12 +361,15 @@ function parseShipXlsx(sheets, name){
     const data = sh.rows.slice(1).filter(r => r && r[head.indexOf('領料批號')]);
     if(!best || data.length > best.data.length) best = {head, data};
   });
-  const out = {name, vendor:'', printDate:'', records:[], excluded:0, kind:'WF出貨單'};
-  if(!best) return out;
+  // 同一份出貨單可能包含多家廠商：依「供應商」拆成各自一份
+  const outs = new Map(); let excluded = 0;
+  const outOf = v => { if(!outs.has(v)) outs.set(v, {name:name + '｜' + v, src:name, vendor:v, printDate:'', records:[], excluded:0, kind:'WF出貨單'}); return outs.get(v); };
+  if(!best) return [{name, src:name, vendor:'', printDate:'', records:[], excluded:0, kind:'WF出貨單'}];
   const col = k => best.head.indexOf(k), get = (r, k) => { const i = col(k); return i < 0 || r[i] == null ? '' : r[i]; };
   const up = v => String(v).trim().toUpperCase();
   best.data.forEach(r => {
-    if(up(get(r, '領料庫位')) !== 'WF' || up(get(r, '領料廠')) !== 'RT2'){ out.excluded++; return; }
+    if(up(get(r, '領料庫位')) !== 'WF' || up(get(r, '領料廠')) !== 'RT2'){ excluded++; return; }
+    const out = outOf(normVendor(get(r, '供應商')));
     const item = String(get(r, '委外採購單項次')).trim().replace(/\.0+$/, '');
     const wid = get(r, '領料Wafer ID');
     const slots = (typeof wid === 'number' ? [wid] : String(wid).split(/[,，;\/\s]+/)).filter(x => x !== '' && !isNaN(parseInt(x, 10))).map(x => pad2(parseInt(x, 10)));
@@ -374,17 +377,20 @@ function parseShipXlsx(sheets, name){
     const q = parseFloat(get(r, '刻號數'));
     out.records.push({wo:String(get(r, '委外採購單號')).trim() + '-' + item, part:String(get(r, '領料料號')).trim(), lot:up(get(r, '領料批號')),
       plant:'RT2', qty:isNaN(q) ? slots.length : q, wafers:[{die:'', fab, slots:slots.join(',')}], cancel:false});
-    if(!out.vendor) out.vendor = String(get(r, '供應商')).trim();
     if(!out.printDate) out.printDate = excelDate(get(r, '開單日期'));
   });
-  return out;
+  const list = [...outs.values()];
+  if(!list.length) return [{name, src:name, vendor:'', printDate:'', records:[], excluded, kind:'WF出貨單'}];
+  list[0].excluded = excluded;
+  return list;
 }
-/* 依副檔名讀取：.txt 加工單 / .xlsx WF 出貨單 */
+/* 依副檔名讀取：.txt 加工單 / .xlsx WF 出貨單（回傳陣列：出貨單會依廠商拆成多份） */
 async function parseAnyFile(file){
   const buf = await file.arrayBuffer();
   if(/\.xls[xm]$/i.test(file.name)) return parseShipXlsx(await readXlsx(buf), file.name);
-  if(/\.xls$/i.test(file.name)) return {name:file.name, vendor:'', printDate:'', records:[], excluded:0, error:'舊版 .xls 格式無法讀取，請在 Excel 另存為 .xlsx'};
-  return parseWorkOrder(decodeText(buf), file.name);
+  if(/\.xls$/i.test(file.name)) return [{name:file.name, src:file.name, vendor:'', printDate:'', records:[], excluded:0, error:'舊版 .xls 格式無法讀取，請在 Excel 另存為 .xlsx'}];
+  const p = parseWorkOrder(decodeText(buf), file.name); p.src = file.name;
+  return [p];
 }
 
 /* ---------- 刻號工具 ---------- */
@@ -687,7 +693,16 @@ function downloadBlob(blob, name){
 function stampText(){ const d = new Date(); return d.getFullYear()+pad2(d.getMonth()+1)+pad2(d.getDate())+'_'+pad2(d.getHours())+pad2(d.getMinutes()); }
 
 /* ---------- 依廠商分組 ---------- */
-const vName = f => (f.vendor || '').trim() || '（未標示廠商）';
+/* 廠商別名：不同檔案寫法不同但是同一家，統一成同一個名稱（比對時不分大小寫、忽略空白與標點） */
+const VENDOR_ALIAS = {
+  'JCET GROUP CO., LTD.': '江蘇長電科技',
+  'JCET GROUP CO.,LTD.': '江蘇長電科技',
+  'JCET': '江蘇長電科技'
+};
+const vKey = v => String(v || '').toUpperCase().replace(/[\s.,，。()（）]/g, '');
+const VENDOR_ALIAS_K = Object.fromEntries(Object.entries(VENDOR_ALIAS).map(([k, v]) => [vKey(k), v]));
+function normVendor(v){ v = String(v || '').trim(); return VENDOR_ALIAS_K[vKey(v)] || v; }
+const vName = f => normVendor(f.vendor) || '（未標示廠商）';
 function vendorGroups(files){
   const m = new Map();
   files.forEach((f, fi) => {
@@ -704,7 +719,7 @@ const fileSafe = s => String(s).replace(/[\\/:*?"<>|]/g, '_').slice(0, 40);
 function listSheet(files){
   const rows = [['工單','料號','批號','領料廠','數量','Fab批號','刻號','廠商']];
   files.forEach(f => f.records.filter(r => !r.cancel).forEach(r =>
-    rows.push([r.wo, r.part, r.lot, r.plant, r.qty, fabText(r), slotText(r), f.vendor])));
+    rows.push([r.wo, r.part, r.lot, r.plant, r.qty, fabText(r), slotText(r), vName(f)])));
   return {name:'工單簡化', rows, widths:[18,14,10,10,8,14,24,16]};
 }
 function vendorsText(files){ return [...new Set(files.map(f => f.vendor).filter(Boolean))].join('、'); }
@@ -893,9 +908,10 @@ $('fileInput').onchange = async e => {
   if(boxes.length && !confirm('已有刷讀紀錄，加入新檔案後會依新的工單重新比對，確定？')) return;
   const bad = [];
   for(const f of list){
-    const p = await parseAnyFile(f).catch(e => ({name:f.name, records:[], error:e.message}));
-    if(!p.records.length) bad.push(f.name + (p.error ? '（' + p.error + '）' : ''));
-    const i = files.findIndex(x => x.name === f.name); if(i >= 0) files[i] = p; else files.push(p);
+    const ps = await parseAnyFile(f).catch(e => [{name:f.name, src:f.name, records:[], error:e.message}]);
+    const ok = ps.filter(p => p.records.length);
+    if(!ok.length) bad.push(f.name + (ps[0] && ps[0].error ? '（' + ps[0].error + '）' : ''));
+    files = files.filter(x => (x.src || x.name) !== f.name).concat(ok);
   }
   $('loadMsg').textContent = bad.length ? '找不到工單資料：' + bad.join(', ') : '';
   dbChanged();
