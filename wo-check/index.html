@@ -361,13 +361,14 @@ function parseShipXlsx(sheets, name){
   });
   // 同一份出貨單可能包含多家廠商：依「供應商」拆成各自一份
   const outs = new Map(); let excluded = 0;
-  const outOf = v => { if(!outs.has(v)) outs.set(v, {name:name + '｜' + v, src:name, vendor:v, printDate:'', records:[], excluded:0, kind:'WF出貨單'}); return outs.get(v); };
+  // 同廠商不同開單日期也分開
+  const outOf = (v, d) => { const k = v + '｜' + d; if(!outs.has(k)) outs.set(k, {name:name + '｜' + k, src:name, vendor:v, printDate:d, records:[], excluded:0, kind:'WF出貨單'}); return outs.get(k); };
   if(!best) return [{name, src:name, vendor:'', printDate:'', records:[], excluded:0, kind:'WF出貨單'}];
   const col = k => best.head.indexOf(k), get = (r, k) => { const i = col(k); return i < 0 || r[i] == null ? '' : r[i]; };
   const up = v => String(v).trim().toUpperCase();
   best.data.forEach(r => {
     if(up(get(r, '領料庫位')) !== 'WF' || up(get(r, '領料廠')) !== 'RT2'){ excluded++; return; }
-    const out = outOf(normVendor(get(r, '供應商')));
+    const out = outOf(normVendor(get(r, '供應商')), excelDate(get(r, '開單日期')));
     const item = String(get(r, '委外採購單項次')).trim().replace(/\.0+$/, '');
     const wid = get(r, '領料Wafer ID');
     const slots = (typeof wid === 'number' ? [wid] : String(wid).split(/[,，;\/\s]+/)).filter(x => x !== '' && !isNaN(parseInt(x, 10))).map(x => pad2(parseInt(x, 10)));
@@ -375,7 +376,6 @@ function parseShipXlsx(sheets, name){
     const q = parseFloat(get(r, '刻號數'));
     out.records.push({wo:String(get(r, '委外採購單號')).trim() + '-' + item, part:String(get(r, '領料料號')).trim(), lot:up(get(r, '領料批號')),
       plant:'RT2', qty:isNaN(q) ? slots.length : q, wafers:[{die:'', fab, slots:slots.join(',')}], cancel:false});
-    if(!out.printDate) out.printDate = excelDate(get(r, '開單日期'));
   });
   const list = [...outs.values()];
   if(!list.length) return [{name, src:name, vendor:'', printDate:'', records:[], excluded, kind:'WF出貨單'}];
@@ -643,22 +643,30 @@ function iosHaptic(times){
   }catch(e){}
 }
 function vibrate(kind){
-  const pat = kind === 'warn' ? [150, 80, 150] : [400];
+  const pat = kind === 'warn' ? [150, 80, 150] : kind === 'done' ? [100, 60, 100, 60, 300] : [400];
   try{ if(navigator.vibrate && navigator.vibrate(pat)) return; }catch(e){}
   if(/iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) iosHaptic(kind === 'warn' ? 2 : 3);
 }
-/* ok：成功（短高音，不震動）；warn：提醒（兩聲 + 震動）；err：錯誤（低長音 + 震動） */
+/* ok：成功（兩聲高音，不震動）；warn：提醒（兩聲 + 震動）；err：錯誤（低沉長音 + 震動）；done：全部完成（上揚四音 + 震動） */
+const TONES = {
+  ok:   {type:'square',   gain:.55, seq:[[1760,.07],[0,.03],[2350,.10]]},
+  warn: {type:'square',   gain:.7,  seq:[[880,.16],[0,.06],[880,.16]]},
+  err:  {type:'sawtooth', gain:.8,  seq:[[330,.22],[0,.05],[220,.45]]},
+  done: {type:'square',   gain:.6,  seq:[[1047,.12],[1319,.12],[1568,.12],[2093,.35]]}
+};
 function beep(kind){
+  const T = TONES[kind] || TONES.ok;
   if(SOUND.sound) try{
     const ac = audioCtx();
     if(ac){
-      const seq = kind === 'ok' ? [[1320,.07],[0,.03],[1760,.09]] : kind === 'warn' ? [[700,.15],[0,.06],[700,.15]] : [[260,.18],[0,.05],[200,.35]];
+      // 經過壓縮器把音量推到最大又不破音
+      const comp = ac.createDynamicsCompressor(); comp.threshold.value = -12; comp.ratio.value = 6; comp.connect(ac.destination);
       let t = ac.currentTime + 0.01;
-      seq.forEach(([f,d]) => {
+      T.seq.forEach(([f,d]) => {
         if(f){ const o = ac.createOscillator(), g = ac.createGain();
-          o.type = kind === 'ok' ? 'sine' : 'square'; o.frequency.value = f;
-          g.gain.setValueAtTime(kind === 'ok' ? .3 : .22, t); g.gain.exponentialRampToValueAtTime(.001, t + d);
-          o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t + d + .02); }
+          o.type = T.type; o.frequency.value = f;
+          g.gain.setValueAtTime(T.gain, t); g.gain.setValueAtTime(T.gain, t + d * .7); g.gain.exponentialRampToValueAtTime(.001, t + d);
+          o.connect(g); g.connect(comp); o.start(t); o.stop(t + d + .02); }
         t += d;
       });
     }
@@ -740,17 +748,23 @@ const vKey = v => String(v || '').toUpperCase().replace(/[\s.,，。()（）]/g,
 const VENDOR_ALIAS_K = Object.fromEntries(Object.entries(VENDOR_ALIAS).map(([k, v]) => [vKey(k), v]));
 function normVendor(v){ v = String(v || '').trim(); return VENDOR_ALIAS_K[vKey(v)] || v; }
 const vName = f => normVendor(f.vendor) || '（未標示廠商）';
+/* 分組依據：廠商 + 出貨日期（加工單用列印日期、WF 出貨單用開單日期） */
+const gKey = f => vName(f) + '｜' + (f.printDate || '');
+const labelOf = key => String(key || '').replace('｜', '　');
 function vendorGroups(files){
   const m = new Map();
   files.forEach((f, fi) => {
-    const v = vName(f);
-    if(!m.has(v)) m.set(v, {name:v, files:[], kinds:new Set(), dates:new Set(), total:0, active:0});
+    const v = gKey(f);
+    if(!m.has(v)) m.set(v, {name:v, vendor:vName(f), date:f.printDate || '', files:[], kinds:new Set(), dates:new Set(), total:0, active:0});
     const g = m.get(v); g.files.push(fi); if(f.kind) g.kinds.add(f.kind); if(f.printDate) g.dates.add(f.printDate);
     f.records.forEach(r => { g.total++; if(!r.cancel) g.active++; });
   });
-  return [...m.values()];
+  // 同廠商的卡片排在一起，日期由舊到新
+  const vOrder = new Map(); [...m.values()].forEach(g => { if(!vOrder.has(g.vendor)) vOrder.set(g.vendor, vOrder.size); });
+  const dk = d => { const x = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(d || ''); return x ? x[3].slice(-2) + x[1].padStart(2,'0') + x[2].padStart(2,'0') : (d || ''); };
+  return [...m.values()].sort((a, b) => vOrder.get(a.vendor) - vOrder.get(b.vendor) || dk(a.date).localeCompare(dk(b.date)));
 }
-const vFiles = (files, v) => files.filter(f => vName(f) === v);
+const vFiles = (files, key) => files.filter(f => gKey(f) === key);
 const fileSafe = s => String(s).replace(/[\\/:*?"<>|]/g, '_').slice(0, 40);
 /* 簡化清單工作表 */
 function listSheet(files){
@@ -864,7 +878,7 @@ function persist(){
   if(s){ if(s.files) files = s.files; if(s.info) info = s.info; if(s.settings && s.settings.v === 2) Object.assign(settings, s.settings);
     if(s.sound === false) SOUND.sound = false; if(s.vibrate === false) SOUND.vibrate = false;
     scanStore = s.scanStore || {}; curVendor = s.curVendor || '';
-    if(s.boxes && !s.scanStore && files.length){ curVendor = vName(files[0]); scanStore[curVendor] = {boxes:s.boxes}; } }
+    if(s.boxes && !s.scanStore && files.length){ curVendor = gKey(files[0]); scanStore[curVendor] = {boxes:s.boxes}; } }
   if(curVendor && !vendorGroups(files).some(g => g.name === curVendor)) curVendor = '';
   loadVendor();
 })();
@@ -878,12 +892,22 @@ function loadVendor(){
 function setVendor(v){ if(v === curVendor) return; persist(); curVendor = v; loadVendor(); lastKey = ''; hold = null; persist(); }
 /* 選擇廠商：只有一家時直接執行 */
 function pickVendor(title, fn){
+  // 先選廠商，同廠商有多個出貨日期時再選日期
   const gs = vendorGroups(files).filter(g => g.active);
   if(!gs.length) return;
-  if(gs.length === 1){ fn(gs[0].name); return; }
+  const vendors = [...new Set(gs.map(g => g.vendor))];
+  const pickDate = v => {
+    const ds = gs.filter(g => g.vendor === v);
+    if(ds.length === 1){ fn(ds[0].name); return; }
+    setTimeout(() => openSheet('plain vpick', `${v}：要選哪一天的資料？`, '<div class="muted">請選擇出貨日期</div>',
+      ds.map(g => [`${g.date || '（無日期）'}（${g.active} 筆）${statusTail(g.name)}`, 'vbtn' + (g.name === curVendor ? ' primary' : ''), () => { setTimeout(() => fn(g.name), 0); }]).concat([['取消', '', null]])), 0);
+  };
+  if(vendors.length === 1){ pickDate(vendors[0]); return; }
   openSheet('plain vpick', title, '<div class="muted">請選擇廠商（各廠商的刷讀進度會分別保留）</div>',
-    gs.map(g => [`${g.name}（${g.active} 筆）${g.name === curVendor ? '　核對中' : ''}`, g.name === curVendor ? 'primary' : '', () => { setTimeout(() => fn(g.name), 0); }]).concat([['取消', '', null]]));
+    vendors.map(v => { const ds = gs.filter(g => g.vendor === v), n = ds.reduce((a,g) => a + g.active, 0);
+      return [`${v}（${ds.length > 1 ? ds.length + ' 個日期，' : ''}${n} 筆）`, 'vbtn' + (curVendor.startsWith(v + '｜') ? ' primary' : ''), () => { setTimeout(() => pickDate(v), 0); }]; }).concat([['取消', '', null]]));
 }
+function statusTail(key){ const st = vendorStatus(files, key, key === curVendor ? boxes : (scanStore[key] || {}).boxes); return st ? '　' + st.text : ''; }
 
 /* ---------- 畫面切換 ---------- */
 function go(s){
@@ -914,9 +938,9 @@ function renderBottom(){
     b.innerHTML = `<button class="btn" id="bBack">工單</button><button class="btn primary wide" id="bFinish">結束核對，看結果</button>`;
     $('bBack').onclick = () => go('load'); $('bFinish').onclick = () => go('result');
   } else {
-    b.innerHTML = `<button class="btn" id="bBack">繼續掃描</button><button class="btn primary wide" id="bXlsx">匯出 Excel</button>`;
+    b.innerHTML = `<button class="btn" id="bBack">繼續掃描</button><button class="btn primary wide" id="bNext">掃描下一家廠商</button>`;
     $('bBack').onclick = () => go('scan');
-    $('bXlsx').onclick = () => downloadBlob(buildXlsx(resultSheets(db, boxes, vFiles(files, curVendor), info)), `工單核對結果_${fileSafe(curVendor)}_${stampText()}.xlsx`);
+    $('bNext').onclick = () => pickVendor('要掃描哪家廠商？', v => { setVendor(v); go('scan'); setLast('', `開始核對 ${labelOf(v)}`); });
   }
 }
 
@@ -925,8 +949,8 @@ function renderLoad(){
   const el = $('woList');
   if(!files.length){ el.innerHTML = '<div class="none">尚未載入工單</div>'; renderBottom(); return; }
   el.innerHTML = vendorGroups(files).map(g => `<div class="vcard">
-    <div class="vhead"><div class="vname">${esc(g.name)}</div>
-      <div class="vmeta">${esc([...g.kinds].join('、'))}${g.dates.size ? '　' + esc([...g.dates].join('、')) : ''}　有效 <b>${g.active}</b> / ${g.total} 筆</div>
+    <div class="vhead"><div class="vname">${esc(g.vendor)}</div>
+      <div class="vmeta">出貨日期 <b>${esc(g.date || '—')}</b>　${esc([...g.kinds].join('、'))}　有效 <b>${g.active}</b> / ${g.total} 筆</div>
       <button class="tg" data-delv="${esc(g.name)}">移除</button>
       ${(() => { const st = vendorStatus(files, g.name, g.name === curVendor ? boxes : (scanStore[g.name] || {}).boxes);
         return st ? `<div class="vst"><span class="tag ${st.clean ? 'o' : st.complete ? 'c' : 'w'}">${st.text}</span><button class="rbtn" data-resv="${esc(g.name)}">查看核對結果</button></div>` : ''; })()}</div>
@@ -942,7 +966,7 @@ $('woList').addEventListener('click', e => {
   const rv = e.target.closest('button[data-resv]');
   if(rv){ setVendor(rv.dataset.resv); go('result'); return; }
   const d = e.target.closest('button[data-delv]');
-  if(d){ const v = d.dataset.delv; if(confirm(`移除「${v}」的所有工單與刷讀紀錄？`)){ files = files.filter(f => vName(f) !== v); delete scanStore[v]; if(curVendor === v) curVendor = ''; dbChanged(); } return; }
+  if(d){ const v = d.dataset.delv; if(confirm(`移除「${labelOf(v)}」的所有工單與刷讀紀錄？`)){ files = files.filter(f => gKey(f) !== v); delete scanStore[v]; if(curVendor === v) curVendor = ''; dbChanged(); } return; }
   const b = e.target.closest('button[data-f]'); if(!b) return;
   const r = files[+b.dataset.f].records[+b.dataset.r]; r.cancel = !r.cancel; dbChanged();
 });
@@ -1255,7 +1279,7 @@ function renderPend(){
   $('boxWf').className = 'box ' + (pending.wf ? 'filled' : 'need');
 }
 function renderScan(){
-  document.querySelectorAll('.curV').forEach(e => e.textContent = curVendor || '—');
+  document.querySelectorAll('.curV').forEach(e => e.textContent = labelOf(curVendor) || '—');
   const sm = summarize(db, boxes);
   $('pNum').innerHTML = `${sm.ok} <small>/ ${sm.expected}</small>`;
   $('pBar').style.width = (sm.expected ? sm.ok / sm.expected * 100 : 0) + '%';
@@ -1284,6 +1308,7 @@ function openSheet(kind, title, body, buttons){
 function closeSheet(){ $('mask').classList.remove('on'); modalOpen = false; coolUntil = Date.now() + 600; }
 function showComplete(){
   const sm = summarize(db, boxes);
+  beep('done');
   openSheet('ok', '✔ 全部 Wafer 已刷完', `<div>實刷 <span class="big">${sm.total}</span> 片（${boxes.length} 盒），應刷 ${sm.expected} 片</div><div>已取出問題片 ${sm.removed} 片</div>`,
     [['留在掃描', '', null], ['看結果', 'primary', () => { setTimeout(() => go('result'), 0); }]]);
 }
@@ -1323,7 +1348,7 @@ $('optCam').onchange = e => { settings.cam = e.target.value; persist(); stopCam(
 
 /* ================= 3 結果 ================= */
 function renderResult(){
-  document.querySelectorAll('.curV').forEach(e => e.textContent = curVendor || '—');
+  document.querySelectorAll('.curV').forEach(e => e.textContent = labelOf(curVendor) || '—');
   const sm = summarize(db, boxes);
   const good = sm.complete && !sm.errors.length && sm.partRows.every(p => p.diff === 0);
   $('resContent').innerHTML = (good
