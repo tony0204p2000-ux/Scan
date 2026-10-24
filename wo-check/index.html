@@ -121,6 +121,17 @@
   .rrow.ihead{background:#fafbfc}
   .i-nolot .a span:first-child,.i-extra .a span:first-child{color:var(--danger)}
   .i-short .a span:first-child,.i-unscanned .a span:first-child{color:var(--warn)}
+  .vcard{margin:14px 0 6px}
+  .vhead{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;margin:0 2px 8px;padding:10px 12px;background:#24292f;color:#fff;border-radius:10px}
+  .vhead .vname{font-weight:700;font-size:15px;flex:1 1 100%}
+  .vhead .vmeta{font-size:12px;color:#c9d1d9;flex:1}
+  .vhead .vmeta b{color:#fff}
+  .vhead .tg{border:1px solid #57606a;background:transparent;color:#ff8182;border-radius:8px;padding:4px 10px;font-size:12px}
+  .vbar{display:flex;align-items:center;gap:8px;margin:0 2px 8px;font-size:14px;color:var(--sub)}
+  .vbar b{color:var(--ink);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vbar .tg{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;font-size:13px}
+  .sheet.vpick .sf{flex-direction:column}
+  .sheet.vpick .sf .btn{text-align:left}
   /* ----- 視窗 ----- */
   .mask{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;display:none;align-items:flex-end;justify-content:center}
   .mask.on{display:flex}
@@ -169,6 +180,7 @@
 
 <!-- 2 掃描 -->
 <section class="screen" id="sc-scan">
+  <div class="vbar">核對廠商：<b class="curV"></b><button class="tg" id="switchV">切換</button></div>
   <div class="cam" id="cam">
     <video id="video" playsinline muted></video>
     <div class="frame"></div>
@@ -205,6 +217,7 @@
 
 <!-- 3 結果 -->
 <section class="screen" id="sc-result">
+  <div class="vbar">核對廠商：<b class="curV"></b></div>
   <div class="card info">
     <label>點交人員<input id="iHandler" autocomplete="off"></label>
     <label>簽收人<input id="iReceiver" autocomplete="off"></label>
@@ -673,6 +686,20 @@ function downloadBlob(blob, name){
 }
 function stampText(){ const d = new Date(); return d.getFullYear()+pad2(d.getMonth()+1)+pad2(d.getDate())+'_'+pad2(d.getHours())+pad2(d.getMinutes()); }
 
+/* ---------- 依廠商分組 ---------- */
+const vName = f => (f.vendor || '').trim() || '（未標示廠商）';
+function vendorGroups(files){
+  const m = new Map();
+  files.forEach((f, fi) => {
+    const v = vName(f);
+    if(!m.has(v)) m.set(v, {name:v, files:[], kinds:new Set(), dates:new Set(), total:0, active:0});
+    const g = m.get(v); g.files.push(fi); if(f.kind) g.kinds.add(f.kind); if(f.printDate) g.dates.add(f.printDate);
+    f.records.forEach(r => { g.total++; if(!r.cancel) g.active++; });
+  });
+  return [...m.values()];
+}
+const vFiles = (files, v) => files.filter(f => vName(f) === v);
+const fileSafe = s => String(s).replace(/[\\/:*?"<>|]/g, '_').slice(0, 40);
 /* 簡化清單工作表 */
 function listSheet(files){
   const rows = [['工單','料號','批號','領料廠','數量','Fab批號','刻號','廠商']];
@@ -761,6 +788,7 @@ function resultSheets(db, boxes, files, info){
 (function(){
 'use strict';
 const KEY = 'wo_check_m_v2';
+let curVendor = '', scanStore = {};   // 每家廠商各自的刷讀進度
 const $ = id => document.getElementById(id);
 
 const EMPTY = () => ({lot:'', wf:null, t_lot:0, t_wf:0});
@@ -768,13 +796,35 @@ let files = [], boxes = [], pending = EMPTY(), db = buildDb([]);
 let info = {handler:'', receiver:'', note:''}, settings = {frame:'code', zoom:0, v:2};
 let screen = 'load', modalOpen = false, completedShown = false;
 
-function persist(){ saveState(KEY, {files, boxes, info, settings, sound:SOUND.sound, vibrate:SOUND.vibrate}); }
+function persist(){
+  if(curVendor) scanStore[curVendor] = {boxes};
+  saveState(KEY, {files, scanStore, curVendor, info, settings, sound:SOUND.sound, vibrate:SOUND.vibrate});
+}
 (function restore(){
   const s = loadState(KEY);
-  if(s){ if(s.files) files = s.files; boxes = s.boxes || []; if(s.info) info = s.info; if(s.settings && s.settings.v === 2) Object.assign(settings, s.settings);
-    if(s.sound === false) SOUND.sound = false; if(s.vibrate === false) SOUND.vibrate = false; }
-  db = buildDb(files); completedShown = summarize(db, boxes).complete;
+  if(s){ if(s.files) files = s.files; if(s.info) info = s.info; if(s.settings && s.settings.v === 2) Object.assign(settings, s.settings);
+    if(s.sound === false) SOUND.sound = false; if(s.vibrate === false) SOUND.vibrate = false;
+    scanStore = s.scanStore || {}; curVendor = s.curVendor || '';
+    if(s.boxes && !s.scanStore && files.length){ curVendor = vName(files[0]); scanStore[curVendor] = {boxes:s.boxes}; } }
+  if(curVendor && !vendorGroups(files).some(g => g.name === curVendor)) curVendor = '';
+  loadVendor();
 })();
+
+/* ---------- 廠商切換 ---------- */
+function loadVendor(){
+  boxes = ((curVendor && scanStore[curVendor]) || {}).boxes || []; pending = EMPTY();
+  db = buildDb(curVendor ? vFiles(files, curVendor) : []);
+  completedShown = summarize(db, boxes).complete;
+}
+function setVendor(v){ if(v === curVendor) return; persist(); curVendor = v; loadVendor(); lastKey = ''; hold = null; persist(); }
+/* 選擇廠商：只有一家時直接執行 */
+function pickVendor(title, fn){
+  const gs = vendorGroups(files).filter(g => g.active);
+  if(!gs.length) return;
+  if(gs.length === 1){ fn(gs[0].name); return; }
+  openSheet('plain vpick', title, '<div class="muted">請選擇廠商（各廠商的刷讀進度會分別保留）</div>',
+    gs.map(g => [`${g.name}（${g.active} 筆）${g.name === curVendor ? '　核對中' : ''}`, g.name === curVendor ? 'primary' : '', () => { setTimeout(() => fn(g.name), 0); }]).concat([['取消', '', null]]));
+}
 
 /* ---------- 畫面切換 ---------- */
 function go(s){
@@ -787,21 +837,27 @@ function go(s){
   if(s === 'result') renderResult();
   renderBottom();
 }
-document.querySelectorAll('.steps span').forEach(x => x.onclick = () => { if(x.dataset.s === 'load' || db.expected) go(x.dataset.s); });
+document.querySelectorAll('.steps span').forEach(x => x.onclick = () => {
+  const t = x.dataset.s;
+  if(t === 'load') return go(t);
+  if(!curVendor) return pickVendor('要核對哪家廠商？', v => { setVendor(v); go(t); });
+  if(db.expected) go(t);
+});
 
 function renderBottom(){
   const b = $('bottom');
   if(screen === 'load'){
-    b.innerHTML = `<button class="btn danger" id="bClear">清除</button><button class="btn primary wide" id="bStart" ${db.expected?'':'disabled'}>開始掃描（${db.expected} 片）</button>`;
-    $('bClear').onclick = () => { if(files.length && confirm('清除所有工單與刷讀紀錄？')){ files = []; boxes = []; pending = EMPTY(); dbChanged(); } };
-    $('bStart').onclick = () => go('scan');
+    const has = vendorGroups(files).some(g => g.active);
+    b.innerHTML = `<button class="btn danger" id="bClear">清除</button><button class="btn primary wide" id="bStart" ${has?'':'disabled'}>開始掃描核對</button>`;
+    $('bClear').onclick = () => { if(files.length && confirm('清除所有工單與刷讀紀錄？')){ files = []; boxes = []; pending = EMPTY(); scanStore = {}; curVendor = ''; dbChanged(); } };
+    $('bStart').onclick = () => pickVendor('要核對哪家廠商？', v => { setVendor(v); go('scan'); });
   } else if(screen === 'scan'){
     b.innerHTML = `<button class="btn" id="bBack">工單</button><button class="btn primary wide" id="bFinish">結束核對，看結果</button>`;
     $('bBack').onclick = () => go('load'); $('bFinish').onclick = () => go('result');
   } else {
     b.innerHTML = `<button class="btn" id="bBack">繼續掃描</button><button class="btn primary wide" id="bXlsx">匯出 Excel</button>`;
     $('bBack').onclick = () => go('scan');
-    $('bXlsx').onclick = () => downloadBlob(buildXlsx(resultSheets(db, boxes, files, info)), '工單核對結果_' + stampText() + '.xlsx');
+    $('bXlsx').onclick = () => downloadBlob(buildXlsx(resultSheets(db, boxes, vFiles(files, curVendor), info)), `工單核對結果_${fileSafe(curVendor)}_${stampText()}.xlsx`);
   }
 }
 
@@ -809,25 +865,27 @@ function renderBottom(){
 function renderLoad(){
   const el = $('woList');
   if(!files.length){ el.innerHTML = '<div class="none">尚未載入工單</div>'; renderBottom(); return; }
-  el.innerHTML = files.map((f,fi) => `
-    <div class="fmeta"><span><b>${esc(f.vendor||'—')}</b></span><span>${esc(f.name)}</span><span>${f.kind === 'WF出貨單' ? 'WF出貨單 開單' : '列印'} ${esc(f.printDate||'—')}</span>${f.excluded ? `<span>已排除非 RT2${f.kind === 'WF出貨單' ? '／非 WF' : ''} ${f.excluded} 筆</span>` : ''}
-      <span>有效 <b>${f.records.filter(r=>!r.cancel).length}</b> / ${f.records.length} 筆</span></div>
-    ${f.records.map((r,ri) => `<div class="card wo ${r.cancel?'cancel':''}">
+  el.innerHTML = vendorGroups(files).map(g => `<div class="vcard">
+    <div class="vhead"><div class="vname">${esc(g.name)}${g.name === curVendor ? ' <span class="tag o">核對中</span>' : ''}</div>
+      <div class="vmeta">${esc([...g.kinds].join('、'))}${g.dates.size ? '　' + esc([...g.dates].join('、')) : ''}　有效 <b>${g.active}</b> / ${g.total} 筆</div>
+      <button class="tg" data-delv="${esc(g.name)}">移除</button></div>
+    ${g.files.map(fi => files[fi].records.map((r,ri) => `<div class="card wo ${r.cancel?'cancel':''}">
       <div class="info"><div class="t1">${esc(r.wo)} ${r.cancel?'<span class="tag c">已取消</span>':''}${qtyMismatch(r)?'<span class="tag w">刻號數≠數量</span>':''}</div>
         <div class="t2">${esc(r.part)}　批號 <b style="color:var(--ink)">${esc(r.lot)}</b>　${esc(fabText(r))}</div>
         <div class="t3">刻號 ${esc(slotText(r))}</div></div>
       <div class="qty">${esc(r.qty)}<small>片</small></div>
-      <button class="tg" data-f="${fi}" data-r="${ri}">${r.cancel?'恢復':'取消'}</button></div>`).join('')}`).join('');
+      <button class="tg" data-f="${fi}" data-r="${ri}">${r.cancel?'恢復':'取消'}</button></div>`).join('')).join('')}</div>`).join('');
   renderBottom();
 }
 $('woList').addEventListener('click', e => {
+  const d = e.target.closest('button[data-delv]');
+  if(d){ const v = d.dataset.delv; if(confirm(`移除「${v}」的所有工單與刷讀紀錄？`)){ files = files.filter(f => vName(f) !== v); delete scanStore[v]; if(curVendor === v) curVendor = ''; dbChanged(); } return; }
   const b = e.target.closest('button[data-f]'); if(!b) return;
   const r = files[+b.dataset.f].records[+b.dataset.r]; r.cancel = !r.cancel; dbChanged();
 });
 function dbChanged(){
-  db = buildDb(files);
-  completedShown = summarize(db, boxes).complete;
-  persist(); renderLoad();
+  if(curVendor){ scanStore[curVendor] = {boxes}; if(!vendorGroups(files).some(g => g.name === curVendor)) curVendor = ''; }
+  loadVendor(); persist(); renderLoad();
 }
 $('fileInput').onchange = async e => {
   const list = [...e.target.files]; e.target.value = '';
@@ -1108,6 +1166,7 @@ function renderPend(){
   $('boxWf').className = 'box ' + (pending.wf ? 'filled' : 'need');
 }
 function renderScan(){
+  document.querySelectorAll('.curV').forEach(e => e.textContent = curVendor || '—');
   const sm = summarize(db, boxes);
   $('pNum').innerHTML = `${sm.ok} <small>/ ${sm.expected}</small>`;
   $('pBar').style.width = (sm.expected ? sm.ok / sm.expected * 100 : 0) + '%';
@@ -1162,6 +1221,7 @@ $('manualBtn').onclick = () => {
     }]]);
   setTimeout(() => $('mLot').focus(), 100);
 };
+$('switchV').onclick = () => pickVendor('切換到哪家廠商？', v => { setVendor(v); setLast('', `已切換到 ${v}`); renderScan(); });
 $('undoBtn').onclick = () => {
   if(pending.lot || pending.wf){ pending = EMPTY(); setLast('', '已清除本盒'); }
   else if(boxes.length){ const b = boxes.pop(); lastKey = ''; setLast('', `已復原第 ${b.b} 盒（${b.lot}　${compress(b.slots)}）`); completedShown = summarize(db, boxes).complete; }
@@ -1173,6 +1233,7 @@ $('optVib').onchange = e => { SOUND.vibrate = e.target.checked; persist(); };
 
 /* ================= 3 結果 ================= */
 function renderResult(){
+  document.querySelectorAll('.curV').forEach(e => e.textContent = curVendor || '—');
   const sm = summarize(db, boxes);
   $('iHandler').value = info.handler; $('iReceiver').value = info.receiver; $('iNote').value = info.note;
   const good = sm.complete && !sm.errors.length && sm.partRows.every(p => p.diff === 0);
