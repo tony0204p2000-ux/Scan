@@ -133,6 +133,10 @@
   .vbar .tg{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;font-size:13px}
   .sheet.vpick .sf{flex-direction:column}
   .sheet.vpick .sf .btn{text-align:left}
+  .bc{display:flex;gap:8px;margin:12px 0 0}
+  .bc input{flex:1;min-width:0;font:inherit;font-size:15px;padding:9px 10px;border:1px solid var(--line);border-radius:10px}
+  .bc .btn{padding:9px 14px;color:var(--danger)}
+  .clist{max-height:40vh;overflow:auto;margin-top:8px;font-family:Consolas,monospace;font-size:13px;line-height:1.7}
   /* ----- 視窗 ----- */
   .mask{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;display:none;align-items:flex-end;justify-content:center}
   .mask.on{display:flex}
@@ -176,6 +180,7 @@
   <label class="pick" for="fileInput">＋ 選擇加工單 txt / WF 出貨單 xlsx<small>可一次選多個檔案</small></label>
   <input id="fileInput" type="file" accept=".txt,.xlsx,.xlsm,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
   <div id="loadMsg" class="muted" style="color:var(--danger);font-size:13px;margin-top:6px"></div>
+  <div class="bc" id="bcBox" hidden><input id="bcInput" placeholder="批次取消整張工單：R026A00656 或 656" autocomplete="off" autocapitalize="characters"><button class="btn" id="bcBtn">取消</button></div>
   <div id="woList"></div>
 </section>
 
@@ -767,11 +772,27 @@ function vendorGroups(files){
 const vFiles = (files, key) => files.filter(f => gKey(f) === key);
 const fileSafe = s => String(s).replace(/[\\/:*?"<>|]/g, '_').slice(0, 40);
 /* 簡化清單工作表 */
+/* 同批號同刻號出現在不同工單（同一片 Wafer 供多張工單使用）→ 批號旁標 ★ */
+function sharedLots(files){
+  const m = new Map(), out = new Set();
+  files.forEach(f => f.records.forEach(r => { if(r.cancel) return;
+    r.wafers.forEach(w => splitSlots(w.slots).forEach(sl => { const k = String(r.lot).toUpperCase() + '|' + pad2(parseInt(sl,10));
+      if(!m.has(k)) m.set(k, new Set()); m.get(k).add(r.wo); })); }));
+  m.forEach((wos, k) => { if(wos.size > 1) out.add(k.split('|')[0]); });
+  // 回傳「哪些工單的哪個批號」要標星：該工單的刻號有任何一片與其他工單重疊
+  const star = new Set();
+  files.forEach(f => f.records.forEach(r => { if(r.cancel) return;
+    const lot = String(r.lot).toUpperCase();
+    if(r.wafers.some(w => splitSlots(w.slots).some(sl => (m.get(lot + '|' + pad2(parseInt(sl,10))) || new Set()).size > 1))) star.add(r.wo + '|' + lot); }));
+  return star;
+}
 function listSheet(files){
-  const rows = [['工單','料號','批號','領料廠','數量','Fab批號','刻號','廠商']];
+  const star = sharedLots(files);
+  const rows = [['工單','料號','批號','數量','Fab批號','刻號','廠商']];
   files.forEach(f => f.records.filter(r => !r.cancel).forEach(r =>
-    rows.push([r.wo, r.part, r.lot, r.plant, r.qty, fabText(r), slotText(r), vName(f)])));
-  return {name:'工單簡化', rows, widths:[18,14,10,10,8,14,24,16]};
+    rows.push([r.wo, r.part, r.lot + (star.has(r.wo + '|' + String(r.lot).toUpperCase()) ? ' ★' : ''), r.qty, fabText(r), slotText(r), vName(f)])));
+  if(star.size) rows.push([], ['★ 同批號同刻號出現在不同工單（同一片 Wafer 供多張工單使用），實物只有一份']);
+  return {name:'工單簡化', rows, widths:[18,14,12,8,14,24,16]};
 }
 function vendorsText(files){ return [...new Set(files.map(f => f.vendor).filter(Boolean))].join('、'); }
 function cancelledText(files){ const a = []; files.forEach(f => f.records.forEach(r => { if(r.cancel) a.push(r.wo); })); return a.join(', '); }
@@ -871,6 +892,28 @@ const RESULT_CSS = `
   details.fold .ft small{font-weight:400;color:var(--sub);margin-left:6px}
 `;
 (function(){ try{ const st = document.createElement('style'); st.textContent = RESULT_CSS; document.head.appendChild(st); }catch(e){} })();
+/* 某份清單（廠商＋日期）的工單完成進度：共幾筆、完成幾筆（該項次的刻號全部正確刷到才算完成） */
+function groupProgress(files, key, vBoxes){
+  const db = buildDb(vFiles(files, key)), scans = deriveScans(db, vBoxes || []);
+  const prog = orderProgress(db, scans);
+  return {total:prog.length, done:prog.filter(r => r.slots.length && r.done === r.slots.length).length, started:!!(vBoxes && vBoxes.length)};
+}
+function progText(p){ return p.total && p.done === p.total ? `${p.total}筆／全部完成 ✔` : `${p.total}筆／完成${p.done}筆`; }
+/* 批次取消：輸入工單號（R026A00656）或末三碼（656），取消該工單底下全部項次 */
+function findCancelTargets(files, text){
+  const tokens = String(text || '').split(/[,，\s]+/).map(t => t.trim().toUpperCase()).filter(Boolean);
+  const hits = [], nf = [], bad = [];
+  tokens.forEach(t => {
+    if(t.includes('-')){ bad.push(t); return; }
+    let hit = false;
+    files.forEach(f => f.records.forEach(r => {
+      const base = String(r.wo).toUpperCase().replace(/-\d+$/, '');
+      if(/^\d{3}$/.test(t) ? base.endsWith(t) : base === t){ hit = true; if(!r.cancel && !hits.some(h => h.r === r)) hits.push({r, f}); }
+    }));
+    if(!hit) nf.push(t);
+  });
+  return {hits, nf, bad};
+}
 function errNote(s){ return s.status === 'qty' ? s.note : (s.wo || ''); }
 
 /* 核對結果工作表；info = {handler, receiver, note} 點交資訊 */
@@ -939,14 +982,15 @@ function pickVendor(title, fn){
     const ds = gs.filter(g => g.vendor === v);
     if(ds.length === 1){ fn(ds[0].name); return; }
     setTimeout(() => openSheet('plain vpick', `${v}：要選哪一天的資料？`, '<div class="muted">請選擇出貨日期</div>',
-      ds.map(g => [`${g.date || '（無日期）'}（${g.active} 筆）${statusTail(g.name)}`, 'vbtn' + (g.name === curVendor ? ' primary' : ''), () => { setTimeout(() => fn(g.name), 0); }]).concat([['取消', '', null]])), 0);
+      ds.map(g => [`${g.date || '（無日期）'}（${progText(gprog(g.name))}）`, 'vbtn' + (g.name === curVendor ? ' primary' : ''), () => { setTimeout(() => fn(g.name), 0); }]).concat([['取消', '', null]])), 0);
   };
   if(vendors.length === 1){ pickDate(vendors[0]); return; }
   openSheet('plain vpick', title, '<div class="muted">請選擇廠商（各廠商的刷讀進度會分別保留）</div>',
-    vendors.map(v => { const ds = gs.filter(g => g.vendor === v), n = ds.reduce((a,g) => a + g.active, 0);
-      return [`${v}（${ds.length > 1 ? ds.length + ' 個日期，' : ''}${n} 筆）`, 'vbtn' + (curVendor.startsWith(v + '｜') ? ' primary' : ''), () => { setTimeout(() => pickDate(v), 0); }]; }).concat([['取消', '', null]]));
+    vendors.map(v => { const ds = gs.filter(g => g.vendor === v), ps = ds.map(g => gprog(g.name));
+      const p = {total:ps.reduce((a,x) => a + x.total, 0), done:ps.reduce((a,x) => a + x.done, 0)};
+      return [`${v}（${ds.length > 1 ? ds.length + ' 個日期・' : ''}${progText(p)}）`, 'vbtn' + (curVendor.startsWith(v + '｜') ? ' primary' : ''), () => { setTimeout(() => pickDate(v), 0); }]; }).concat([['取消', '', null]]));
 }
-function statusTail(key){ const st = vendorStatus(files, key, key === curVendor ? boxes : (scanStore[key] || {}).boxes); return st ? '　' + st.text : ''; }
+function gprog(key){ return groupProgress(files, key, key === curVendor ? boxes : (scanStore[key] || {}).boxes); }
 
 /* ---------- 畫面切換 ---------- */
 function go(s){
@@ -986,6 +1030,7 @@ function renderBottom(){
 /* ================= 1 工單 ================= */
 function renderLoad(){
   const el = $('woList');
+  $('bcBox').hidden = !files.length;
   if(!files.length){ el.innerHTML = '<div class="none">尚未載入工單</div>'; renderBottom(); return; }
   el.innerHTML = vendorGroups(files).map(g => `<div class="vcard">
     <div class="vhead"><div class="vname">${esc(g.vendor)}</div>
@@ -1001,6 +1046,17 @@ function renderLoad(){
       <button class="tg" data-f="${fi}" data-r="${ri}">${r.cancel?'恢復':'取消'}</button></div>`).join('')).join('')}</div>`).join('');
   renderBottom();
 }
+$('bcBtn').onclick = () => {
+  const {hits, nf, bad} = findCancelTargets(files, $('bcInput').value);
+  const msgs = [];
+  if(bad.length) msgs.push('只接受工單號或末三碼（單一項次請按該筆的「取消」）：' + bad.join(', '));
+  if(nf.length) msgs.push('找不到工單：' + nf.join(', '));
+  $('loadMsg').textContent = msgs.join('　');
+  if(!hits.length){ if(!msgs.length) $('loadMsg').textContent = '這些工單的項次都已取消'; return; }
+  openSheet('err', `⚠ 確認取消 ${hits.length} 個項次？`,
+    `<div class="muted">取消後不會出現在核對中，之後可按該筆的「恢復」還原</div><div class="clist">${hits.map(h => `<div>${esc(h.r.wo)}　${esc(h.r.lot)}　${esc(slotText(h.r))}<span class="muted">　${esc(vName(h.f))}</span></div>`).join('')}</div>`,
+    [['返回', '', null], ['確認取消', 'primary', () => { hits.forEach(h => h.r.cancel = true); $('bcInput').value = ''; setTimeout(dbChanged, 0); }]]);
+};
 $('woList').addEventListener('click', e => {
   const rv = e.target.closest('button[data-resv]');
   if(rv){ setVendor(rv.dataset.resv); go('result'); return; }
