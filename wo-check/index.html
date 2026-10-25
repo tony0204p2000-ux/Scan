@@ -137,6 +137,8 @@
   .bc input{flex:1;min-width:0;font:inherit;font-size:15px;padding:9px 10px;border:1px solid var(--line);border-radius:10px}
   .bc .btn{padding:9px 14px;color:var(--danger)}
   .clist{max-height:40vh;overflow:auto;margin-top:8px;font-family:Consolas,monospace;font-size:13px;line-height:1.7}
+  .row.voided span:first-child{color:#a0a7b0;text-decoration:line-through}
+  .vbtn-s{border:1px solid var(--line);background:#fff;border-radius:6px;padding:2px 8px;font-size:12px;color:var(--danger);margin-left:4px}
   /* ----- 視窗 ----- */
   .mask{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;display:none;align-items:flex-end;justify-content:center}
   .mask.on{display:flex}
@@ -177,8 +179,9 @@
 
 <!-- 1 工單 -->
 <section class="screen on" id="sc-load">
-  <label class="pick" for="fileInput">＋ 選擇加工單 txt / WF 出貨單 xlsx<small>可一次選多個檔案</small></label>
+  <label class="pick" for="fileInput">＋ 上傳委外加工送貨單-ZRSUB019<small>可一次選多個檔案</small></label>
   <input id="fileInput" type="file" accept=".txt,.xlsx,.xlsm,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
+  <div class="appVer" style="text-align:right;font-size:12px;color:#8c959f;margin:4px 2px 0"></div>
   <div id="loadMsg" class="muted" style="color:var(--danger);font-size:13px;margin-top:6px"></div>
   <div class="bc" id="bcBox" hidden><input id="bcInput" placeholder="批次取消整張工單：R026A00656 或 656" autocomplete="off" autocapitalize="characters"><button class="btn" id="bcBtn">取消</button></div>
   <div id="woList"></div>
@@ -511,24 +514,33 @@ function evaluate(db, scans, lot, slot){
 /* boxes：[{b, lot, slots:[...], qty, time}] —— 每次刷完一張顆標籤記一筆，刷讀明細由它推算 */
 function deriveScans(db, boxes){
   const scans = [];
-  boxes.forEach(bx => bx.slots.forEach(slot => {
+  boxes.forEach(bx => { if(bx.void) return; bx.slots.forEach(slot => {
     const ev = evaluate(db, scans, bx.lot, slot);
     let status = ev.status, dupOf = null;
     // 同一刻號出現在兩顆（不是整顆重刷）：每片刻號是唯一的，代表其中一顆標籤刻號錯誤
     if(status === 'dup'){ status = 'overlap'; const p = scans.find(x => x.lot === bx.lot && x.slot === slot && x.status === 'ok'); dupOf = p ? p.b : null; }
     scans.push({n:scans.length + 1, b:bx.b, lot:bx.lot, slot, status, dupOf, wo:ev.woText, part:ev.partText, time:bx.time});
-  }));
+  }); });
   return scans;
 }
 /* 刷完一顆時先分出「已刷過的正確 Wafer」（重複刷讀：只提醒、不記錄、不計入） */
 /* 整顆重刷：批號和刻號與先前某一顆完全相同，且那顆全部正確 → 只是刷了兩次，只提醒、不記錄 */
 function findRepeatBox(db, boxes, lot, slots){
   const key = [...slots].sort().join('/');
-  const prev = boxes.find(b => b.lot === lot && [...b.slots].sort().join('/') === key);
+  const prev = boxes.find(b => !b.void && b.lot === lot && [...b.slots].sort().join('/') === key);
   if(!prev) return null;
   const row = summarize(db, boxes).boxRows.find(r => r.b === prev.b);
   return row && !row.bad.length ? prev : null;
 }
+/* 重新分顆後重刷：同批號、刻號落在先前某顆「有錯誤」的範圍內（例：原本 1-25 有 21-25 多出，重新分成 1-20 再刷），
+   先前那顆自動作廢，由這次取代，不會再被判成刻號重複 */
+function findSuperseded(db, boxes, lot, slots){
+  const rows = summarize(db, boxes).boxRows;
+  return boxes.filter(b => !b.void && b.lot === lot && slots.every(sl => b.slots.includes(sl))
+    && (rows.find(r => r.b === b.b) || {bad:[]}).bad.length);
+}
+function voidBoxes(list, byB, why){ list.forEach(b => { b.void = true; b.voidBy = byB || null; b.voidWhy = why || ''; }); }
+const activeBoxes = boxes => boxes.filter(b => !b.void);
 function dupNotice(lot, slots, b){ return `重複刷讀：${lot}　刻號 ${compress(slots)} 與第 ${b} 顆完全相同，已刷過，不重複計算`; }
 function boxQtyBad(bx){ return false; }   // QTY 不刷，片數以刻號數計算
 function nowText(){ const d = new Date(); return pad2(d.getHours())+':'+pad2(d.getMinutes())+':'+pad2(d.getSeconds()); }
@@ -568,23 +580,30 @@ function summarize(db, boxes){
     if(!miss.length) return;
     const all = miss.length === r.slots.length, k = r.lot + '|' + miss.join(',') + '|' + all;
     if(missMap.has(k)) missMap.get(k).wo += ' / ' + r.wo;
-    else missMap.set(k, {wo:r.wo, part:r.part, lot:r.lot, fab:r.fab, slots:miss, all});
+    else missMap.set(k, {wo:r.wo, part:r.part, lot:r.lot, fab:r.fab, slots:miss, all, need:[...r.slots].sort()});
   });
   missing.push(...missMap.values());
   const errors = [];
   boxes.forEach(bx => {
+    if(bx.void) return;
     if(boxQtyBad(bx)) errors.push({b:bx.b, n:'', lot:bx.lot, slot:'', status:'qty', wo:'', part:'', time:bx.time,
       note:`QTY ${bx.qty}，WF ID ${bx.slots.length} 片`});
     scans.filter(s => s.b === bx.b && s.status !== 'ok' && s.status !== 'dup').forEach(s => errors.push(s));
   });
   const boxRows = boxes.map(bx => {
+    if(bx.void) return {...bx, ok:0, bad:[], qtyBad:false, parts:''};
     const ss = scans.filter(s => s.b === bx.b);
     return {...bx, ok:ss.filter(s => s.status === 'ok').length, bad:ss.filter(s => s.status !== 'ok'), qtyBad:boxQtyBad(bx),
       parts:[...new Set(ss.map(s => s.part).filter(Boolean))].join(' / ')};
   });
   const ok = okCount(scans);
   // 結算錯誤詳細清單（同批號同原因合併成一列）
-  const groupBy = (list, keyFn) => { const m = new Map(); list.forEach(x => { const k = keyFn(x); if(!m.has(k)) m.set(k, {...x, slots:[]}); m.get(k).slots.push(x.slot); }); return [...m.values()].map(g => ({...g, slots:[...new Set(g.slots)].sort()})); };
+  const groupBy = (list, keyFn) => { const m = new Map(); list.forEach(x => { const k = keyFn(x); if(!m.has(k)) m.set(k, {...x, slots:[], bs:[]}); m.get(k).slots.push(x.slot); m.get(k).bs.push(x.b); }); return [...m.values()].map(g => ({...g, slots:[...new Set(g.slots)].sort(), bs:[...new Set(g.bs)].sort((a,b) => a - b)})); };
+  // 各批號：工單實際需出刻號（有效工單）/ 已刷到正確刻號，給錯誤清單說明用
+  const lotNeed = new Map(), lotGot = new Map(), push = (m, k, v) => { if(!m.has(k)) m.set(k, new Set()); m.get(k).add(v); };
+  db.records.forEach(r => r.slots.forEach(sl => push(lotNeed, r.lot, sl)));
+  scans.forEach(s => { if(s.status === 'ok') push(lotGot, s.lot, s.slot); });
+  const asList = (m, k) => [...(m.get(k) || [])].sort();
   const issues = {
     nolot:  groupBy(scans.filter(s => s.status === 'nolot'), s => s.lot),
     extra:  groupBy(scans.filter(s => s.status === 'noslot' || s.status === 'cancelled'), s => s.status + '|' + s.lot + '|' + s.wo),
@@ -596,6 +615,8 @@ function summarize(db, boxes){
   // 同一片問題 Wafer 重複刷到只算一次
   const removed = new Set(scans.filter(s => REMOVE.includes(s.status)).map(s => s.lot + '|' + s.slot)).size;
   return {scans, total:countedCount(scans), ok, removed, issues, expected:db.expected, partRows, missing, errors, boxRows,
+          lotNeed:lot => asList(lotNeed, lot), lotGot:lot => asList(lotGot, lot),
+          cancelWo:lot => [...new Set((db.byLotCancel.get(lot) || []).map(r => r.wo))],
           complete: ok >= db.expected && db.expected > 0};
 }
 function orderProgress(db, scans){
@@ -805,17 +826,28 @@ function lotIssueText(p, sep){ return p.lots.map(L => `${L.lot}：${lotIssuePart
 function lotIssueHtml(p){
   return p.lots.map(L => `<div class="lotline"><b>${esc(L.lot)}</b>${L.missing.length ? ` <span class="minus">少 ${esc(compress(L.missing))}（${L.missing.length} 片）</span>` : ''}${L.extra.length ? ` <span class="plus">多 ${esc(compress(L.extra))}（${L.extra.length} 片，已取出）</span>` : ''}</div>`).join('');
 }
-/* 錯誤詳細清單：[標題, 說明, 列[]] */
+/* 錯誤詳細清單：[標題, 說明, 列[]]；每列 detail = [[類型, 文字], ...]，類型 plus 多 / minus 少 / need 應出 / info 其他 */
 function issueSections(sm){
-  const I = sm.issues;
+  const I = sm.issues, n = a => `${compress(a)}（${a.length} 片）`;
+  const boxOf = b => (sm.boxRows.find(r => r.b === b) || {slots:[]});
+  const labelLine = bs => ['info', '標籤刻號：' + bs.map(b => `第 ${b} 顆 ${compress(boxOf(b).slots)}`).join('；')];
+  const needLine = lot => { const a = sm.lotNeed(lot); return ['need', a.length ? '實際需出刻號：' + n(a) : '實際需出刻號：無（此批號沒有有效工單，不需出貨）']; };
+  const gotLine = lot => { const a = sm.lotGot(lot); return ['info', '已刷到正確刻號：' + (a.length ? n(a) : '無')]; };
   return [
-    {key:'nolot', title:'批號不在工單', note:'刷到時已要求取出', rows:I.nolot.map(g => ({lot:g.lot, part:'—', wo:'—', slots:g.slots}))},
-    {key:'overlap', title:'刻號重複（標籤異常）', note:'同一刻號出現在兩顆以上，其中有標籤刻號錯誤，請核對這些顆', rows:I.overlap.map(g => ({lot:g.lot, part:g.part, wo:`第 ${g.b} 顆與第 ${g.dupOf} 顆重複`, slots:g.slots}))},
-    {key:'extra', title:'刻號多了', note:'刷到時已要求取出', rows:I.extra.map(g => ({lot:g.lot, part:g.part, wo:g.status === 'cancelled' ? g.wo + '（已取消工單）' : g.wo, slots:g.slots}))},
-    {key:'short', title:'刻號少了', note:'工單上有，但該批號只刷到部分刻號', rows:I.short.map(m => ({lot:m.lot, part:m.part, wo:m.wo, slots:m.slots}))},
-    {key:'unscanned', title:'未刷讀', note:'整筆工單一片都沒刷到', rows:I.unscanned.map(m => ({lot:m.lot, part:m.part, wo:m.wo, slots:m.slots}))}
+    {key:'nolot', title:'批號不在工單', note:'刷到時已要求取出', rows:I.nolot.map(g => ({lot:g.lot, part:'—', wo:'—', slots:g.slots,
+      detail:[['plus', '多出刻號：' + n(g.slots)], ['need', '實際需出刻號：無（此批號不在本廠商工單內，不需出貨）'], labelLine(g.bs)]}))},
+    {key:'overlap', title:'刻號重複（標籤異常）', note:'同一刻號出現在兩顆以上，其中有標籤刻號錯誤，請核對這些顆', rows:I.overlap.map(g => ({lot:g.lot, part:g.part, wo:`第 ${g.b} 顆與第 ${g.dupOf} 顆重複`, slots:g.slots,
+      detail:[['plus', '重複刻號：' + n(g.slots)], labelLine([g.dupOf, g.b].sort((a,b) => a - b)), needLine(g.lot)]}))},
+    {key:'extra', title:'刻號多了', note:'刷到時已要求取出', rows:I.extra.map(g => ({lot:g.lot, part:g.part, wo:g.status === 'cancelled' ? g.wo + '（已取消工單）' : g.wo, slots:g.slots,
+      detail:[['plus', (g.status === 'cancelled' ? '多出刻號（屬已取消工單）：' : '多出刻號：') + n(g.slots)], needLine(g.lot), gotLine(g.lot), labelLine(g.bs)]}))},
+    {key:'short', title:'刻號少了', note:'工單上有，但該批號只刷到部分刻號', rows:I.short.map(m => ({lot:m.lot, part:m.part, wo:m.wo, slots:m.slots,
+      detail:[['minus', '缺少刻號：' + n(m.slots)], ['need', '實際需出刻號：' + n(m.need)], ['info', '已刷到：' + n(m.need.filter(x => !m.slots.includes(x)))]]}))},
+    {key:'unscanned', title:'未刷讀', note:'整筆工單一片都沒刷到', rows:I.unscanned.map(m => ({lot:m.lot, part:m.part, wo:m.wo, slots:m.slots,
+      detail:[['minus', '整筆未刷到，實際需出刻號：' + n(m.need)]]}))}
   ];
 }
+const detailHtml = d => d.map(([k, t]) => `<div class="dl d-${k}">${esc(t)}</div>`).join('');
+const detailText = d => d.map(x => x[1]).join('；');
 /* 刷完一顆有問題時的提醒視窗內容（兩版共用） */
 function boxAlert(bx, row){
   const rm = row.bad.filter(s => REMOVE.includes(s.status)), dup = row.bad.filter(s => s.status === 'dup');
@@ -855,7 +887,7 @@ function vendorStatus(files, v, vBoxes){
 }
 /* 結果頁最上方的大字結論（綠：相符；不符時 綠 正確 / 紅 錯誤 / 黃 未刷讀） */
 function verdictHtml(sm){
-  const okBox = sm.boxRows.filter(r => !r.bad.length).length, badBox = sm.boxRows.filter(r => r.bad.length).length;
+  const okBox = sm.boxRows.filter(r => !r.void && !r.bad.length).length, badBox = sm.boxRows.filter(r => !r.void && r.bad.length).length;
   const unscanned = sm.expected - sm.ok;
   const good = sm.complete && !sm.errors.length && sm.partRows.every(p => p.diff === 0);
   if(good) return `<div class="vd vd-ok"><div class="vt">✔ 核對相符</div><div class="vbig">正確 <b>${okBox}</b> 顆</div><div class="vsub">共 ${sm.total} 片 Wafer，與工單一致</div></div>`;
@@ -866,8 +898,11 @@ function verdictHtml(sm){
     <div class="vsub">實刷 ${sm.total} 片 / 應刷 ${sm.expected} 片${sm.removed ? `　已取出問題片 ${sm.removed} 片` : ''}</div></div>`;
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
-function foldHtml(title, inner, extraClass){
-  return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="pm"></span></summary>${inner}</details>`;
+/* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
+const APP_VER = 'V1.0';
+document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
+function foldHtml(title, inner, extraClass, actions){
+  return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
 }
 const RESULT_CSS = `
   .vd{border-radius:12px;padding:16px 18px;margin-bottom:14px;border:2px solid}
@@ -889,7 +924,11 @@ const RESULT_CSS = `
   details.fold > summary .pm::before{content:'+'}
   details.fold[open] > summary .pm::before{content:'−'}
   details.fold[open] > summary{border-bottom:1px solid var(--line)}
+  details.fold .fact{display:inline-flex;align-items:center;gap:8px}
+  details.fold .expbtn{border:1px solid var(--accent);background:#fff;color:var(--accent);border-radius:14px;padding:4px 12px;font-size:13px;font-weight:600;cursor:pointer}
   details.fold .ft small{font-weight:400;color:var(--sub);margin-left:6px}
+  .dl{line-height:1.55;font-size:13px} .dl.d-plus{color:#cf222e;font-weight:600} .dl.d-minus{color:#9a6700;font-weight:600}
+  .dl.d-need{color:#116329;font-weight:600} .dl.d-info{color:#57606a}
 `;
 (function(){ try{ const st = document.createElement('style'); st.textContent = RESULT_CSS; document.head.appendChild(st); }catch(e){} })();
 /* 某份清單（廠商＋日期）的工單完成進度：共幾筆、完成幾筆（該項次的刻號全部正確刷到才算完成） */
@@ -925,15 +964,15 @@ function resultSheets(db, boxes, files, info){
     ['未刷到片數', sm.expected - sm.ok], ['已取出問題片數', sm.removed], []);
   s1.push(['料號','應刷片數','實刷片數','差異','問題批號 / 刻號']);
   sm.partRows.forEach(p => s1.push([p.part, p.expected, p.actual, p.diff, p.lots.length ? lotIssueText(p) : '相符']));
-  const s2 = [['類別','批號','料號','工單','刻號','片數','說明']];
-  issueSections(sm).forEach(sec => sec.rows.forEach(r => s2.push([sec.title, r.lot, r.part, r.wo, compress(r.slots), r.slots.length, sec.note]))); 
+  const s2 = [['類別','批號','料號','工單','刻號','片數','詳細說明']];
+  issueSections(sm).forEach(sec => sec.rows.forEach(r => s2.push([sec.title, r.lot, r.part, r.wo, compress(r.slots), r.slots.length, detailText(r.detail)]))); 
   const s3 = [['第幾顆','時間','批號','刻號','片數','正確片數','異常片數','料號']];
   sm.boxRows.forEach(r => s3.push([r.b, r.time, r.lot, compress(r.slots), r.slots.length, r.ok, r.bad.length, r.parts]));
   const s4 = [['序號','第幾顆','時間','批號','刻號','工單','料號','結果']];
   sm.scans.forEach(s => s4.push([s.n, s.b, s.time, s.lot, s.slot, s.wo, s.part, STATUS_TEXT[s.status]]));
   return [
     {name:'核對結果', rows:s1, widths:[18,24,10,8,60]},
-    {name:'錯誤清單', rows:s2, widths:[14,10,14,26,24,6,30]},
+    {name:'錯誤清單', rows:s2, widths:[14,10,14,26,24,6,70]},
     {name:'刷讀順序', rows:s3, widths:[6,10,10,24,6,9,9,16]},
     {name:'刷讀明細', rows:s4, widths:[6,6,10,10,6,18,14,14]}
   ];
@@ -1347,13 +1386,16 @@ function commitBox(lot, slots){
   const rep = findRepeatBox(db, boxes, lot, slots);
   if(rep){ flashFrame('bad'); beep('warn'); setLast('warn', '⚠ ' + dupNotice(lot, slots, rep.b) + '，請直接刷下一顆'); renderScan(); return; }
   const bx = {b:boxes.length + 1, lot, slots, qty:null, time:nowText()};
+  const sup = findSuperseded(db, boxes, lot, slots);
+  if(sup.length) voidBoxes(sup, bx.b, '重新分顆後重刷');
+  const supTail = sup.length ? `（已取代第 ${sup.map(b => b.b).join('、')} 顆）` : '';
   boxes.push(bx);
   persist();
   const sm = summarize(db, boxes), {row, groups} = boxReport(sm, bx.b);
   renderScan();
   if(!row.bad.length && !row.qtyBad){
     flashFrame('hit'); beep('ok');
-    setLast('ok', (slots.length === 1 ? `✔ 第 ${bx.b} 顆　${lot}　此顆僅有 1 片，刻號為 ${slots[0]}，正確` : `✔ 第 ${bx.b} 顆　${lot}　刻號 ${compress(slots)}　${row.ok} 片正確`));
+    setLast('ok', (slots.length === 1 ? `✔ 第 ${bx.b} 顆　${lot}　此顆僅有 1 片，刻號為 ${slots[0]}，正確` : `✔ 第 ${bx.b} 顆　${lot}　刻號 ${compress(slots)}　${row.ok} 片正確`) + supTail);
     if(sm.complete && !completedShown){ completedShown = true; setTimeout(showComplete, 300); }
     return;
   }
@@ -1382,9 +1424,10 @@ function renderScan(){
   const prog = orderProgress(db, sm.scans);
   $('progSum').textContent = `${prog.filter(r => r.done === r.slots.length).length} / ${prog.length} 筆完成`;
   $('progList').innerHTML = prog.map(r => `<div class="row ${r.done===r.slots.length?'done':''}"><span>${esc(r.wo.replace(/^.*-(\d+)$/,'-$1'))}　${esc(r.part)}　${esc(r.lot)}</span><b>${r.done} / ${r.slots.length}</b></div>`).join('');
-  $('boxSum').textContent = `${boxes.length} 顆`;
+  $('boxSum').textContent = `${activeBoxes(boxes).length} 顆`;
   $('boxList').innerHTML = sm.boxRows.length ? sm.boxRows.slice().reverse().map(r =>
-    `<div class="row"><span>#${r.b}　${esc(r.lot)}　${esc(compress(r.slots))}</span>${!r.bad.length && !r.qtyBad ? `<span class="tag o">${r.ok} 片</span>` : `<span class="tag c">異常 ${r.bad.length}${r.qtyBad?'・QTY':''}</span>`}</div>`).join('')
+    r.void ? `<div class="row voided"><span>#${r.b}　${esc(r.lot)}　${esc(compress(r.slots))}</span><span class="tag">作廢</span></div>`
+    : `<div class="row"><span>#${r.b}　${esc(r.lot)}　${esc(compress(r.slots))}</span><span>${!r.bad.length ? `<span class="tag o">${r.ok} 片</span>` : `<span class="tag c">異常 ${r.bad.length}</span>`} <button class="vbtn-s" data-void="${r.b}">作廢</button></span></div>`).join('')
     : '<div class="row muted">尚未刷讀</div>';
   $('errSum').textContent = sm.errors.length ? `${sm.errors.length} 筆` : '無';
   $('errList').innerHTML = sm.errors.length ? sm.errors.slice().reverse().map(s =>
@@ -1404,7 +1447,7 @@ function closeSheet(){ $('mask').classList.remove('on'); modalOpen = false; cool
 function showComplete(){
   const sm = summarize(db, boxes);
   beep('done');
-  openSheet('ok', '✔ 全部 Wafer 已刷完', `<div>實刷 <span class="big">${sm.total}</span> 片（${boxes.length} 顆），應刷 ${sm.expected} 片</div><div>已取出問題片 ${sm.removed} 片</div>`,
+  openSheet('ok', '✔ 全部 Wafer 已刷完', `<div>實刷 <span class="big">${sm.total}</span> 片（${activeBoxes(boxes).length} 顆），應刷 ${sm.expected} 片</div><div>已取出問題片 ${sm.removed} 片</div>`,
     [['留在掃描', '', null], ['看結果', 'primary', () => { setTimeout(() => go('result'), 0); }]]);
 }
 /* 手動輸入：刻號可輸入 01/02/03 或 1-5,8 */
@@ -1431,9 +1474,16 @@ $('manualBtn').onclick = () => {
   setTimeout(() => $('mLot').focus(), 100);
 };
 $('switchV').onclick = () => pickVendor('切換到哪家廠商？', v => { setVendor(v); setLast('', `已切換到 ${v}`); renderScan(); });
+$('boxList').addEventListener('click', e => {
+  const v = e.target.closest('button[data-void]'); if(!v) return;
+  e.preventDefault();
+  const bx = boxes.find(b => b.b === +v.dataset.void); if(!bx) return;
+  openSheet('warn', `作廢第 ${bx.b} 顆？`, `<div class="big">${esc(bx.lot)}　${esc(compress(bx.slots))}</div><div>作廢後這顆的刷讀紀錄不再計算（重新分顆、標籤重貼後要重刷時使用）。</div>`,
+    [['返回', '', null], ['確認作廢', 'primary', () => { voidBoxes([bx], null, '手動作廢'); lastKey = ''; hold = null; completedShown = summarize(db, boxes).complete; persist(); setTimeout(renderScan, 0); setLast('', `已作廢第 ${bx.b} 顆，可以重新刷讀`); }]]);
+});
 $('undoBtn').onclick = () => {
   if(pending.lot || pending.wf){ pending = EMPTY(); setLast('', '已清除本顆'); }
-  else if(boxes.length){ const b = boxes.pop(); lastKey = ''; setLast('', `已復原第 ${b.b} 顆（${b.lot}　${compress(b.slots)}）`); completedShown = summarize(db, boxes).complete; }
+  else if(boxes.length){ const b = boxes.pop(); boxes.forEach(x => { if(x.voidBy === b.b){ x.void = false; x.voidBy = null; } }); lastKey = ''; setLast('', `已復原第 ${b.b} 顆（${b.lot}　${compress(b.slots)}）`); completedShown = summarize(db, boxes).complete; }
   persist(); renderScan();
 };
 $('optSound').checked = SOUND.sound; $('optVib').checked = SOUND.vibrate;
@@ -1442,6 +1492,25 @@ $('optVib').onchange = e => { SOUND.vibrate = e.target.checked; persist(); };
 $('optCam').onchange = e => { settings.cam = e.target.value; persist(); stopCam(); if(screen === 'scan') startCam(); };
 
 /* ================= 3 結果 ================= */
+/* 錯誤詳細清單匯出成 Excel：手機支援分享時直接開分享選單（Email / LINE…）寄回電腦，否則下載檔案 */
+async function exportErrors(){
+  const sm = summarize(db, boxes), secs = issueSections(sm), g = vendorGroups(files).find(x => x.name === curVendor) || {vendor:curVendor, date:''};
+  const rows = [['廠商', g.vendor], ['出貨日期', g.date || ''], ['匯出時間', new Date().toLocaleString('zh-TW', {hour12:false})],
+    ['實刷 / 應刷', `${sm.total} / ${sm.expected} 片（${activeBoxes(boxes).length} 顆）`], ['已取出問題片數', sm.removed], [],
+    ['類別','批號','料號','工單','刻號','片數','詳細說明']];
+  let n = 0;
+  secs.forEach(sec => sec.rows.forEach(r => { n++; rows.push([sec.title, r.lot, r.part, r.wo, compress(r.slots), r.slots.length, detailText(r.detail)]); }));
+  if(!n) rows.push(['沒有任何錯誤']);
+  const s2 = [['第幾顆','時間','批號','刻號','片數','結果']];
+  sm.boxRows.forEach(r => s2.push([r.b, r.time, r.lot, compress(r.slots), r.slots.length, r.void ? (r.voidBy ? `作廢（由第 ${r.voidBy} 顆取代）` : '作廢') : r.bad.length ? `異常 ${r.bad.length} 片` : '正確']));
+  const name = `錯誤清單_${fileSafe(curVendor).replace(/｜/g, "_")}_${stampText()}.xlsx`;
+  const blob = buildXlsx([{name:'錯誤清單', rows, widths:[14,12,14,24,22,6,70]}, {name:'刷讀順序', rows:s2, widths:[8,10,10,24,6,22]}]);
+  const file = new File([blob], name, {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  try{
+    if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:name}); return; }
+  }catch(e){ if(e && e.name === 'AbortError') return; }
+  downloadBlob(blob, name);
+}
 function renderResult(){
   document.querySelectorAll('.curV').forEach(e => e.textContent = labelOf(curVendor) || '—');
   const sm = summarize(db, boxes);
@@ -1452,12 +1521,13 @@ function renderResult(){
       <div class="b">應刷 ${p.expected}　實刷 ${p.actual}</div>${p.lots.length ? `<div class="lots">${lotIssueHtml(p)}</div>` : ''}</div>`).join(''))
   + foldHtml(`錯誤詳細清單<small>${secs.length ? secs.length + ' 類' : '無'}</small>`, secs.length ? secs.map(sec => `<div class="rrow ihead i-${sec.key}"><div class="a"><span>${sec.title}</span><span>${sec.rows.reduce((a,r) => a + r.slots.length, 0)} 片</span></div><div class="b">${sec.note}</div></div>`
         + sec.rows.map(r => `<div class="rrow"><div class="a"><span>${esc(r.lot)}</span><span>${r.slots.length} 片</span></div>
-          <div class="b">${esc(r.part)}　${esc(r.wo)}</div><div class="b">刻號 ${esc(compress(r.slots))}</div></div>`).join('')).join('')
-        : '<div class="none">沒有任何錯誤</div>')
-  + foldHtml(`刷讀順序<small>${boxes.length} 顆</small>`, sm.boxRows.length ? sm.boxRows.map(r => `<div class="rrow">
-      <div class="a"><span>#${r.b}　${esc(r.lot)}</span><span>${r.slots.length} 片${!r.bad.length ? '' : ` <span class="tag c">異常 ${r.bad.length}</span>`}</span></div>
+          <div class="b">${esc(r.part)}　${esc(r.wo)}</div><div class="b">${detailHtml(r.detail)}</div></div>`).join('')).join('')
+        : '<div class="none">沒有任何錯誤</div>', '', `<button class="expbtn" id="errExpBtn" type="button">匯出</button>`)
+  + foldHtml(`刷讀順序<small>${activeBoxes(boxes).length} 顆</small>`, sm.boxRows.length ? sm.boxRows.map(r => `<div class="rrow">
+      <div class="a"><span>#${r.b}　${esc(r.lot)}</span><span>${r.slots.length} 片${r.void ? ' <span class="tag">作廢</span>' : !r.bad.length ? '' : ` <span class="tag c">異常 ${r.bad.length}</span>`}</span></div>
       <div class="b">${r.time}　刻號 ${esc(compress(r.slots))}　${esc(r.parts)}</div></div>`).join('') : '<div class="none">尚未刷讀</div>')
   + `<button class="btn danger" id="resetBtn" style="width:100%;margin-top:4px">清除刷讀紀錄，重新核對</button>`;
+  $('errExpBtn').onclick = e => { e.preventDefault(); e.stopPropagation(); exportErrors(); };
   $('resetBtn').onclick = () => { if(confirm('清除所有刷讀紀錄重新核對？（工單保留）')){ boxes = []; pending = EMPTY(); lastKey=''; completedShown = false; persist(); renderResult(); } };
 }
 
