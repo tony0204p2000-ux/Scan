@@ -90,7 +90,7 @@
   .last.warn{background:var(--warn-weak);color:var(--warn)}
   .last.err{background:var(--danger-weak);color:var(--danger)}
   .tools{display:flex;gap:8px;margin-top:10px}
-  .tools .btn{flex:1;padding:9px 6px;font-size:14px}
+  .tools .btn{flex:1;padding:9px 4px;font-size:14px;white-space:nowrap}
   details.card{margin-top:10px}
   details.card summary{padding:11px 14px;font-weight:600;font-size:14px}
   .plist{padding:0 14px 10px}
@@ -212,7 +212,8 @@
   <div class="last" id="last">把標籤右側的「條碼 + QR Code」區塊放進框內，盡量填滿框</div>
   <div class="tools">
     <button class="btn" id="undoBtn">↶ 復原</button>
-    <button class="btn" id="manualBtn">⌨ 手動輸入</button>
+    <button class="btn" id="clearBtn" style="color:var(--danger)">🗑 清除</button>
+    <button class="btn" id="manualBtn">⌨ 手動</button>
     <button class="btn" id="pauseBtn">⏸ 暫停</button>
   </div>
   <details class="card"><summary>刷讀順序 <span class="muted" id="boxSum"></span></summary><div class="plist" id="boxList"></div></details>
@@ -899,7 +900,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V1.0';
+const APP_VER = 'V1.1';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -1140,7 +1141,7 @@ async function startCam(){
   if(stream){ paused = false; cam.classList.remove('pause'); loop(); return; }
   $('camMsg').style.display = 'flex'; $('camMsg').textContent = '相機啟動中…';
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
-    $('camMsg').innerHTML = '此瀏覽器無法使用相機<br>請用 https 網址開啟，或改用「手動輸入」'; return;
+    $('camMsg').innerHTML = '此瀏覽器無法使用相機<br>請用 https 網址開啟，或改用「手動」輸入'; return;
   }
   try{
     // 解析度越高，細小的 LOT NO 一維條碼越容易讀
@@ -1173,7 +1174,7 @@ async function startCam(){
     return;
   }
   if(!detector && !wasm && !zx) await initDecoder();
-  if(!detector && !wasm && !zx){ $('camMsg').innerHTML = '無法載入條碼辨識<br>請確認網路後重新整理，或改用「手動輸入」'; return; }
+  if(!detector && !wasm && !zx){ $('camMsg').innerHTML = '無法載入條碼辨識<br>請確認網路後重新整理，或改用「手動」輸入'; return; }
   $('camMsg').style.display = 'none';
   paused = false; cam.classList.remove('pause'); loop();
 }
@@ -1429,9 +1430,13 @@ function renderScan(){
     r.void ? `<div class="row voided"><span>#${r.b}　${esc(r.lot)}　${esc(compress(r.slots))}</span><span class="tag">作廢</span></div>`
     : `<div class="row"><span>#${r.b}　${esc(r.lot)}　${esc(compress(r.slots))}</span><span>${!r.bad.length ? `<span class="tag o">${r.ok} 片</span>` : `<span class="tag c">異常 ${r.bad.length}</span>`} <button class="vbtn-s" data-void="${r.b}">作廢</button></span></div>`).join('')
     : '<div class="row muted">尚未刷讀</div>';
-  $('errSum').textContent = sm.errors.length ? `${sm.errors.length} 筆` : '無';
-  $('errList').innerHTML = sm.errors.length ? sm.errors.slice().reverse().map(s =>
-    `<div class="row"><span>顆${s.b}　${esc(s.lot)}${s.slot ? ' - ' + esc(s.slot) : ''}${s.status === 'qty' ? '　' + esc(s.note) : ''}</span><span class="tag ${s.status==='dup'||s.status==='qty'?'w':'c'}">${STATUS_TEXT[s.status]}</span></div>`).join('')
+  // 錯誤紀錄統整：同一顆、同批號、同原因合併成一列，例如「顆1　QAH56　#06-10」
+  const eg = new Map();
+  sm.errors.forEach(s => { const k = s.b + '|' + s.lot + '|' + s.status; if(!eg.has(k)) eg.set(k, {b:s.b, lot:s.lot, status:s.status, slots:[]}); if(s.slot) eg.get(k).slots.push(s.slot); });
+  const egs = [...eg.values()];
+  $('errSum').textContent = egs.length ? `${egs.length} 筆（${sm.errors.length} 片）` : '無';
+  $('errList').innerHTML = egs.length ? egs.reverse().map(g =>
+    `<div class="row"><span>顆${g.b}　${esc(g.lot)}${g.slots.length ? '　#' + esc(compress([...new Set(g.slots)].sort())) : ''}</span><span class="tag ${g.status==='dup'?'w':'c'}">${STATUS_TEXT[g.status]}</span></div>`).join('')
     : '<div class="row muted">無</div>';
 }
 
@@ -1481,6 +1486,11 @@ $('boxList').addEventListener('click', e => {
   openSheet('warn', `作廢第 ${bx.b} 顆？`, `<div class="big">${esc(bx.lot)}　${esc(compress(bx.slots))}</div><div>作廢後這顆的刷讀紀錄不再計算（重新分顆、標籤重貼後要重刷時使用）。</div>`,
     [['返回', '', null], ['確認作廢', 'primary', () => { voidBoxes([bx], null, '手動作廢'); lastKey = ''; hold = null; completedShown = summarize(db, boxes).complete; persist(); setTimeout(renderScan, 0); setLast('', `已作廢第 ${bx.b} 顆，可以重新刷讀`); }]]);
 });
+$('clearBtn').onclick = () => {
+  if(!boxes.length && !pending.lot && !pending.wf){ setLast('', '目前沒有刷讀紀錄'); return; }
+  openSheet('warn', '清除此廠商刷讀紀錄？', `<div class="big">${esc(labelOf(curVendor))}</div><div>已刷 ${activeBoxes(boxes).length} 顆的紀錄會全部清除，要從第 1 顆重新刷讀（工單資料保留，其他廠商不受影響）。</div>`,
+    [['返回', '', null], ['確認清除', 'primary', () => { boxes = []; pending = EMPTY(); lastKey = ''; hold = null; completedShown = false; persist(); setTimeout(renderScan, 0); setLast('', `已清除 ${labelOf(curVendor)} 的刷讀紀錄，可以重新刷讀`); }]]);
+};
 $('undoBtn').onclick = () => {
   if(pending.lot || pending.wf){ pending = EMPTY(); setLast('', '已清除本顆'); }
   else if(boxes.length){ const b = boxes.pop(); boxes.forEach(x => { if(x.voidBy === b.b){ x.void = false; x.voidBy = null; } }); lastKey = ''; setLast('', `已復原第 ${b.b} 顆（${b.lot}　${compress(b.slots)}）`); completedShown = summarize(db, boxes).complete; }
