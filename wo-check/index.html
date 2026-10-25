@@ -467,7 +467,9 @@ function badCodeReason(v){
   if(/^\d+$/.test(v)) return +v > 25 ? `純數字 ${v}：不是批號（批號須英數混合），也不是刻號（01~25）` : '純數字：批號須英數混合';
   if(/[\/;,?]/.test(v)) return '刻號清單格式錯誤（只能是 01~25，以 / 分隔）';
   if(/[^A-Z0-9]/.test(v)) return `含符號或空白（${[...new Set(v.replace(/[A-Z0-9]/g,''))].join(' ')}）：批號只能是英文和數字`;
-  if(v.length !== 5) return `長度 ${v.length} 碼：批號須為 5 碼`;
+  if(v.length !== 5) return /^[A-Z0-9]+$/.test(v) && /[A-Z]/.test(v) && /\d/.test(v) && v.length <= 8
+    ? `長度 ${v.length} 碼：批號須為 5 碼英數字。可能刷到料號（ITEM NO / STOCK NO）條碼，請改刷 LOT NO 條碼`
+    : `長度 ${v.length} 碼：批號須為 5 碼`;
   if(/^[A-Z]+$/.test(v)) return '只有英文：批號須英數混合';
   return '不符批號格式';
 }
@@ -904,7 +906,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V1.4';
+const APP_VER = 'V1.6';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
