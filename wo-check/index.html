@@ -138,6 +138,8 @@
   .sheet.vpick .sf{flex-direction:column}
   .sheet.vpick .sf .btn{text-align:left}
   .bc{display:flex;gap:8px;margin:12px 0 0}
+  .bk{display:flex;gap:8px;margin:10px 0 0}
+  .bk .btn{flex:1;padding:9px 6px;font-size:14px;text-align:center;cursor:pointer}
   .bc input{flex:1;min-width:0;font:inherit;font-size:15px;padding:9px 10px;border:1px solid var(--line);border-radius:10px}
   .bc .btn{padding:9px 14px;color:var(--danger)}
   .clist{max-height:40vh;overflow:auto;margin-top:8px;font-family:Consolas,monospace;font-size:13px;line-height:1.7}
@@ -187,6 +189,8 @@
   <input id="fileInput" type="file" accept=".txt,.xlsx,.xlsm,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
   <div class="appVer" style="text-align:right;font-size:12px;color:#8c959f;margin:4px 2px 0"></div>
   <div id="loadMsg" class="muted" style="color:var(--danger);font-size:13px;margin-top:6px"></div>
+  <div class="bk"><button class="btn" id="bkSave" type="button">💾 備份進度</button><label class="btn" for="bkFile">📂 還原進度</label>
+    <input id="bkFile" type="file" accept=".json,application/json" hidden></div>
   <div class="bc" id="bcBox" hidden><input id="bcInput" placeholder="批次取消整張工單：R026A00656 或 656" autocomplete="off" autocapitalize="characters"><button class="btn" id="bcBtn">取消</button></div>
   <div id="woList"></div>
 </section>
@@ -906,7 +910,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V1.6';
+const APP_VER = 'V1.8';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -1512,6 +1516,40 @@ $('optCam').onchange = e => { settings.cam = e.target.value; persist(); stopCam(
 
 /* ================= 3 結果 ================= */
 /* 錯誤詳細清單匯出成 Excel：手機支援分享時直接開分享選單（Email / LINE…）寄回電腦，否則下載檔案 */
+/* ---------- 進度備份 / 還原：把工單＋各廠商刷讀紀錄存成 .json 檔，換手機或誤清除時可匯回 ---------- */
+async function shareOrDownload(blob, name, type){
+  const file = new File([blob], name, {type});
+  try{ if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:name}); return; } }
+  catch(e){ if(e && e.name === 'AbortError') return; }
+  downloadBlob(blob, name);
+}
+function progSummary(fs, store){
+  return vendorGroups(fs).filter(g => g.active).map(g => { const p = groupProgress(fs, g.name, (store[g.name] || {}).boxes);
+    const n = ((store[g.name] || {}).boxes || []).filter(b => !b.void).length; return {g, p, n}; });
+}
+$('bkSave').onclick = () => {
+  persist();
+  if(!files.length){ $('loadMsg').textContent = '目前沒有工單資料可以備份'; return; }
+  const d = new Date(), stamp = d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' + pad2(d.getHours()) + pad2(d.getMinutes());
+  const data = {app:'wo-check', kind:'progress', ver:APP_VER, time:d.toLocaleString('zh-TW', {hour12:false}), files, scanStore, curVendor};
+  shareOrDownload(new Blob([JSON.stringify(data)], {type:'application/json'}), `工單核對進度_${stamp}.json`, 'application/json');
+  $('loadMsg').textContent = '';
+};
+$('bkFile').onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ''; if(!f) return;
+  let d; try{ d = JSON.parse(await f.text()); }catch(err){ d = null; }
+  if(!d || d.app !== 'wo-check' || d.kind !== 'progress' || !Array.isArray(d.files)){ $('loadMsg').textContent = `「${f.name}」不是工單核對的進度備份檔`; return; }
+  const sum = progSummary(d.files, d.scanStore || {});
+  openSheet('warn', '還原這份進度備份？', `<div class="muted">備份時間：${esc(d.time || '')}（${esc(d.ver || '')}）</div>
+    <div class="clist">${sum.map(x => `<div>${esc(labelOf(x.g.name))}　${progText(x.p)}${x.n ? `・已刷 ${x.n} 顆` : ''}</div>`).join('')}</div>
+    <div style="margin-top:6px">還原後，手機上目前的工單與刷讀紀錄會被<b>備份內容取代</b>。</div>`,
+    [['返回', '', null], ['確認還原', 'primary', () => {
+      files = d.files; scanStore = d.scanStore || {}; curVendor = d.curVendor || '';
+      if(curVendor && !vendorGroups(files).some(g => g.name === curVendor)) curVendor = '';
+      loadVendor(); lastKey = ''; hold = null; persist();
+      setTimeout(() => { go('load'); const m = $('loadMsg'); m.style.color = 'var(--ok)'; m.textContent = `已還原進度（備份時間 ${d.time || ''}），可以按「開始掃描核對」繼續`; setTimeout(() => { m.style.color = ''; m.textContent = ''; }, 10000); }, 0);
+    }]]);
+};
 async function exportErrors(){
   const sm = summarize(db, boxes), secs = issueSections(sm), g = vendorGroups(files).find(x => x.name === curVendor) || {vendor:curVendor, date:''};
   const rows = [['廠商', g.vendor], ['出貨日期', g.date || ''], ['匯出時間', new Date().toLocaleString('zh-TW', {hour12:false})],
