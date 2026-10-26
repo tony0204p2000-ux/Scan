@@ -386,6 +386,7 @@ function parseShipXlsx(sheets, name){
   best.data.forEach(r => {
     if(up(get(r, '領料庫位')) !== 'WF' || up(get(r, '領料廠')) !== 'RT2'){ excluded++; return; }
     const out = outOf(normVendor(get(r, '供應商')), excelDate(get(r, '開單日期')));
+    const vc = String(get(r, '供應商代碼')).trim(); if(vc){ out.vcode = vc; VCODE[vKey(out.vendor)] = vc; }
     const item = String(get(r, '委外採購單項次')).trim().replace(/\.0+$/, '');
     const wid = get(r, '領料Wafer ID');
     const slots = (typeof wid === 'number' ? [wid] : String(wid).split(/[,，;\/\s]+/)).filter(x => x !== '' && !isNaN(parseInt(x, 10))).map(x => pad2(parseInt(x, 10)));
@@ -787,7 +788,18 @@ function normVendor(v){ v = String(v || '').trim(); return VENDOR_ALIAS_K[vKey(v
 const vName = f => normVendor(f.vendor) || '（未標示廠商）';
 /* 分組依據：廠商 + 出貨日期（加工單用列印日期、WF 出貨單用開單日期） */
 const gKey = f => vName(f) + '｜' + (f.printDate || '');
-const labelOf = key => String(key || '').replace('｜', '　');
+/* 供應商代碼：WF 出貨單有「供應商代碼」欄位，加工單 txt 沒有 → 用內建對照表＋上傳 Excel 時學到的代碼 */
+const VENDOR_CODE_BASE = {
+  '日月光半導體製造(股)公司高雄分公司':'P3001', '日月光半導體製造(股)公司中壢分公司':'P3022', '矽品精密工業股份有限公司':'P3005',
+  '超豐電子股份有限公司':'P3018', '甬矽(香港)科技有限公司':'P3052', '江蘇長電科技':'P3033', '矽格股份有限公司':'P3006',
+  '欣銓科技股份有限公司':'T3004', '寰邦科技股份有限公司':'T3001', '京元電子股份有限公司竹南分公司':'T3003',
+  '無錫偉測半導體有限公司':'T3017', 'Sigurd UTC Corporation':'T3009'
+};
+let VCODE = Object.fromEntries(Object.entries(VENDOR_CODE_BASE).map(([k, v]) => [vKey(k), v]));
+let SHOW_VCODE = false;   // 電腦版設為 true：顯示廠商名稱時加上（供應商代碼）
+const vCodeOf = v => VCODE[vKey(normVendor(v))] || '';
+const vDisp = v => { const c = SHOW_VCODE ? vCodeOf(v) : ''; return c ? `${v}（${c}）` : v; };
+const labelOf = key => { const s = String(key || ''), i = s.indexOf('｜'); return i < 0 ? vDisp(s) : vDisp(s.slice(0, i)) + '　' + s.slice(i + 1); };
 function vendorGroups(files){
   const m = new Map();
   files.forEach((f, fi) => {
@@ -822,11 +834,11 @@ function listSheet(files){
   const star = sharedLots(files);
   const rows = [['工單','料號','批號','數量','Fab批號','刻號','廠商']];
   files.forEach(f => f.records.filter(r => !r.cancel).forEach(r =>
-    rows.push([r.wo, r.part, r.lot + (star.has(r.wo + '|' + String(r.lot).toUpperCase()) ? ' ★' : ''), r.qty, fabText(r), slotText(r), vName(f)])));
+    rows.push([r.wo, r.part, r.lot + (star.has(r.wo + '|' + String(r.lot).toUpperCase()) ? ' ★' : ''), r.qty, fabText(r), slotText(r), vDisp(vName(f))])));
   if(star.size) rows.push([], ['★ 同批號同刻號出現在不同工單（同一片 Wafer 供多張工單使用），實物只有一份']);
   return {name:'工單簡化', rows, widths:[18,14,12,8,14,24,16]};
 }
-function vendorsText(files){ return [...new Set(files.map(f => f.vendor).filter(Boolean))].join('、'); }
+function vendorsText(files){ return [...new Set(files.map(f => f.vendor).filter(Boolean))].map(vDisp).join('、'); }
 function cancelledText(files){ const a = []; files.forEach(f => f.records.forEach(r => { if(r.cancel) a.push(r.wo); })); return a.join(', '); }
 /* 料號狀態文字，例：Q9GT4：少 03-25（23 片）；PBA67：少 20-23, 25（5 片）、多 24（1 片） */
 function lotIssueParts(L){
@@ -910,7 +922,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V1.8';
+const APP_VER = 'V2.2';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -1008,6 +1020,7 @@ function persist(){
 (function restore(){
   const s = loadState(KEY);
   if(s){ if(s.files) files = s.files; if(s.info) info = s.info; if(s.settings && s.settings.v === 2) Object.assign(settings, s.settings);
+    if(!settings.zm) settings.zoom = 0;   // 舊版自動放大存下的倍率不沿用，只保留使用者自己拉的倍率
     if(s.sound === false) SOUND.sound = false; if(s.vibrate === false) SOUND.vibrate = false;
     scanStore = s.scanStore || {}; curVendor = s.curVendor || '';
     if(s.boxes && !s.scanStore && files.length){ curVendor = gKey(files[0]); scanStore[curVendor] = {boxes:s.boxes}; } }
@@ -1208,16 +1221,8 @@ function stopCam(){
   clearTimeout(loopTimer); loopTimer = null;
   if(stream){ stream.getTracks().forEach(t => t.stop()); stream = null; track = null; }
 }
-$('zoom').addEventListener('input', async e => { settings.zoom = +e.target.value; persist(); try{ await track.applyConstraints({advanced:[{zoom:settings.zoom}]}); }catch(err){} });
+$('zoom').addEventListener('input', async e => { settings.zoom = +e.target.value; settings.zm = 1; persist(); try{ await track.applyConstraints({advanced:[{zoom:settings.zoom}]}); }catch(err){} });
 /* 自動放大：鏡頭數位變焦會用感光元件較高的解析度，比靠程式放大畫面清楚 */
-function autoZoom(){
-  if(!track || $('zoomBox').hidden) return false;
-  const z = $('zoom'), cur = +z.value, target = Math.min(+z.max, Math.max(cur, +z.min) * 1.6);
-  if(target <= cur + 0.05 || cur >= 2.5) return false;
-  z.value = target; settings.zoom = target; persist();
-  track.applyConstraints({advanced:[{zoom:target}]}).catch(() => {});
-  return true;
-}
 let torchOn = false;
 $('torchBtn').onclick = async e => { e.stopPropagation(); torchOn = !torchOn; try{ await track.applyConstraints({advanced:[{torch:torchOn}]}); }catch(err){} $('torchBtn').classList.toggle('on', torchOn); };
 
@@ -1363,8 +1368,8 @@ $('pauseBtn').onclick = () => cam.click();
 /* 框內可能同時有 STOCK NO、ITEM NO、LOT NO、QTY、QR Code，只保留 LOT NO 與 WF ID（QR Code） */
 function handleCodes(codes){
   const now = Date.now();
-  // 單獨讀到的值超過 6 秒未湊齊就作廢，避免和下一張標籤錯配
-  ['lot','wf'].forEach(k => { if(pending[k] && now - pending['t_' + k] > 6000) pending[k] = k === 'lot' ? '' : null; });
+  // 單獨讀到的值超過 0.6 秒沒有再出現在畫面中就作廢（標籤還在框內時每一格畫面都會重新讀到），避免和下一張標籤錯配
+  ['lot','wf'].forEach(k => { if(pending[k] && now - pending['t_' + k] > PEND_TTL) pending[k] = k === 'lot' ? '' : null; });
   let multi = false;
   if(codes.length){
     const got = {lot:new Set(), wf:new Map()};
@@ -1384,17 +1389,25 @@ function handleCodes(codes){
   // 只讀到 QR Code、一直讀不到 LOT NO：提示靠近
   if(pending.wf && !pending.lot && now - pending.t_wf > 1200 && now - lastHintAt > 2500){
     lastHintAt = now;
-    if(autoZoom()) setLast('warn', '已讀到刻號，LOT NO 條碼較細，已自動放大鏡頭，請保持對準');
-    else setLast('warn', '已讀到刻號（QR Code），LOT NO 條碼較細讀不到：請再靠近一點，讓條碼區填滿框');
+    setLast('warn', '已讀到刻號（QR Code），LOT NO 條碼較細讀不到：請再靠近一點讓條碼區填滿框，或拉 🔍 放大');
   }
   if(pending.lot && pending.wf){
     const key = pending.lot + '|' + pending.wf.join('/');
     if(key === lastKey){ pending = EMPTY(); renderPend(); return; }         // 同一張標籤還在畫面中
+    // 批號和上一顆相同、刻號不同：可能是上一張標籤的 LOT 條碼還在畫面邊緣，配到下一張的 QR Code。
+    // 先等 1.5 秒確認畫面中沒有出現別的批號，才判定（同批號分多顆的情況，等 1.5 秒後一樣會判定）
+    if(prevLot.lot === pending.lot && now - prevLot.t < 15000){
+      if(pairKey !== key){ pairKey = key; pairSince = now; setLast('', `批號 ${pending.lot} 與上一顆相同，確認是否為新的一顆…請保持對準`); }
+      if(now - pairSince < 1500){ renderPend(); return; }
+    }
+    pairKey = '';
     commitBox(pending.lot, pending.wf);
   } else if(codes.length) renderPend();
 }
+const PEND_TTL = 600;
+let pairKey = '', pairSince = 0, prevLot = {lot:'', t:0};
 function commitBox(lot, slots){
-  lastKey = lot + '|' + slots.join('/'); hold = {lot, wf:slots.join('/'), seen:Date.now()};
+  lastKey = lot + '|' + slots.join('/'); hold = {lot, wf:slots.join('/'), seen:Date.now()}; prevLot = {lot, t:Date.now()};
   pending = EMPTY(); coolUntil = Date.now() + 800;
   // 與先前某顆完全相同（批號、刻號都一樣）：只是刷了兩次 → 只提醒、不記錄、不用按確認
   const rep = findRepeatBox(db, boxes, lot, slots);
