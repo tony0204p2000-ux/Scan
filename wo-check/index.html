@@ -137,6 +137,10 @@
   .vbar .tg{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;font-size:13px}
   .sheet.vpick .sf{flex-direction:column}
   .sheet.vpick .sf .btn{text-align:left}
+  .sheet.vpick .sf .btn.vbtn{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px}
+  .vbtn .vcode{font-size:22px;letter-spacing:1px;font-family:Consolas,Menlo,monospace}
+  .vbtn .vnm{font-size:13px;opacity:.75;flex:1;min-width:0}
+  .vbtn small{font-size:12px;opacity:.75;flex-basis:100%}
   .bc{display:flex;gap:8px;margin:12px 0 0}
   .bk{display:flex;gap:8px;margin:10px 0 0}
   .bk .btn{flex:1;padding:9px 6px;font-size:14px;text-align:center;cursor:pointer}
@@ -922,7 +926,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V2.2';
+const APP_VER = 'V2.3';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -1013,8 +1017,13 @@ let files = [], boxes = [], pending = EMPTY(), db = buildDb([]);
 let info = {handler:'', receiver:'', note:''}, settings = {frame:'code', zoom:0, v:2};
 let screen = 'load', modalOpen = false, completedShown = false;
 
+const VCODE_KEY = 'wo_check_m_vcode';   // 上傳 Excel 時學到的供應商代碼
+SHOW_VCODE = true;
+(function(){ const m = loadState(VCODE_KEY); if(m) Object.assign(VCODE, m); })();
 function persist(){
   if(curVendor) scanStore[curVendor] = {boxes};
+  files.forEach(f => { if(f.vcode) VCODE[vKey(normVendor(f.vendor))] = f.vcode; });
+  saveState(VCODE_KEY, VCODE);
   saveState(KEY, {files, scanStore, curVendor, info, settings, sound:SOUND.sound, vibrate:SOUND.vibrate});
 }
 (function restore(){
@@ -1044,14 +1053,15 @@ function pickVendor(title, fn){
   const pickDate = v => {
     const ds = gs.filter(g => g.vendor === v);
     if(ds.length === 1){ fn(ds[0].name); return; }
-    setTimeout(() => openSheet('plain vpick', `${v}：要選哪一天的資料？`, '<div class="muted">請選擇出貨日期</div>',
+    setTimeout(() => openSheet('plain vpick', `${vDisp(v)}：要選哪一天的資料？`, '<div class="muted">請選擇出貨日期</div>',
       ds.map(g => [`${g.date || '（無日期）'}（${progText(gprog(g.name))}）`, 'vbtn' + (g.name === curVendor ? ' primary' : ''), () => { setTimeout(() => fn(g.name), 0); }]).concat([['取消', '', null]])), 0);
   };
   if(vendors.length === 1){ pickDate(vendors[0]); return; }
   openSheet('plain vpick', title, '<div class="muted">請選擇廠商（各廠商的刷讀進度會分別保留）</div>',
     vendors.map(v => { const ds = gs.filter(g => g.vendor === v), ps = ds.map(g => gprog(g.name));
       const p = {total:ps.reduce((a,x) => a + x.total, 0), done:ps.reduce((a,x) => a + x.done, 0)};
-      return [`${v}（${ds.length > 1 ? ds.length + ' 個日期・' : ''}${progText(p)}）`, 'vbtn' + (curVendor.startsWith(v + '｜') ? ' primary' : ''), () => { setTimeout(() => pickDate(v), 0); }]; }).concat([['取消', '', null]]));
+      const code = vCodeOf(v);
+      return [{html:`${code ? `<b class="vcode">${esc(code)}</b>` : ''}<span class="vnm">${esc(v)}</span><small>${ds.length > 1 ? ds.length + ' 個日期・' : ''}${progText(p)}</small>`}, 'vbtn' + (curVendor.startsWith(v + '｜') ? ' primary' : ''), () => { setTimeout(() => pickDate(v), 0); }]; }).concat([['取消', '', null]]));
 }
 function gprog(key){ return groupProgress(files, key, key === curVendor ? boxes : (scanStore[key] || {}).boxes); }
 
@@ -1097,7 +1107,7 @@ function renderLoad(){
   $('bcBox').hidden = !files.length;
   if(!files.length){ el.innerHTML = '<div class="none">尚未載入工單</div>'; renderBottom(); return; }
   el.innerHTML = vendorGroups(files).map(g => `<div class="vcard${openV.has(g.name) ? ' open' : ''}">
-    <div class="vhead" data-tog="${esc(g.name)}"><div class="vname"><span>${esc(g.vendor)}</span><button class="vpm" type="button" data-tog="${esc(g.name)}">${openV.has(g.name) ? '收合' : '展開'}</button></div>
+    <div class="vhead" data-tog="${esc(g.name)}"><div class="vname"><span>${esc(vDisp(g.vendor))}</span><button class="vpm" type="button" data-tog="${esc(g.name)}">${openV.has(g.name) ? '收合' : '展開'}</button></div>
       <div class="vmeta">出貨日期 <b>${esc(g.date || '—')}</b>　${esc([...g.kinds].join('、'))}　有效 <b>${g.active}</b> / ${g.total} 筆</div>
       <button class="tg" data-delv="${esc(g.name)}">移除</button>
       ${(() => { const st = vendorStatus(files, g.name, g.name === curVendor ? boxes : (scanStore[g.name] || {}).boxes);
@@ -1470,7 +1480,7 @@ function renderScan(){
 function openSheet(kind, title, body, buttons){
   modalOpen = true;
   $('sheet').className = 'sheet ' + kind; $('sTitle').textContent = title; $('sBody').innerHTML = body; $('sFoot').innerHTML = '';
-  buttons.forEach(([t, cls, fn]) => { const b = document.createElement('button'); b.className = 'btn ' + cls; b.textContent = t;
+  buttons.forEach(([t, cls, fn]) => { const b = document.createElement('button'); b.className = 'btn ' + cls; if(t && t.html) b.innerHTML = t.html; else b.textContent = t;
     b.onclick = () => { if(fn && fn() === false) return; closeSheet(); }; $('sFoot').appendChild(b); });
   $('mask').classList.add('on');
 }
@@ -1504,7 +1514,7 @@ $('manualBtn').onclick = () => {
     }]]);
   setTimeout(() => $('mLot').focus(), 100);
 };
-$('switchV').onclick = () => pickVendor('切換到哪家廠商？', v => { setVendor(v); setLast('', `已切換到 ${v}`); renderScan(); });
+$('switchV').onclick = () => pickVendor('切換到哪家廠商？', v => { setVendor(v); setLast('', `已切換到 ${labelOf(v)}`); renderScan(); });
 $('boxList').addEventListener('click', e => {
   const v = e.target.closest('button[data-void]'); if(!v) return;
   e.preventDefault();
@@ -1565,7 +1575,7 @@ $('bkFile').onchange = async e => {
 };
 async function exportErrors(){
   const sm = summarize(db, boxes), secs = issueSections(sm), g = vendorGroups(files).find(x => x.name === curVendor) || {vendor:curVendor, date:''};
-  const rows = [['廠商', g.vendor], ['出貨日期', g.date || ''], ['匯出時間', new Date().toLocaleString('zh-TW', {hour12:false})],
+  const rows = [['廠商', vDisp(g.vendor)], ['出貨日期', g.date || ''], ['匯出時間', new Date().toLocaleString('zh-TW', {hour12:false})],
     ['實刷 / 應刷', `${sm.total} / ${sm.expected} 片（${activeBoxes(boxes).length} 顆）`], ['已取出問題片數', sm.removed], [],
     ['類別','批號','料號','工單','刻號','片數','詳細說明']];
   let n = 0;
