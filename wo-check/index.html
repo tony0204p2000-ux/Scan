@@ -137,10 +137,11 @@
   .vbar .tg{border:1px solid var(--line);background:#fff;border-radius:8px;padding:5px 10px;font-size:13px}
   .sheet.vpick .sf{flex-direction:column}
   .sheet.vpick .sf .btn{text-align:left}
-  .sheet.vpick .sf .btn.vbtn{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px}
+  .sheet.vpick .sf .btn.vbtn{display:flex;align-items:center;gap:10px;padding:9px 14px}
   .vbtn .vcode{font-size:22px;letter-spacing:1px;font-family:Consolas,Menlo,monospace}
-  .vbtn .vnm{font-size:13px;opacity:.75;flex:1;min-width:0}
-  .vbtn small{font-size:12px;opacity:.75;flex-basis:100%}
+  .vbtn .vnm{font-size:15px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .vbtn small{font-size:13px;opacity:.75;margin-left:auto;white-space:nowrap}
+  .sheet.vpick{max-height:92vh;display:flex;flex-direction:column} .sheet.vpick .sf{overflow-y:auto}
   .bc{display:flex;gap:8px;margin:12px 0 0}
   .bk{display:flex;gap:8px;margin:10px 0 0}
   .bk .btn{flex:1;padding:9px 6px;font-size:14px;text-align:center;cursor:pointer}
@@ -201,7 +202,7 @@
 
 <!-- 2 掃描 -->
 <section class="screen" id="sc-scan">
-  <div class="vbar">核對廠商：<b class="curV"></b><button class="tg" id="switchV">切換</button></div>
+  <div class="vbar">核對廠商：<b class="curV curCode"></b><button class="tg" id="switchV">切換</button></div>
   <div class="cam" id="cam">
     <video id="video" playsinline muted></video>
     <div class="frame"></div>
@@ -926,7 +927,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V2.3';
+const APP_VER = 'V2.5';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -1061,8 +1062,11 @@ function pickVendor(title, fn){
     vendors.map(v => { const ds = gs.filter(g => g.vendor === v), ps = ds.map(g => gprog(g.name));
       const p = {total:ps.reduce((a,x) => a + x.total, 0), done:ps.reduce((a,x) => a + x.done, 0)};
       const code = vCodeOf(v);
-      return [{html:`${code ? `<b class="vcode">${esc(code)}</b>` : ''}<span class="vnm">${esc(v)}</span><small>${ds.length > 1 ? ds.length + ' 個日期・' : ''}${progText(p)}</small>`}, 'vbtn' + (curVendor.startsWith(v + '｜') ? ' primary' : ''), () => { setTimeout(() => pickDate(v), 0); }]; }).concat([['取消', '', null]]));
+      return [{html:`${code ? `<b class="vcode">${esc(code)}</b>` : `<span class="vnm">${esc(v)}</span>`}<small>${ds.length > 1 ? ds.length + ' 個日期・' : ''}${progText(p)}</small>`}, 'vbtn' + (curVendor.startsWith(v + '｜') ? ' primary' : ''), () => { setTimeout(() => pickDate(v), 0); }]; }).concat([['取消', '', null]]));
 }
+/* 掃描頁空間小：廠商用供應商代碼＋日期顯示（標籤上也印有代碼），查不到代碼才顯示名稱 */
+function codeLabel(key){ const s = String(key || ''), i = s.indexOf('｜'), v = i < 0 ? s : s.slice(0, i), c = vCodeOf(v);
+  return !s ? '' : c ? c + (i < 0 ? '' : '　' + s.slice(i + 1)) : labelOf(s); }
 function gprog(key){ return groupProgress(files, key, key === curVendor ? boxes : (scanStore[key] || {}).boxes); }
 
 /* ---------- 畫面切換 ---------- */
@@ -1454,6 +1458,7 @@ function renderPend(){
 }
 function renderScan(){
   document.querySelectorAll('.curV').forEach(e => e.textContent = labelOf(curVendor) || '—');
+  document.querySelectorAll('.curCode').forEach(e => { e.textContent = codeLabel(curVendor) || '—'; e.title = labelOf(curVendor); });
   const sm = summarize(db, boxes);
   $('pNum').innerHTML = `${sm.ok} <small>/ ${sm.expected}</small>`;
   $('pBar').style.width = (sm.expected ? sm.ok / sm.expected * 100 : 0) + '%';
@@ -1514,7 +1519,7 @@ $('manualBtn').onclick = () => {
     }]]);
   setTimeout(() => $('mLot').focus(), 100);
 };
-$('switchV').onclick = () => pickVendor('切換到哪家廠商？', v => { setVendor(v); setLast('', `已切換到 ${labelOf(v)}`); renderScan(); });
+$('switchV').onclick = () => pickVendor('切換到哪家廠商？', v => { setVendor(v); setLast('', `已切換到 ${codeLabel(v)}`); renderScan(); });
 $('boxList').addEventListener('click', e => {
   const v = e.target.closest('button[data-void]'); if(!v) return;
   e.preventDefault();
@@ -1593,6 +1598,7 @@ async function exportErrors(){
 }
 function renderResult(){
   document.querySelectorAll('.curV').forEach(e => e.textContent = labelOf(curVendor) || '—');
+  document.querySelectorAll('.curCode').forEach(e => { e.textContent = codeLabel(curVendor) || '—'; e.title = labelOf(curVendor); });
   const sm = summarize(db, boxes);
   const secs = issueSections(sm).filter(x => x.rows.length);
   $('resContent').innerHTML = verdictHtml(sm)
