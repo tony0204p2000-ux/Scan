@@ -271,7 +271,7 @@ function cut(row, span){ return span ? row.substring(span[0], span[1]).trim() : 
 function parseWorkOrder(text, name){
   const lines = text.split(/\r?\n/);
   const out = {name, vendor:'', printDate:'', records:[]};
-  let spans = null, cur = null;
+  let spans = null, cur = null; const items = [];
   for(let i=0;i<lines.length;i++){
     const line = lines[i]; let m;
     if(!out.vendor && (m = line.match(/^\s*廠\s*商\s*[:：]\s*(.+?)\s*$/))) { out.vendor = normVendor(m[1]); continue; }
@@ -279,34 +279,48 @@ function parseWorkOrder(text, name){
     if(/^-+(\s+-+){3,}\s*$/.test(line) && i>0 && /工單/.test(lines[i-1]) && /料號/.test(lines[i-1])){
       spans = sepSpans(line); continue;
     }
-    if(spans && /^\S+-\d+\s/.test(line)){
+    // 工單行：「R026A00682-5   料號 …」；注意元件料號也可能是 xxx-5 開頭（例如 W981616JG-5 Fab批號2: …），有冒號的不是工單行
+    if(spans && /^\S+-\d+\s/.test(line) && !/[:：]/.test(line)){
       const r1 = line, r2 = lines[i+1] || '';
-      cur = { wo:cut(r1,spans[0]), part:cut(r2,spans[1]), lot:cut(r2,spans[2]),
-              plant:cut(r2,spans[3]), qty:cut(r2,spans[5]), wafers:[], cancel:false };
-      if(!cur.part || !cur.lot){
-        const t = r2.trim().split(/\s+/);
-        if(t[0] && t[0].startsWith('(')) t.shift();
-        cur.part = cur.part || t[0] || ''; cur.lot = cur.lot || t[1] || '';
-        cur.plant = cur.plant || t[2] || ''; cur.qty = cur.qty || t[3] || '';
-      }
-      const q = parseFloat(cur.qty); if(!isNaN(q)) cur.qty = q;
-      out.records.push(cur); i++; continue;
+      const comp = row => {
+        const c = {part:cut(row,spans[1]), lot:cut(row,spans[2]), plant:cut(row,spans[3]), qty:cut(row,spans[5]), fab:'', slots:''};
+        if(!c.part || !c.lot){
+          const t = row.trim().split(/\s+/);
+          if(t[0] && t[0].startsWith('(')) t.shift();
+          c.part = c.part || t[0] || ''; c.lot = c.lot || t[1] || ''; c.plant = c.plant || t[2] || ''; c.qty = c.qty || t[3] || '';
+        }
+        const q = parseFloat(c.qty); if(!isNaN(q)) c.qty = q;
+        return c;
+      };
+      // MCM（多晶片）工單：第 2 行之後還有其他元件行（前面空白、沒有冒號），每個元件各有自己的批號、領料廠
+      cur = {wo:cut(r1,spans[0]), comps:[comp(r2)]};
+      let j = i + 2;
+      while(j < lines.length && /^\s{10,}\S/.test(lines[j]) && !/[:：]/.test(lines[j])){ cur.comps.push(comp(lines[j])); j++; }
+      items.push(cur); i = j - 1; continue;
     }
     if(!cur) continue;
-    if((m = line.match(/^(.*?)\s*Fab批號\s*[:：]\s*(.*?)\s*$/))){
-      cur.wafers.push({die:m[1].trim(), fab:m[2], slots:''}); continue;
+    // Wafer 尺寸：單一晶片「Wafer尺寸: 12」；MCM「Wafer尺寸2: 12」（數字＝第幾個元件）
+    if((m = line.match(/^\s*Wafer尺寸(\d*)\s*[:：]\s*(\S*)/))){ const c = cur.comps[(+m[1] || 1) - 1]; if(c) c.wsize = m[2]; continue; }
+    // 單一晶片：「料號 Fab批號: …」「料號 刻號: …」；MCM：「料號 Fab批號1: …」「料號 刻號2: …」（數字＝第幾個元件）
+    if((m = line.match(/^(.*?)\s*Fab批號(\d*)\s*[:：]\s*(.*?)\s*$/))){
+      const c = cur.comps[(+m[2] || 1) - 1] || cur.comps.find(x => x.part === m[1].trim()); if(c) c.fab = m[3]; continue;
     }
-    if((m = line.match(/^(.*?)\s*刻號\s*[:：]\s*(.*?)\s*$/))){
-      const die = m[1].trim();
-      let w = cur.wafers.find(x => x.die === die && !x.slots) || cur.wafers[cur.wafers.length-1];
-      if(!w){ w = {die, fab:'', slots:''}; cur.wafers.push(w); }
-      w.slots = m[2];
+    if((m = line.match(/^(.*?)\s*刻號(\d*)\s*[:：]\s*(.*?)\s*$/))){
+      const c = cur.comps[(+m[2] || 1) - 1] || cur.comps.find(x => x.part === m[1].trim()); if(c) c.slots = m[3];
     }
   }
-  // 只保留領料廠為 RT2 的工單
-  const all = out.records.length;
-  out.records = out.records.filter(r => String(r.plant).trim().toUpperCase() === 'RT2');
-  out.excluded = all - out.records.length; out.kind = '加工單';
+  // 每個元件各自一筆；只保留領料廠為 RT2 的元件（MCM 工單可能只有其中一個元件是 RT2）
+  items.forEach(it => {
+    const mcm = it.comps.length > 1;
+    it.comps.forEach(c => {
+      if(String(c.plant).trim().toUpperCase() !== 'RT2') return;
+      // MCM 的數量是換算片數（例如 4.906），點交以實際 Wafer 片數（刻號數）為準
+      const n = splitSlots(c.slots).length, q = (mcm || (typeof c.qty === 'number' && !Number.isInteger(c.qty))) && n ? n : c.qty;
+      out.records.push({wo:it.wo, part:c.part, lot:c.lot, plant:'RT2', qty:q, qtyRaw:c.qty, mcm, wsize:c.wsize || '', wafers:[{die:c.part, fab:c.fab, slots:c.slots}], cancel:false});
+    });
+  });
+  out.excluded = items.filter(it => !it.comps.some(c => String(c.plant).trim().toUpperCase() === 'RT2')).length;
+  out.kind = '加工單';
   return out;
 }
 
@@ -398,7 +412,7 @@ function parseShipXlsx(sheets, name){
     const fab = String(get(r, '領料Fab批號')).trim();
     const q = parseFloat(get(r, '刻號數'));
     out.records.push({wo:String(get(r, '委外採購單號')).trim() + '-' + item, part:String(get(r, '領料料號')).trim(), lot:up(get(r, '領料批號')),
-      plant:'RT2', qty:isNaN(q) ? slots.length : q, wafers:[{die:'', fab, slots:slots.join(',')}], cancel:false});
+      plant:'RT2', qty:isNaN(q) ? slots.length : q, wsize:String(get(r, '領料Wafer size')).trim().replace(/\.0+$/, ''), wafers:[{die:'', fab, slots:slots.join(',')}], cancel:false});
   });
   const list = [...outs.values()];
   if(!list.length) return [{name, src:name, vendor:'', printDate:'', records:[], excluded, kind:'WF出貨單'}];
@@ -785,11 +799,16 @@ function stampText(){ const d = new Date(); return d.getFullYear()+pad2(d.getMon
 const VENDOR_ALIAS = {
   'JCET GROUP CO., LTD.': '江蘇長電科技',
   'JCET GROUP CO.,LTD.': '江蘇長電科技',
-  'JCET': '江蘇長電科技'
+  'JCET': '江蘇長電科技',
+  '四川#賽微電子有限公司': '四川啓賽微電子有限公司'     // 加工單 txt 的 Big5 沒有「啓」字，系統印成 #
 };
+/* 英文名稱開頭相同就視為同一家（WF 出貨單 Excel 用英文、加工單 txt 用中文） */
+const VENDOR_PREFIX = [['TONGFUMICROELECTRONICS', '通富微電子股份有限公司'], ['SILICONWARETECHNOLOGYSUZHOU', '矽品(蘇州)有限公司'],
+  ['JCETGROUP', '江蘇長電科技'], ['HUATIANTECHNOLOGYXI', '華天科技(西安)有限公司']];
 const vKey = v => String(v || '').toUpperCase().replace(/[\s.,，。()（）]/g, '');
 const VENDOR_ALIAS_K = Object.fromEntries(Object.entries(VENDOR_ALIAS).map(([k, v]) => [vKey(k), v]));
-function normVendor(v){ v = String(v || '').trim(); return VENDOR_ALIAS_K[vKey(v)] || v; }
+function normVendor(v){ v = String(v || '').trim(); const k = vKey(v); if(VENDOR_ALIAS_K[k]) return VENDOR_ALIAS_K[k];
+  const p = VENDOR_PREFIX.find(x => k.startsWith(x[0])); return p ? p[1] : v; }
 const vName = f => normVendor(f.vendor) || '（未標示廠商）';
 /* 分組依據：廠商 + 出貨日期（加工單用列印日期、WF 出貨單用開單日期） */
 const gKey = f => vName(f) + '｜' + (f.printDate || '');
@@ -798,7 +817,8 @@ const VENDOR_CODE_BASE = {
   '日月光半導體製造(股)公司高雄分公司':'P3001', '日月光半導體製造(股)公司中壢分公司':'P3022', '矽品精密工業股份有限公司':'P3005',
   '超豐電子股份有限公司':'P3018', '甬矽(香港)科技有限公司':'P3052', '江蘇長電科技':'P3033', '矽格股份有限公司':'P3006',
   '欣銓科技股份有限公司':'T3004', '寰邦科技股份有限公司':'T3001', '京元電子股份有限公司竹南分公司':'T3003',
-  '無錫偉測半導體有限公司':'T3017', 'Sigurd UTC Corporation':'T3009'
+  '無錫偉測半導體有限公司':'T3017', 'Sigurd UTC Corporation':'T3009',
+  '通富微電子股份有限公司':'P3034', '四川啓賽微電子有限公司':'P3048', '矽品(蘇州)有限公司':'P3040', 'ASE Electronics(M) Sdn Bhd':'P3051'
 };
 let VCODE = Object.fromEntries(Object.entries(VENDOR_CODE_BASE).map(([k, v]) => [vKey(k), v]));
 let SHOW_VCODE = false;   // 電腦版設為 true：顯示廠商名稱時加上（供應商代碼）
@@ -927,7 +947,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V2.5';
+const APP_VER = 'V2.7';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -1160,7 +1180,7 @@ $('fileInput').onchange = async e => {
     if(!ok.length) bad.push(f.name + (ps[0] && ps[0].error ? '（' + ps[0].error + '）' : ''));
     files = files.filter(x => (x.src || x.name) !== f.name).concat(ok);
   }
-  $('loadMsg').textContent = bad.length ? '找不到工單資料：' + bad.join(', ') : '';
+  $('loadMsg').textContent = bad.length ? '沒有領料廠 RT2 的 Wafer 工單（已略過）：' + bad.join(', ') : '';
   dbChanged();
 };
 
