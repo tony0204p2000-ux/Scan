@@ -154,9 +154,10 @@
   .qrov{position:fixed;inset:0;z-index:60;background:#000;display:flex;flex-direction:column}
   .qrov[hidden]{display:none}
   .qrov video{flex:1;width:100%;min-height:0;object-fit:cover}
-  .qrov .qrframe{position:absolute;left:50%;top:42%;width:70vw;height:70vw;max-width:420px;max-height:420px;transform:translate(-50%,-50%);border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 2000px rgba(0,0,0,.35);pointer-events:none}
+  .qrov .qrframe{position:absolute;left:50%;top:44%;width:92vw;height:92vw;max-width:640px;max-height:640px;transform:translate(-50%,-50%);border:3px solid #fff;border-radius:14px;box-shadow:0 0 0 2000px rgba(0,0,0,.35);pointer-events:none}
   .qrov .qrbar{background:#111;color:#fff;padding:14px 16px calc(14px + env(safe-area-inset-bottom));display:flex;gap:12px;align-items:center;font-size:15px}
   .qrov .qrbar div{flex:1} .qrov .qrbar .btn{background:#fff;color:#111}
+  body.qrbright .mask{background:#fff} body.qrbright .sheet{box-shadow:none}
   .qrshow{text-align:center} .qrshow svg{width:min(86vw,460px);height:auto;border:1px solid #ddd}
   .qrshow .qrnav{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-weight:700}
   .bk{display:flex;gap:8px;margin:10px 0 0}
@@ -213,10 +214,7 @@
   <input id="fileInput" type="file" accept=".txt,.xlsx,.xlsm,text/plain,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" multiple hidden>
   <div class="appVer" style="text-align:right;font-size:12px;color:#8c959f;margin:4px 2px 0"></div>
   <div id="loadMsg" class="muted" style="color:var(--danger);font-size:13px;margin-top:6px"></div>
-  <div class="bk"><button class="btn" id="bkSave" type="button">💾 備份進度</button><label class="btn" for="bkFile">📂 還原進度</label>
-    <input id="bkFile" type="file" accept=".json,application/json" hidden></div>
   <button class="btn primary retbtn" id="retBtnLoad" type="button">📤 回傳刷讀資料到電腦（QR Code）</button>
-  <div class="bc" id="bcBox" hidden><input id="bcInput" placeholder="批次取消整張工單：R026A00656 或 656" autocomplete="off" autocapitalize="characters"><button class="btn" id="bcBtn">取消</button></div>
   <div id="woList"></div>
 </section>
 
@@ -3268,7 +3266,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V3.0';
+const APP_VER = 'V3.3';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -3573,7 +3571,6 @@ function renderBottom(){
 const openV = new Set();   // 已展開明細的廠商卡片
 function renderLoad(){
   const el = $('woList');
-  $('bcBox').hidden = !files.length;
   if(!files.length){ el.innerHTML = '<div class="none">尚未載入工單</div>'; renderBottom(); return; }
   el.innerHTML = vendorGroups(files).map(g => `<div class="vcard${openV.has(g.name) ? ' open' : ''}">
     <div class="vhead" data-tog="${esc(g.name)}"><div class="vname"><span>${esc(vDisp(g.vendor))}</span><button class="vpm" type="button" data-tog="${esc(g.name)}">${openV.has(g.name) ? '收合' : '展開'}</button></div>
@@ -3585,21 +3582,9 @@ function renderLoad(){
       <div class="info"><div class="t1">${esc(r.wo)} ${r.cancel?'<span class="tag c">已取消</span>':''}${qtyMismatch(r)?'<span class="tag w">刻號數≠數量</span>':''}</div>
         <div class="t2">${esc(r.part)}　批號 <b style="color:var(--ink)">${esc(r.lot)}</b>　${esc(fabText(r))}</div>
         <div class="t3">刻號 ${esc(slotText(r))}</div></div>
-      <div class="qty">${esc(r.qty)}<small>片</small></div>
-      <button class="tg" data-f="${fi}" data-r="${ri}">${r.cancel?'恢復':'取消'}</button></div>`).join('')).join('')}</div></div>`).join('');
+      <div class="qty">${esc(r.qty)}<small>片</small></div></div>`).join('')).join('')}</div></div>`).join('');
   renderBottom();
 }
-$('bcBtn').onclick = () => {
-  const {hits, nf, bad} = findCancelTargets(files, $('bcInput').value);
-  const msgs = [];
-  if(bad.length) msgs.push('只接受工單號或末三碼（單一項次請按該筆的「取消」）：' + bad.join(', '));
-  if(nf.length) msgs.push('找不到工單：' + nf.join(', '));
-  $('loadMsg').textContent = msgs.join('　');
-  if(!hits.length){ if(!msgs.length) $('loadMsg').textContent = '這些工單的項次都已取消'; return; }
-  openSheet('err', `⚠ 確認取消 ${hits.length} 個項次？`,
-    `<div class="muted">取消後不會出現在核對中，之後可按該筆的「恢復」還原</div><div class="clist">${hits.map(h => `<div>${esc(h.r.wo)}　${esc(h.r.lot)}　${esc(slotText(h.r))}<span class="muted">　${esc(vName(h.f))}</span></div>`).join('')}</div>`,
-    [['返回', '', null], ['確認取消', 'primary', () => { hits.forEach(h => h.r.cancel = true); $('bcInput').value = ''; setTimeout(dbChanged, 0); }]]);
-};
 $('woList').addEventListener('click', e => {
   const tg = e.target.closest('[data-tog]');
   if(tg && !e.target.closest('button:not(.vpm)')){ const v = tg.dataset.tog; openV.has(v) ? openV.delete(v) : openV.add(v); renderLoad(); return; }
@@ -3607,8 +3592,7 @@ $('woList').addEventListener('click', e => {
   if(rv){ setVendor(rv.dataset.resv); go('result'); return; }
   const d = e.target.closest('button[data-delv]');
   if(d){ const v = d.dataset.delv; if(confirm(`移除「${labelOf(v)}」的所有工單與刷讀紀錄？`)){ files = files.filter(f => gKey(f) !== v); delete scanStore[v]; if(curVendor === v) curVendor = ''; dbChanged(); } return; }
-  const b = e.target.closest('button[data-f]'); if(!b) return;
-  const r = files[+b.dataset.f].records[+b.dataset.r]; r.cancel = !r.cancel; dbChanged();
+  return;   // 手機不再取消工單：工單以電腦端列印的清單為準
 });
 function dbChanged(){
   if(curVendor){ scanStore[curVendor] = {boxes}; if(!vendorGroups(files).some(g => g.name === curVendor)) curVendor = ''; }
@@ -3948,13 +3932,26 @@ function renderScan(){
 
 /* ---------- 視窗 ---------- */
 function openSheet(kind, title, body, buttons){
+  if(sheetOnClose){ const f = sheetOnClose; sheetOnClose = null; f(); }
   modalOpen = true;
   $('sheet').className = 'sheet ' + kind; $('sTitle').textContent = title; $('sBody').innerHTML = body; $('sFoot').innerHTML = '';
   buttons.forEach(([t, cls, fn]) => { const b = document.createElement('button'); b.className = 'btn ' + cls; if(t && t.html) b.innerHTML = t.html; else b.textContent = t;
     b.onclick = () => { if(fn && fn() === false) return; closeSheet(); }; $('sFoot').appendChild(b); });
   $('mask').classList.add('on');
 }
-function closeSheet(){ $('mask').classList.remove('on'); modalOpen = false; coolUntil = Date.now() + 600; }
+function closeSheet(){ $('mask').classList.remove('on'); modalOpen = false; coolUntil = Date.now() + 600; if(sheetOnClose){ const f = sheetOnClose; sheetOnClose = null; f(); } }
+/* 顯示回傳 QR Code 時：畫面改成全白最亮、保持螢幕不關閉；關閉時恢復
+   （瀏覽器不允許網頁直接調整手機系統亮度，所以用全白畫面＋防休眠達到最亮效果） */
+let sheetOnClose = null, qrWake = null;
+async function brightOn(){
+  document.body.classList.add('qrbright');
+  try{ if(navigator.wakeLock) qrWake = await navigator.wakeLock.request('screen'); }catch(e){}
+  sheetOnClose = brightOff;
+}
+function brightOff(){
+  document.body.classList.remove('qrbright');
+  try{ if(qrWake) qrWake.release(); }catch(e){} qrWake = null;
+}
 function showComplete(){
   const sm = summarize(db, boxes);
   beep('done');
@@ -4009,40 +4006,6 @@ $('optCam').onchange = e => { settings.cam = e.target.value; persist(); stopCam(
 
 /* ================= 3 結果 ================= */
 /* 錯誤詳細清單匯出成 Excel：手機支援分享時直接開分享選單（Email / LINE…）寄回電腦，否則下載檔案 */
-/* ---------- 進度備份 / 還原：把工單＋各廠商刷讀紀錄存成 .json 檔，換手機或誤清除時可匯回 ---------- */
-async function shareOrDownload(blob, name, type){
-  const file = new File([blob], name, {type});
-  try{ if(navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file], title:name}); return; } }
-  catch(e){ if(e && e.name === 'AbortError') return; }
-  downloadBlob(blob, name);
-}
-function progSummary(fs, store){
-  return vendorGroups(fs).filter(g => g.active).map(g => { const p = groupProgress(fs, g.name, (store[g.name] || {}).boxes);
-    const n = ((store[g.name] || {}).boxes || []).filter(b => !b.void).length; return {g, p, n}; });
-}
-$('bkSave').onclick = () => {
-  persist();
-  if(!files.length){ $('loadMsg').textContent = '目前沒有工單資料可以備份'; return; }
-  const d = new Date(), stamp = d.getFullYear() + pad2(d.getMonth() + 1) + pad2(d.getDate()) + '_' + pad2(d.getHours()) + pad2(d.getMinutes());
-  const data = {app:'wo-check', kind:'progress', ver:APP_VER, time:d.toLocaleString('zh-TW', {hour12:false}), files, scanStore, curVendor};
-  shareOrDownload(new Blob([JSON.stringify(data)], {type:'application/json'}), `工單核對進度_${stamp}.json`, 'application/json');
-  $('loadMsg').textContent = '';
-};
-$('bkFile').onchange = async e => {
-  const f = e.target.files[0]; e.target.value = ''; if(!f) return;
-  let d; try{ d = JSON.parse(await f.text()); }catch(err){ d = null; }
-  if(!d || d.app !== 'wo-check' || d.kind !== 'progress' || !Array.isArray(d.files)){ $('loadMsg').textContent = `「${f.name}」不是工單核對的進度備份檔`; return; }
-  const sum = progSummary(d.files, d.scanStore || {});
-  openSheet('warn', '還原這份進度備份？', `<div class="muted">備份時間：${esc(d.time || '')}（${esc(d.ver || '')}）</div>
-    <div class="clist">${sum.map(x => `<div>${esc(labelOf(x.g.name))}　${progText(x.p)}${x.n ? `・已刷 ${x.n} 顆` : ''}</div>`).join('')}</div>
-    <div style="margin-top:6px">還原後，手機上目前的工單與刷讀紀錄會被<b>備份內容取代</b>。</div>`,
-    [['返回', '', null], ['確認還原', 'primary', () => {
-      files = d.files; scanStore = d.scanStore || {}; curVendor = d.curVendor || '';
-      if(curVendor && !vendorGroups(files).some(g => g.name === curVendor)) curVendor = '';
-      loadVendor(); lastKey = ''; hold = null; persist();
-      setTimeout(() => { go('load'); const m = $('loadMsg'); m.style.color = 'var(--ok)'; m.textContent = `已還原進度（備份時間 ${d.time || ''}），可以按「開始掃描核對」繼續`; setTimeout(() => { m.style.color = ''; m.textContent = ''; }, 10000); }, 0);
-    }]]);
-};
 /* ---------- 點交清單 QR 載入：電腦列印的出貨單第一聯右上角 ---------- */
 let qrStream = null, qrTimer = null, qrLastGot = 0;
 const qrCol = qrCollector(), qrCv = document.createElement('canvas');
@@ -4086,6 +4049,11 @@ function importListQr(r){
   const f = listFromQr(r.header, r.lines), key = gKey(f), label = codeLabel(key);
   const done = clear => {
     if(clear){ delete scanStore[key]; if(curVendor === key){ boxes = []; completedShown = false; } }
+    else {
+      // 保留刷讀進度：上午的工單＋下午新清單合併（同工單同批號以新清單為準），已刷的顆才不會變成錯誤
+      const have = new Set(f.records.map(r => r.wo + '|' + String(r.lot).toUpperCase()));
+      files.filter(x => gKey(x) === key).forEach(x => x.records.forEach(r => { if(!have.has(r.wo + '|' + String(r.lot).toUpperCase())) f.records.push(r); }));
+    }
     files = files.filter(x => gKey(x) !== key).concat([f]);
     dbChanged(); setVendor(key); lastKey = ''; hold = null;
     go('scan'); setLast('ok', `✔ 已載入 ${label}（${f.records.length} 筆，清單時間 ${f.qrTime}），可以開始刷讀`);
@@ -4095,8 +4063,8 @@ function importListQr(r){
   const n = ((key === curVendor ? boxes : (scanStore[key] || {}).boxes) || []).filter(b => !b.void).length;
   openSheet('warn vpick', '這家廠商的資料已經在手機上', `<div class="big">${esc(label)}</div>
     <div>手機上已有這家的工單${n ? `，並已刷讀 <b>${n}</b> 顆` : ''}。這次掃到的清單時間：${esc(f.qrTime)}（${f.records.length} 筆）。</div>`,
-    [['更新工單資料，保留刷讀進度', 'primary', () => { setTimeout(() => done(false), 0); }],
-     ['更新工單資料，清除刷讀紀錄重新核對', '', () => { setTimeout(() => done(true), 0); }],
+    [['合併新工單，保留刷讀進度', 'primary', () => { setTimeout(() => done(false), 0); }],
+     ['只用新工單，清除刷讀紀錄重新核對', '', () => { setTimeout(() => done(true), 0); }],
      ['取消', '', null]]);
 }
 /* ---------- 刷讀人員工號：輸入一次後記在瀏覽器，回傳資料時一併帶上 ---------- */
@@ -4125,10 +4093,11 @@ async function showReturnQr(){
   const body = () => `<div class="qrshow">${qrSvg(q.texts[k])}
     <div class="qrnav"><span>${q.texts.length > 1 ? `第 ${k + 1} / ${q.texts.length} 張` : '共 1 張'}</span><span>工號 ${esc(getEmp())}</span></div>
     <div class="muted" style="margin-top:4px">${groups.map(g => esc(codeLabel(g.key)) + '（' + activeBoxes(g.boxes).length + ' 顆）').join('、')}</div>
-    <div class="muted" style="margin-top:6px">在電腦版按「📥 手機核對結果」，用條碼槍刷這個 QR Code${q.texts.length > 1 ? '，刷完按「下一張」' : ''}。螢幕亮度調高較好刷。</div></div>`;
+    <div class="muted" style="margin-top:6px">在電腦版按「📥 手機核對結果」，用條碼槍刷這個 QR Code${q.texts.length > 1 ? '，刷完按「下一張」' : ''}。</div></div>`;
   const btns = (q.texts.length > 1 ? [['上一張', '', () => { k = (k + q.texts.length - 1) % q.texts.length; $('sBody').innerHTML = body(); return false; }],
     ['下一張', 'primary', () => { k = (k + 1) % q.texts.length; $('sBody').innerHTML = body(); return false; }]] : []).concat([['關閉', q.texts.length > 1 ? '' : 'primary', null]]);
   openSheet('plain', `📤 回傳刷讀資料（${q.nV} 家廠商・${q.nB} 顆）`, body(), btns);
+  brightOn();
 }
 $('retBtnLoad').onclick = () => showReturnQr();
 /* ---------- 錯誤清單 QR：給電腦用條碼槍刷 ---------- */
@@ -4138,10 +4107,11 @@ async function showErrorQr(){
   let k = 0;
   const body = () => `<div class="qrshow">${qrSvg(q.texts[k])}
     <div class="qrnav">${q.texts.length > 1 ? `<span>第 ${k + 1} / ${q.texts.length} 張</span>` : `<span>${q.n ? q.n + ' 筆錯誤' : '核對相符'}</span>`}<span>${esc(codeLabel(curVendor))}</span></div>
-    <div class="muted" style="margin-top:6px">在電腦版按「📥 手機核對結果」，用條碼槍刷這個 QR Code${q.texts.length > 1 ? '，刷完按「下一張」' : ''}。螢幕亮度調高較好刷。</div></div>`;
+    <div class="muted" style="margin-top:6px">在電腦版按「📥 手機核對結果」，用條碼槍刷這個 QR Code${q.texts.length > 1 ? '，刷完按「下一張」' : ''}。</div></div>`;
   const btns = () => (q.texts.length > 1 ? [['上一張', '', () => { k = (k + q.texts.length - 1) % q.texts.length; $('sBody').innerHTML = body(); return false; }],
     ['下一張', 'primary', () => { k = (k + 1) % q.texts.length; $('sBody').innerHTML = body(); return false; }]] : []).concat([['關閉', q.texts.length > 1 ? '' : 'primary', null]]);
   openSheet('plain', '錯誤清單 QR Code（給電腦刷讀）', body(), btns());
+  brightOn();
 }
 async function exportErrors(){
   const sm = summarize(db, boxes), secs = issueSections(sm), g = vendorGroups(files).find(x => x.name === curVendor) || {vendor:curVendor, date:''};
