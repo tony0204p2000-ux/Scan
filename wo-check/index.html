@@ -158,7 +158,9 @@
   .qrov .qrbar{background:#111;color:#fff;padding:14px 16px calc(14px + env(safe-area-inset-bottom));display:flex;gap:12px;align-items:center;font-size:15px}
   .qrov .qrbar div{flex:1} .qrov .qrbar .btn{background:#fff;color:#111}
   body.qrbright .mask{background:#fff} body.qrbright .sheet{box-shadow:none}
-  .qrshow{text-align:center} .qrshow svg{width:min(86vw,460px);height:auto;border:1px solid #ddd}
+  .multiwarn{background:#fff8c5;border:2px solid #d4a72c;color:#7d4e00;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-weight:700;font-size:15px} .multiwarn b{color:var(--danger);font-size:18px}
+  .multistop{background:#ffebe9;border:2px solid var(--danger);color:var(--danger);border-radius:10px;padding:8px 10px;margin-bottom:8px;font-weight:700}
+  .qrshow{text-align:center} .qrshow svg{width:min(94vw,540px);height:auto;border:1px solid #ddd}
   .qrshow .qrnav{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-weight:700}
   .bk{display:flex;gap:8px;margin:10px 0 0}
   .bk .btn{flex:1;padding:9px 6px;font-size:14px;text-align:center;cursor:pointer}
@@ -3266,7 +3268,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V3.3';
+const APP_VER = 'V3.5';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -3368,7 +3370,10 @@ function b45dec(s){
 }
 async function zipText(str){ const st = new Blob([new TextEncoder().encode(str)]).stream().pipeThrough(new CompressionStream('deflate-raw')); return new Uint8Array(await new Response(st).arrayBuffer()); }
 async function unzipText(u8){ const st = new Blob([u8]).stream().pipeThrough(new DecompressionStream('deflate-raw')); return await new Response(st).text(); }
-const QR_MAX = 1100;   // 每張 QR 最多字元（約 97×97 格，印 4.5 公分手機仍好讀）
+const QR_MAX = 1100;
+/* 每張 QR 最多字元：點交清單（印在紙上給手機掃）1800 字≈約 115 筆工單、137×137 格、印約 5.8 公分；
+   回傳資料（手機螢幕給條碼槍刷）2400 字≈約 270 顆、149×149 格。超過才分張 */
+const QR_MAX_LIST = 1800, QR_MAX_RET = 2400;
 /* 打包：header 一行＋資料多行 → QR 文字陣列（超過上限就平均分張，每張都含 header） */
 async function qrPack(kind, header, lines, max){
   max = max || QR_MAX;
@@ -3400,7 +3405,8 @@ function qrCollector(){
       for(let i = 1; i <= cur.n; i++){ const ls = cur.parts[i]; header = header || ls[0]; all.push(...ls.slice(1).filter(Boolean)); }
       const r = {done:true, got, n:cur.n, kind:cur.kind, header, lines:all}; cur = null; return r;
     },
-    reset(){ cur = null; }
+    reset(){ cur = null; },
+    status(){ return cur ? {got:Object.keys(cur.parts).length, n:cur.n} : null; }   // 多張只收到一部分時
   };
 }
 /* QR 圖（SVG，列印清晰）；mm＝列印寬度 */
@@ -3425,7 +3431,7 @@ async function listQrTexts(files, key){
   const header = ['L1', vCodeOf(g.vendor), g.vendor, g.date || '', time].join('|');
   const lines = recs.map(r => { const sl = []; r.wafers.forEach(w => splitSlots(w.slots).forEach(s => { const n = parseInt(s, 10); if(!isNaN(n)) sl.push(pad2(n)); }));
     return [r.wo, r.part, String(r.lot).toUpperCase(), slotsPack(sl), r.wsize || ''].join('|'); });
-  return {texts:await qrPack('WQ', header, lines), time};
+  return {texts:await qrPack('WQ', header, lines, QR_MAX_LIST), time};
 }
 /* 掃到的點交清單 QR → 檔案物件（跟上傳檔案一樣的格式） */
 function listFromQr(header, lines){
@@ -3460,7 +3466,7 @@ async function returnQrTexts(groups, emp){
   const vt = groups.map(g => { const i = g.key.indexOf('｜'), v = i < 0 ? g.key : g.key.slice(0, i), d = i < 0 ? '' : g.key.slice(i + 1); return [vCodeOf(v), v, d].join('~'); });
   const header = ['R1', String(emp || '').replace(/[|~;\n]/g, ''), time, vt.join(';')].join('|');
   const lines = []; groups.forEach((g, i) => activeBoxes(g.boxes).forEach(b => lines.push([i, String(b.lot).toUpperCase(), slotsPack(b.slots)].join('|'))));
-  return {texts:await qrPack('WR', header, lines), time, nV:groups.length, nB:lines.length};
+  return {texts:await qrPack('WR', header, lines, QR_MAX_RET), time, nV:groups.length, nB:lines.length};
 }
 function returnFromQr(header, lines){
   const h = header.split('|'), vs = (h[3] || '').split(';').filter(Boolean).map(x => { const [code, name, date] = x.split('~'); return {code, name, date, boxes:[]}; });
@@ -4036,7 +4042,7 @@ async function qrLoop(){
       let r; try{ r = await qrCol.add(t); }catch(e){ continue; }
       if(r.bad) continue;
       if(r.kind !== 'WQ'){ $('qrStat').textContent = '這是錯誤清單 QR，請掃出貨點交清單上的 QR Code'; continue; }
-      if(!r.done){ if(r.got !== qrLastGot){ qrLastGot = r.got; beep('ok'); } $('qrStat').textContent = `已讀取 ${r.got} / ${r.n} 張，請對準下一張 QR Code`; continue; }
+      if(!r.done){ if(r.got !== qrLastGot){ qrLastGot = r.got; beep('ok'); } $('qrStat').innerHTML = `<span style="background:#d1242f;color:#fff;border-radius:6px;padding:2px 8px;font-weight:700">已讀 ${r.got} / ${r.n} 張，還差 ${r.n - r.got} 張</span><br>工單還沒載入，請對準下一張 QR Code`; continue; }
       beep('done'); closeQrImport(); importListQr(r); return;
     }
   }catch(e){}
@@ -4044,7 +4050,13 @@ async function qrLoop(){
 }
 $('qrImpBtn').onclick = () => openQrImport();
 $('fileBtn').onclick = () => $('fileInput').click();
-$('qrClose').onclick = () => closeQrImport();
+$('qrClose').onclick = () => {
+  const s = qrCol.status();
+  if(!s){ closeQrImport(); return; }
+  // 多張只掃了一部分：工單還沒載入，提醒不要漏掃
+  openSheet('warn', `⚠ 只掃了 ${s.got} / ${s.n} 張`, `<div>出貨單上的 QR Code 共有 <b>${s.n}</b> 張，還差 <b class="big">${s.n - s.got}</b> 張沒掃，<b>工單還沒有載入</b>。</div><div class="muted" style="margin-top:6px">請把剩下的 QR Code 也對準掃描；全部掃完才會載入。</div>`,
+    [['繼續掃描', 'primary', null], ['放棄（之後要重掃全部）', '', () => { closeQrImport(); }]]);
+};
 function importListQr(r){
   const f = listFromQr(r.header, r.lines), key = gKey(f), label = codeLabel(key);
   const done = clear => {
@@ -4089,14 +4101,19 @@ async function showReturnQr(){
   const groups = vendorGroups(files).map(g => ({key:g.name, boxes:(g.name === curVendor ? boxes : (scanStore[g.name] || {}).boxes) || []})).filter(g => activeBoxes(g.boxes).length);
   if(!groups.length){ openSheet('warn', '沒有刷讀資料', '<div>目前還沒有刷讀任何一顆，沒有資料可以回傳。</div>', [['知道了', 'primary', null]]); return; }
   let q; try{ q = await returnQrTexts(groups, getEmp()); }catch(e){ alert('無法產生 QR Code：' + (e && e.message || e)); return; }
-  let k = 0;
-  const body = () => `<div class="qrshow">${qrSvg(q.texts[k])}
-    <div class="qrnav"><span>${q.texts.length > 1 ? `第 ${k + 1} / ${q.texts.length} 張` : '共 1 張'}</span><span>工號 ${esc(getEmp())}</span></div>
+  let k = 0, warned = false;
+  const seen = new Set([0]), N = q.texts.length;
+  // 多張：每一張都要顯示過（讓電腦刷過）才能關閉；沒看完就關閉會先卡住提醒
+  const body = () => `${N > 1 ? `<div class="multiwarn">⚠ 資料量大，共 <b>${N}</b> 張 QR Code，<b>每一張</b>都要讓電腦刷，電腦顯示匯入完成才算回傳成功${seen.size < N ? `<br>還有 <b>${N - seen.size}</b> 張沒顯示過，請按「下一張」` : '<br>✔ 每一張都顯示過了，請確認電腦已匯入'}</div>` : ''}
+    ${warned && seen.size < N ? `<div class="multistop">還有第 ${[...Array(N).keys()].filter(i => !seen.has(i)).map(i => i + 1).join('、')} 張沒讓電腦刷，現在關閉電腦會收不到資料！<br>再按一次「關閉」才會關閉</div>` : ''}
+    <div class="qrshow">${qrSvg(q.texts[k])}
+    <div class="qrnav"><span style="${N > 1 ? 'font-size:20px;color:var(--danger)' : ''}">${N > 1 ? `第 ${k + 1} / ${N} 張` : '共 1 張'}</span><span>工號 ${esc(getEmp())}</span></div>
     <div class="muted" style="margin-top:4px">${groups.map(g => esc(codeLabel(g.key)) + '（' + activeBoxes(g.boxes).length + ' 顆）').join('、')}</div>
     <div class="muted" style="margin-top:6px">在電腦版按「📥 手機核對結果」，用條碼槍刷這個 QR Code${q.texts.length > 1 ? '，刷完按「下一張」' : ''}。</div></div>`;
-  const btns = (q.texts.length > 1 ? [['上一張', '', () => { k = (k + q.texts.length - 1) % q.texts.length; $('sBody').innerHTML = body(); return false; }],
-    ['下一張', 'primary', () => { k = (k + 1) % q.texts.length; $('sBody').innerHTML = body(); return false; }]] : []).concat([['關閉', q.texts.length > 1 ? '' : 'primary', null]]);
-  openSheet('plain', `📤 回傳刷讀資料（${q.nV} 家廠商・${q.nB} 顆）`, body(), btns);
+  const go = d => { k = (k + d + N) % N; seen.add(k); $('sBody').innerHTML = body(); return false; };
+  const btns = (N > 1 ? [['上一張', '', () => go(-1)], ['下一張', 'primary', () => go(1)]] : [])
+    .concat([['關閉', N > 1 ? '' : 'primary', () => { if(N > 1 && seen.size < N && !warned){ warned = true; beep('err'); $('sBody').innerHTML = body(); $('sBody').scrollTop = 0; return false; } }]]);
+  openSheet('plain', `📤 回傳刷讀資料（${q.nV} 家廠商・${q.nB} 顆）${N > 1 ? `・共 ${N} 張` : ''}`, body(), btns);
   brightOn();
 }
 $('retBtnLoad').onclick = () => showReturnQr();
