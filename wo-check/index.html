@@ -118,9 +118,13 @@
   .vhead .vst .tag{font-size:12px}
   .vhead .rbtn{border:1px solid #57606a;background:#fff;color:#24292f;border-radius:8px;padding:4px 10px;font-size:12px;font-weight:600}
   .pullhead{background:var(--danger);color:#fff;font-weight:700;padding:8px 12px;border-radius:8px;margin-bottom:10px;font-size:16px}
+  .splitnote{margin:8px 0;padding:8px 10px;border:2px solid var(--danger);border-radius:8px;background:#ffebe9;color:var(--danger);font-weight:700}
   .pull{font-size:20px;font-weight:700;font-family:Consolas,monospace;color:var(--danger)}
-  .rrow.ihead{background:#fafbfc}
-  .i-nolot .a span:first-child,.i-extra .a span:first-child{color:var(--danger)}
+  .rrow.ihead{background:#fafbfc;border-left:6px solid var(--line)}
+  .rrow.ihead.i-nolot,.rrow.ihead.i-extra,.rrow.ihead.i-overlap{background:#ffe3e1;border-left-color:var(--danger)}
+  .rrow.ihead.i-short,.rrow.ihead.i-unscanned{background:#fff3c4;border-left-color:#d4a72c}
+  .rrow.ihead .a span:first-child{font-weight:800}
+  .i-nolot .a span:first-child,.i-extra .a span:first-child,.i-overlap .a span:first-child{color:var(--danger)} .i-short .a span:first-child,.i-unscanned .a span:first-child{color:#9a6700}
   .i-short .a span:first-child,.i-unscanned .a span:first-child{color:var(--warn)}
   .vcard{margin:14px 0 6px}
   .vcard .vbody{display:none} .vcard.open .vbody{display:block}
@@ -158,6 +162,7 @@
   .qrov .qrbar{background:#111;color:#fff;padding:14px 16px calc(14px + env(safe-area-inset-bottom));display:flex;gap:12px;align-items:center;font-size:15px}
   .qrov .qrbar div{flex:1} .qrov .qrbar .btn{background:#fff;color:#111}
   body.qrbright .mask{background:#fff} body.qrbright .sheet{box-shadow:none}
+  .labchk{margin-top:12px;padding:10px 12px;border:2px solid var(--danger);border-radius:10px;background:#ffebe9;color:var(--danger);font-size:19px;font-weight:700;line-height:1.4} .labchk b{font-size:26px}
   .multiwarn{background:#fff8c5;border:2px solid #d4a72c;color:#7d4e00;border-radius:10px;padding:8px 10px;margin-bottom:8px;font-weight:700;font-size:15px} .multiwarn b{color:var(--danger);font-size:18px}
   .multistop{background:#ffebe9;border:2px solid var(--danger);color:var(--danger);border-radius:10px;padding:8px 10px;margin-bottom:8px;font-weight:700}
   .qrshow{text-align:center} .qrshow svg{width:min(94vw,540px);height:auto;border:1px solid #ddd}
@@ -2844,7 +2849,7 @@ function buildDb(files){
 }
 
 /* status：ok 正確 / noslot 刻號不在工單 / nolot 批號不在工單 / cancelled 屬於已取消工單 / dup 重複刷讀（不計入實刷） */
-const STATUS_TEXT = {ok:'正確', noslot:'刻號不在工單', nolot:'批號不在工單', cancelled:'屬於已取消工單', dup:'重複刷讀', overlap:'刻號重複（標籤異常）', qty:'QTY與WF ID片數不符'};
+const STATUS_TEXT = {ok:'正確', noslot:'刻號多了請分片並重新列印標籤刷讀', nolot:'批號不在工單', cancelled:'屬於已取消工單', dup:'重複刷讀', overlap:'刻號重複（標籤異常）', qty:'QTY與WF ID片數不符'};
 
 /* 每片 Wafer 以「批號 + 刻號」比對，自動對到含有該刻號的工單 */
 function evaluate(db, scans, lot, slot){
@@ -2949,6 +2954,10 @@ function summarize(db, boxes){
       parts:[...new Set(ss.map(s => s.part).filter(Boolean))].join(' / ')};
   });
   const ok = okCount(scans);
+  // 刻號多了（同一張標籤有正確片＋多的片）：要分片、重新列印標籤重刷取代，才算完成
+  const splitBoxes = boxRows.filter(r => !r.void && r.ok > 0 && r.bad.some(x => x.status === 'noslot' || x.status === 'cancelled'));
+  // 整張標籤都要取出（沒有任何正確片），不用交付
+  const outBoxes = boxRows.filter(r => !r.void && r.ok === 0 && r.bad.some(x => REMOVE.includes(x.status)));
   // 結算錯誤詳細清單（同批號同原因合併成一列）
   const groupBy = (list, keyFn) => { const m = new Map(); list.forEach(x => { const k = keyFn(x); if(!m.has(k)) m.set(k, {...x, slots:[], bs:[]}); m.get(k).slots.push(x.slot); m.get(k).bs.push(x.b); }); return [...m.values()].map(g => ({...g, slots:[...new Set(g.slots)].sort(), bs:[...new Set(g.bs)].sort((a,b) => a - b)})); };
   // 各批號：工單實際需出刻號（有效工單）/ 已刷到正確刻號，給錯誤清單說明用
@@ -2969,7 +2978,9 @@ function summarize(db, boxes){
   return {scans, total:countedCount(scans), ok, removed, issues, expected:db.expected, partRows, missing, errors, boxRows,
           lotNeed:lot => asList(lotNeed, lot), lotGot:lot => asList(lotGot, lot),
           cancelWo:lot => [...new Set((db.byLotCancel.get(lot) || []).map(r => r.wo))],
-          complete: ok >= db.expected && db.expected > 0};
+          splitBoxes, outBoxes,
+          // 全部片數都刷到，而且沒有「刻號多了」還沒分片重印重刷的標籤，才算完成
+          complete: ok >= db.expected && db.expected > 0 && !splitBoxes.length};
 }
 function orderProgress(db, scans){
   return db.records.map(r => {
@@ -3207,7 +3218,7 @@ function issueSections(sm){
       detail:[['plus', '多出刻號：' + n(g.slots)], ['need', '實際需出刻號：無（此批號不在本廠商工單內，不需出貨）'], labelLine(g.bs)]}))},
     {key:'overlap', title:'刻號重複（標籤異常）', note:'同一刻號出現在兩顆以上，其中有標籤刻號錯誤，請核對這些顆', rows:I.overlap.map(g => ({lot:g.lot, part:g.part, wo:`第 ${g.b} 顆與第 ${g.dupOf} 顆重複`, slots:g.slots,
       detail:[['plus', '重複刻號：' + n(g.slots)], labelLine([g.dupOf, g.b].sort((a,b) => a - b)), needLine(g.lot)]}))},
-    {key:'extra', title:'刻號多了', note:'刷到時已要求取出', rows:I.extra.map(g => ({lot:g.lot, part:g.part, wo:g.status === 'cancelled' ? g.wo + '（已取消工單）' : g.wo, slots:g.slots,
+    {key:'extra', title:'刻號多了請分片並重新列印標籤刷讀', note:'多的 Wafer 分片取出後，重新列印正確標籤重刷（取代原標籤）才算完成', rows:I.extra.map(g => ({lot:g.lot, part:g.part, wo:g.status === 'cancelled' ? g.wo + '（已取消工單）' : g.wo, slots:g.slots,
       detail:[['plus', (g.status === 'cancelled' ? '多出刻號（屬已取消工單）：' : '多出刻號：') + n(g.slots)], needLine(g.lot), gotLine(g.lot), labelLine(g.bs)]}))},
     {key:'short', title:'刻號少了', note:'工單上有，但該批號只刷到部分刻號', rows:I.short.map(m => ({lot:m.lot, part:m.part, wo:m.wo, slots:m.slots,
       detail:[['minus', '缺少刻號：' + n(m.slots)], ['need', '實際需出刻號：' + n(m.need)], ['info', '已刷到：' + n(m.need.filter(x => !m.slots.includes(x)))]]}))},
@@ -3220,7 +3231,7 @@ const detailText = d => d.map(x => x[1]).join('；');
 /* 刷完一顆有問題時的提醒視窗內容（兩版共用） */
 function boxAlert(bx, row){
   const rm = row.bad.filter(s => REMOVE.includes(s.status)), dup = row.bad.filter(s => s.status === 'dup');
-  const why = {nolot:'批號不在工單', noslot:'刻號多了（不在工單刻號內）', cancelled:'屬於已取消工單', overlap:'刻號重複（標籤異常）'};
+  const why = {nolot:'批號不在工單', noslot:'刻號多了請分片並重新列印標籤刷讀', cancelled:'屬於已取消工單', overlap:'刻號重複（標籤異常）'};
   const groups = {};
   rm.forEach(s => (groups[s.status] = groups[s.status] || []).push(s));
   const lines = Object.entries(groups).map(([st, list]) => {
@@ -3234,6 +3245,7 @@ function boxAlert(bx, row){
     return `<li><b>${why[st]}</b><div class="pull">刻號 ${esc(compress(list.map(s => s.slot)))}（${list.length} 片）</div>${wos ? `<div class="muted">${esc(wos)}</div>` : ''}</li>`;
   });
   const allOut = rm.length && rm.length === bx.slots.length;
+  const needSplit = row.ok > 0 && rm.some(s => s.status === 'noslot' || s.status === 'cancelled');
   const onlyOverlap = rm.length && rm.every(s => s.status === 'overlap');
   const head = !rm.length ? '' : onlyOverlap ? `<div class="pullhead">標籤刻號異常，請取出核對</div>`
     : `<div class="pullhead">請將以下 Wafer 取出，不要點交${allOut ? '（整顆取出）' : ''}</div>`;
@@ -3242,7 +3254,7 @@ function boxAlert(bx, row){
     title: !rm.length ? `⚠ 第 ${bx.b} 顆：重複刷讀` : onlyOverlap ? `⚠ 第 ${bx.b} 顆：刻號重複（標籤異常）` : `⚠ 第 ${bx.b} 顆：請取出問題 Wafer`,
     body: `${head}<div class="big">批號 ${esc(bx.lot)}</div>
       <div>${bx.slots.length === 1 ? `此顆僅有 1 片，刻號為 ${bx.slots[0]}` : `刻號 ${esc(compress(bx.slots))}（${bx.slots.length} 片），正確 ${row.ok} 片`}</div>
-      <ul class="elist">${lines.join('')}</ul><div class="muted">已記錄在錯誤紀錄</div>`,
+      <ul class="elist">${lines.join('')}</ul>${needSplit ? `<div class="splitnote">請將多的 Wafer 分片取出，<b>重新列印正確標籤後重刷這顆</b>（會自動取代本顆）。重刷前這家廠商不算核對完成。</div>` : ''}<div class="muted">已記錄在錯誤紀錄</div>`,
     button: !rm.length ? '確認，繼續刷下一顆' : onlyOverlap ? '已取出核對，繼續刷下一顆' : '已取出，繼續刷下一顆'
   };
 }
@@ -3268,7 +3280,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V3.7';
+const APP_VER = 'V4.0';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -3473,7 +3485,7 @@ function returnFromQr(header, lines){
   lines.forEach(l => { const [i, lot, sl] = l.split('|'); const v = vs[+i]; if(v) v.boxes.push({b:v.boxes.length + 1, lot, slots:slotsUnpack(sl), time:''}); });
   return {emp:h[1] || '', time:h[2] || '', vendors:vs};
 }
-const ISSUE_TITLE = {nolot:'批號不在工單', overlap:'刻號重複（標籤異常）', extra:'刻號多了', short:'刻號少了', unscanned:'未刷讀'};
+const ISSUE_TITLE = {nolot:'批號不在工單', overlap:'刻號重複（標籤異常）', extra:'刻號多了請分片並重新列印標籤刷讀', short:'刻號少了', unscanned:'未刷讀'};
 
 
 (function(){
@@ -3961,8 +3973,12 @@ function brightOff(){
 function showComplete(){
   const sm = summarize(db, boxes);
   beep('done');
-  openSheet('ok', '✔ 全部 Wafer 已刷完', `<div>實刷 <span class="big">${sm.total}</span> 片（${activeBoxes(boxes).length} 顆），應刷 ${sm.expected} 片</div><div>已取出問題片 ${sm.removed} 片</div>`,
-    [['留在掃描', '', null], ['看結果', 'primary', () => { setTimeout(() => go('result'), 0); }]]);
+  const nLab = activeBoxes(boxes).length, nOut = sm.outBoxes.length, nGive = nLab - nOut;
+  // 先卡住：提醒核對實物標籤張數，按「確認」後才能繼續
+  openSheet('ok', '✔ 全部 Wafer 已刷完', `<div>實刷 <span class="big">${sm.total}</span> 片（${nLab} 顆），應刷 ${sm.expected} 片</div><div>已取出問題片 ${sm.removed} 片</div>
+    <div class="labchk">已刷讀 <b>${nLab}</b> 張標籤${nOut ? `，其中 <b>${nOut}</b> 張錯誤已整顆取出` : ''}，<span style="white-space:nowrap">實際交付 <b>${nGive}</b> 張</span>，請確認有無漏刷（重要）</div>`,
+    [['確認', 'primary', () => { setTimeout(() => openSheet('ok', '✔ 全部 Wafer 已刷完', `<div>已確認實際交付 ${nGive} 張標籤。</div>`,
+      [['留在掃描', '', null], ['看結果', 'primary', () => { setTimeout(() => go('result'), 0); }]]), 0); }]]);
 }
 /* 手動輸入：刻號可輸入 01/02/03 或 1-5,8 */
 function parseManualSlots(v){
