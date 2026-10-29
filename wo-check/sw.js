@@ -1,5 +1,5 @@
 /* 工單點交核對（手機版）離線快取：先用網路最新版，沒網路時用快取 */
-const CACHE = 'wo-check-v9';
+const CACHE = 'wo-check-v11';
 const FILES = ['./', './index.html', './zxing-wasm.js', './zxing_reader.wasm', './zxing.min.js'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
