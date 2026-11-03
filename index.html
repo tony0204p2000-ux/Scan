@@ -213,6 +213,54 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
 .qrAct .sq.big{min-width:96px;min-height:72px;background:#0b6b53;border-color:#0b6b53;color:#fff}
 .qrAct .sq:disabled{opacity:.35}
 #qrClose{color:#16201c;background:#fff}
+#cVac.need{background:#b3261e;border-color:#fff;animation:vacBlink 1.4s ease-in-out infinite}
+@keyframes vacBlink{50%{opacity:.6}}
+#cVac b{margin-left:4px}
+/* 入庫按鈕列:圖示 + 文字的圓角方形按鈕,靠右排(右手拇指),「下一張」在中間偏右 */
+#inAct{margin-top:10px}
+.inRow{display:flex;align-items:stretch;gap:9px}
+.inInfo{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
+.inInfo b{font-size:16px}
+.inInfo small{font-size:12.5px;color:var(--sub);line-height:1.3;margin-top:2px}
+.ib{flex:0 0 84px;height:84px;padding:6px 0 4px;border-radius:20px;border:2px solid;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:15px;font-weight:700}
+.ib svg{width:34px;height:34px}
+/* 顏色跟著手機的淺色/深色模式,和其他分頁一致 */
+.ib{background:var(--card);border-color:var(--line);color:var(--ink)}
+.ib.nx{background:#dbe7f2;border-color:#b9cfe3;color:#7a95ad}
+.ib.nx.go{background:#1f6fb2;border-color:#1f6fb2;color:#fff;box-shadow:0 0 0 3px rgba(31,111,178,.22)}
+.ib.fin{background:#f3d9a6;border-color:#e3b860;color:#5a3d07}
+@media (prefers-color-scheme: dark){
+  .ib{background:#2b3036;border-color:#40474f;color:#eef0f2}
+  .ib.nx{background:#1d3b55;border-color:#2b5375;color:#5f86a6}
+  .ib.nx.go{background:#1f6fb2;border-color:#4a95d6;color:#fff}
+  .ib.fin{background:#c8922e;border-color:#e0ab4a;color:#2a1d07}
+}
+.ib:disabled{opacity:.42}
+.ib.nx:disabled{opacity:1}
+.inProgT{height:7px;border-radius:4px;background:var(--line);margin-top:10px;overflow:hidden}
+.inProgT i{display:block;height:100%;width:0;background:#f0a94a;border-radius:4px;transition:width .25s}
+#locPick{margin-top:2px}
+.lpT{font-size:14px;font-weight:700;margin:2px 0 8px}
+.lpB{display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px;min-height:58px;margin-bottom:8px;border:2px solid var(--accent);border-radius:14px;background:var(--card);padding:0 14px;text-align:left}
+.lpB b{font-family:var(--mono);font-size:20px;letter-spacing:.5px}
+.lpB small{font-size:12px;color:var(--sub)}
+.lpA{display:flex;gap:8px;justify-content:flex-end}
+.lpA button{min-height:48px;font-size:14px}
+/* 氮氣櫃儲位選擇:多個時兩欄 */
+.lpT small{display:block;font-weight:400;color:var(--sub);font-size:12.5px;margin-top:2px}
+.lpG{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:8px}
+.lpG.two{grid-template-columns:1fr 1fr}
+.lpG .lpB{margin:0;justify-content:center}
+
+/* Wafer 標籤框:框內淡淡畫出 4 條一維條碼和 QR Code 的位置 */
+.frame .wg{display:none;position:absolute;inset:7% 9%}
+.frame.wl .wg{display:block}
+.frame .wg i{display:block;height:7%;width:92%;margin-bottom:5%;border:1.5px dashed rgba(255,255,255,.55);border-radius:3px}
+.frame .wg b{display:block;position:absolute;left:0;bottom:2%;width:56%;aspect-ratio:1/1;border:1.5px dashed rgba(255,255,255,.55);border-radius:4px}
+/* 儲位種類切換(在儲位那一列,和手動/沿用放一起) */
+.locSeg{display:flex;border:2px solid var(--line);border-radius:14px;padding:2px;background:var(--soft)}
+.locSeg button{min-height:48px;min-width:64px;border:0;border-radius:11px;background:transparent;font-size:14px;font-weight:600;color:var(--sub);padding:0 10px}
+.locSeg button.on{background:var(--accent);color:var(--accent-ink)}
 </style>
 </head>
 <body>
@@ -220,7 +268,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
   <header>
     <div style="display:flex;align-items:center">
       <div class="modeSeg"><button id="mIC">IC</button><button id="mWF">WAFER</button><button id="mIN">入庫</button></div>
-      <span class="ver">v4.1</span>
+      <span class="ver">v4.6</span>
     </div>
     <div class="tot"><div><b class="num" id="tCnt">0</b><span id="tCntL">筆</span></div><div><b class="num" id="tQty">0</b><span id="tQtyL">總數量</span></div></div>
   </header>
@@ -229,10 +277,11 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
   <section class="view on" id="vScan">
     <div id="cam">
       <video id="video" playsinline muted autoplay></video>
-      <div class="frame" id="frame"></div>
+      <div class="frame" id="frame"><div class="wg"><i></i><i></i><i></i><i></i><b></b></div></div>
       <div id="focusDot"></div>
       <div class="chips">
         <div class="chipSeg hide" id="cW"><button data-t="WF">WF</button><button data-t="520W">520W</button><button data-t="KGD">KGD</button></div>
+        <button class="chip hide" id="cVac">真空<b></b></button>
         <button class="chip" id="cMode">方式<b></b></button>
         <button class="chip" id="cFrame">框<b></b></button>
         <button class="chip" id="cTypes">類型<b></b></button>
@@ -252,14 +301,25 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
       </div>
       <div id="wPanel" class="hide">
         <div id="wRows"></div>
+        <div id="locPick" class="hide"></div>
         <div id="wHint"></div>
         <button id="wQtyBtn" class="hide"></button>
-        <div id="locBar" class="hide"><span>儲位</span><button id="locKey" class="sq" aria-label="手動輸入儲位">⌨<small>手動</small></button><button id="locUse" class="sq hide"></button></div>
+        <div id="locBar" class="hide"><div class="locSeg" id="cLoc"><button data-m="gen">一般</button><button data-m="gc">氮氣櫃</button></div><span></span><button id="locKey" class="sq" aria-label="手動輸入儲位">⌨<small>手動</small></button><button id="locUse" class="sq hide"></button></div>
       </div>
-      <div class="act">
+      <div class="act" id="mainAct">
         <button class="primary" id="btnMain">啟動相機</button>
         <button id="btnManual">手動<br>輸入</button>
         <button id="btnDone" class="hide">掃讀<br>完成</button>
+      </div>
+      <!-- 入庫:按「下一張」才開始讀,避免誤讀到旁邊的條碼 -->
+      <div id="inAct" class="hide">
+        <div class="inRow">
+          <div class="inInfo"><b id="inStep"></b><small id="inSub"></small></div>
+          <button class="ib" id="inRedo"><svg viewBox="0 0 24 24"><path d="M5.5 12a6.5 6.5 0 1 0 2-4.7" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M4 4.5v5h5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>重來</span></button>
+          <button class="ib nx" id="inNext"><svg viewBox="0 0 24 24"><path d="M6 5l9 7-9 7z" fill="currentColor"/><rect x="16.5" y="5" width="2.8" height="14" rx="1" fill="currentColor"/></svg><span>下一張</span></button>
+          <button class="ib fin" id="inFin"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><span>掃完了</span></button>
+        </div>
+        <div class="inProgT"><i id="inProg"></i></div>
       </div>
     </div>
     <input type="file" id="photo" accept="image/*" capture="environment" class="hide">
@@ -317,6 +377,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
         <select id="optCam"><option value="">自動(後鏡頭)</option></select></label>
     </div>
     <div class="note" id="camMsg">相機實際解析度:啟動相機後顯示</div>
+    <div class="note">手機條碼掃描 版本 v4.6(電腦端「手機資料接收」要用同一版)</div>
     <div class="note" id="offMsg">離線開啟:檢查中…</div>
     <div class="note">資料只存在這支手機的瀏覽器裡,不會上傳。清除瀏覽器資料會一併清掉,請記得先匯出。</div>
   </div></section>
@@ -2882,7 +2943,7 @@ var qrcode = function() {
 'use strict';
 var $=function(id){return document.getElementById(id);};
 var KEY='phoneScanBatch.v1';
-var cfg={app:'ic',wtype:'WF',cam:'',lastLoc:'',qrSize:700,ret:false,serDup:true,dup:'allow',sep:'?',beep:true,vib:true,wake:true,only:true,res:'hi',mode:'auto',gap:1500,hold:5000,frame:'M',types:'all',pre:'RTD,RTS,ALC,RTL',lotLen:7,v3:0};
+var cfg={app:'ic',wtype:'WF',cam:'',lastLoc:'',qrSize:700,vac:'',locShapes:[],locMode:'gen',wframe:'W',ret:false,serDup:true,dup:'allow',sep:'?',beep:true,vib:true,wake:true,only:true,res:'hi',mode:'auto',gap:1500,hold:5000,frame:'M',types:'all',pre:'RTD,RTS,ALC,RTL',lotLen:7,v3:0};
 var items=[];          /* IC:每筆 {t 條碼內容, f 格式, d 時間} */
 var rmap={};           /* 銷貨退回:ITEM NO → 廠內料號 */
 var wafers=[];         /* WAFER:完成的標籤 {stock,item,lot,qty,wf,d} */
@@ -2950,16 +3011,17 @@ function wl(){ return isIN()?inbound:wafers; }
 
 /* 通用輸入視窗 */
 var askCb=null;
+var askNoIn=false;
 function ask(o,cb){
-  askCb=cb; $('askTitle').textContent=o.title; $('askDesc').innerHTML=o.desc||''; $('askVal').value=o.value||''; $('askVal').placeholder=o.placeholder||'';
+  askCb=cb; askNoIn=!!o.noInput; $('askVal').classList.toggle('hide',askNoIn); $('askTitle').textContent=o.title; $('askDesc').innerHTML=o.desc||''; $('askVal').value=o.value||''; $('askVal').placeholder=o.placeholder||'';
   $('askVal').setAttribute('inputmode',o.numeric?'numeric':'text'); $('askErr').textContent='';
   $('askOk').textContent=o.ok||'確定'; $('askCancel').textContent=o.cancel||'取消';
   $('askAlt').classList.toggle('hide',!o.alt); $('askAlt').textContent=o.alt||'';
-  $('ask').classList.add('on'); setTimeout(function(){ $('askVal').focus(); },60);
+  $('ask').classList.add('on'); if(!askNoIn) setTimeout(function(){ $('askVal').focus(); },60);
 }
 function askEnd(how){
   var v=$('askVal').value.trim(), cb=askCb;
-  if(how==='ok' && !v){ $('askErr').textContent='請先輸入內容。'; return; }
+  if(how==='ok' && !v && !askNoIn){ $('askErr').textContent='請先輸入內容。'; return; }
   $('ask').classList.remove('on'); askCb=null; $('askVal').blur(); if(cb) cb(how,v);
 }
 $('askOk').onclick=function(){ askEnd('ok'); };
@@ -3088,7 +3150,8 @@ function renderList(st){
          '<div class="r tap"'+at+'item"><span>ITEM NO</span><b>'+esc(w.item)+ed('item')+'</b></div>'+
          '<div class="r tap"'+at+'lot"><span>LOT NO</span><b>'+esc(w.lot)+ed('lot')+'</b></div>'+
          '<div class="r tap"'+at+'qty"><span>QTY</span><b class="'+(bad?'bad':'')+'">'+esc(w.qty)+(bad?'(和 WF ID 的片數不一致)':'')+ed('qty')+'</b></div>'+
-         '<div class="r tap"'+at+'wf"><span>WF ID</span><b>'+esc(w.wf)+ed('wf')+'</b></div></div>';
+         '<div class="r tap"'+at+'wf"><span>WF ID</span><b>'+esc(w.wf)+ed('wf')+'</b></div>'+
+         (isIN()?'<div class="r tap"'+at+'vac"><span>抽真空</span><b class="'+(w.vac?'':'bad')+'">'+(w.vac==='Y'?'有抽(Y)':w.vac==='N'?'沒抽(N)':'未註記')+ed('vac')+'</b></div>':'')+'</div>';
     }
     el.innerHTML='<div class="note tip">點任何一格可以修改內容。</div>'+h; return;
   }
@@ -3161,7 +3224,15 @@ function editItem(i){
 }
 /* WAFER 清單:改某一張的某一格;其他張有相同內容時可以一起改 */
 function editWafer(i,k){
-  var L=wl(), w=L[i]; if(!w) return; var old=w[k], type=w.type||'WF', o=k==='stock'?'item':'stock';
+  var L=wl(), w=L[i]; if(!w) return;
+  if(k==='vac'){
+    ask({title:'第 '+(i+1)+' 筆有沒有抽真空?',desc:esc(w.item)+' · '+esc(w.lot)+' · WF '+esc(w.wf),noInput:true,ok:'有抽真空(Y)',alt:'沒抽真空(N)'},function(how){
+      if(how==='cancel') return; var nv=how==='ok'?'Y':'N'; if(nv===w.vac) return;
+      w.ed=w.ed||{}; if(w.ed.vac===undefined) w.ed.vac=w.vac||''; w.vac=nv; if(w.ed.vac===nv) delete w.ed.vac;
+      save(); render(); toast('第 '+(i+1)+' 筆改為「'+(nv==='Y'?'有抽真空':'沒抽真空')+'」','ok');
+    });
+    return;
+  } var old=w[k], type=w.type||'WF', o=k==='stock'?'item':'stock';
   var sameIdx=[]; L.forEach(function(x,j){ if(j!==i && x[k]===old && k!=='qty') sameIdx.push(j); });
   var lab={stock:'STOCK NO',item:'ITEM NO',lot:'LOT NO',qty:'QTY',wf:'WF ID',loc:'儲位'}[k];
   ask({title:'修改 '+lab,desc:'第 '+(i+1)+' 張的 '+lab+'。'+(sameIdx.length?'另外有 '+sameIdx.length+' 張的內容相同。':''),value:old,numeric:k==='qty',ok:sameIdx.length?'只改這張':'更正',alt:sameIdx.length?'相同的 '+(sameIdx.length+1)+' 張一起改':''},function(how,v){
@@ -3222,12 +3293,16 @@ var FMT_WAFER=['CODE_128','CODE_39','QR_CODE'];
 function is2D(fmt){ return FMT_2D.indexOf(fmt)>=0; }
 function allowed(){ return isWF()?FMT_WAFER:(FMT_SET[cfg.types]||FMT_ALL); }
 /* 瞄準框:[寬, 高] 為佔相機畫面的比例;有 ar 的依寬高比換算高度 */
-var FRAMES={L:{w:.86,h:.7},M:{w:.62,h:.5},S:{w:.42,h:.32},R:{w:.8,ar:16/9},B:{w:.94,ar:7.5},V:{w:.24,h:.88}};
+/* W:廠內 Wafer 標籤的條碼區(右半邊:4 條一維條碼疊在上面、WF ID 的 QR Code 在下面),手機直拿時是窄長的直立區塊 */
+var FRAMES={L:{w:.86,h:.7},M:{w:.62,h:.5},S:{w:.42,h:.32},R:{w:.8,ar:16/9},B:{w:.94,ar:7.5},V:{w:.24,h:.88},W:{w:.6,ar:.64,maxH:.72}};
+/* IC 和 WAFER/入庫 各自記住自己的框 */
+function curFrame(){ return isWF()?(cfg.wframe||'W'):cfg.frame; }
 function frameSize(){
-  var f=FRAMES[cfg.frame]||FRAMES.M, c=$('cam');
+  var f=FRAMES[curFrame()]||FRAMES.M, c=$('cam');
   if(!f.ar) return [f.w,f.h];
-  var h=(f.w*(c.clientWidth||390)/f.ar)/(c.clientHeight||560);
-  return [f.w,Math.min(.9,h)];
+  var h=(f.w*(c.clientWidth||390)/f.ar)/(c.clientHeight||560), mx=f.maxH||.9;
+  if(f.maxH && h>mx) return [f.w*mx/h,mx];             /* 太高時等比例縮小,保持標籤條碼區的形狀,也不被上方的按鈕蓋住 */
+  return [f.w,Math.min(mx,h)];
 }
 var FINE=['QR_CODE','DATA_MATRIX','AZTEC','CODE_128','CODE_39'], LINEAR=['CODE_128','CODE_39','CODE_93'];
 function fine2d(){ return allowed().filter(function(n){return FINE.indexOf(n)>=0;}); }
@@ -3373,17 +3448,17 @@ function renderW(){
   if(h!==wHtml){ wHtml=h; $('wRows').innerHTML=h; }
   var hint=$('wHint'), lb=$('locBar');
   lb.classList.toggle('hide',!(isIN() && wcur.stage==='loc'));
-  if(isIN()){ $('locUse').classList.toggle('hide',!cfg.lastLoc); $('locUse').innerHTML='沿用<br><b>'+esc(cfg.lastLoc||'')+'</b>'; }
+  if(isIN()){ $('locUse').classList.toggle('hide',!cfg.lastLoc || cfg.locMode==='gc'); $('locUse').innerHTML='沿用<br><b>'+esc(cfg.lastLoc||'')+'</b>'; }
   $('btnDone').classList.toggle('hide',!isIN());
   if(isIN() && wcur.stage==='loc'){
-    hint.className=''; hint.textContent='標籤已讀完。請對準儲位條碼,或按右邊的「手動」「沿用」。';
+    hint.className=''; hint.textContent=locPicking?'點選要放入的儲位。':(cfg.locMode==='gc'?(inGate?'標籤已讀完。對準氮氣櫃的儲位條碼(GC-)後按「下一張」,讀到的儲位會列出來讓你選。':'讀取氮氣櫃儲位中…'):(inGate?'標籤已讀完。對準儲位條碼後按「下一張」,或按右邊的「手動」「沿用」。':'讀取儲位中…'))+'這批註記:'+(cfg.vac==='Y'?'有抽真空':cfg.vac==='N'?'沒抽真空':'未選(存入前會詢問)')+'。';
   }else if(wcur.done){
     var bad=wCheck(wcur.v,wcur.type);
     hint.className=bad?'':'done'; hint.textContent=bad?'刷讀完成,但'+bad+',請確認。':'刷讀完成。按「下一張」繼續。';
   }else if(wNote && Date.now()-wNoteT<4000){
     hint.className=''; hint.textContent=wNote;
   }else if(!wAny()){
-    hint.className='note'; hint.textContent='把 '+wcur.type+' 標籤的條碼放進框內,讀到的會自動填進對應的格子。';
+    hint.className='note'; hint.textContent=isIN() && inGate?'對準 '+wcur.type+' 外箱標籤後按「'+(running?'下一張':'開始')+'」。按之前不會讀取,不會誤讀到旁邊的條碼。':'把 '+wcur.type+' 標籤的條碼放進框內,讀到的會自動填進對應的格子。';
   }else{
     var need=m.map(wLabel);
     if(wcur.v.stock===null && wcur.v.item===null) need=['STOCK NO 或 ITEM NO(讀到一個即可)'].concat(m.filter(function(k){return k!=='stock'&&k!=='item';}).map(wLabel));
@@ -3393,6 +3468,7 @@ function renderW(){
   qb.classList.toggle('hide',!canQ); if(canQ) qb.textContent='QTY 讀不到?用 WF ID 的片數 '+wfCount(wcur.v.wf)+' 帶入';
   var b=$('btnManual'); if(!dropArm) b.innerHTML='放棄<br>這張'; b.disabled=!wAny() || wcur.done;
   Array.prototype.forEach.call(document.querySelectorAll('#cW button'),function(x){ x.classList.toggle('on',x.getAttribute('data-t')===wType()); });
+  inSync();
 }
 function wSet(k,text,src){
   var cur=wcur.v[k];
@@ -3411,12 +3487,15 @@ var odd={t:'',n:0};
 /* dets: 這一格畫面讀到的全部條碼 [{text, two(是否二維)}];順序與位置都不重要 */
 function wFrame(dets){
   if(wcur.done) return;
+  if(isIN() && (inGate || locPicking) && !photoShot) return;     /* 等使用者按「下一張」才讀 */
   if(isIN() && wcur.stage==='loc'){ locFrame(dets); return; }
   var changed=false, type=wcur.type;
   if(isIN()){
     /* 剛存完一筆,鏡頭可能還對著儲位條碼:已用過的儲位不當成標籤內容 */
     var used={}; if(cfg.lastLoc) used[cfg.lastLoc]=1; inbound.slice(-30).forEach(function(r){ used[r.loc]=1; });
     dets=dets.filter(function(d){ return !used[String(d.text).trim()]; });
+    /* 長得像儲位(和用過的儲位格式相同)的一維條碼,不當成標籤的料號 */
+    dets=dets.filter(function(d){ if(d.two) return true; if(isGC(d.text)) return false; var c=wClass(d.text,type); return !(c.k==='part' && isLocShape(d.text)); });
     dets.forEach(function(d){ wcur.seen[String(d.text).trim()]=1; });
   }
   /* 剛按完「下一張」鏡頭還對著上一張:畫面裡的條碼全都和上一張相同就先不收 */
@@ -3449,29 +3528,114 @@ function wFrame(dets){
   renderW();
 }
 /* 入庫:標籤讀完後的儲位步驟。畫面中第一個不屬於這張標籤的條碼就是儲位 */
-var locCand='', locAt=0;
+/* 儲位:按「下一張」後收集 0.8 秒內畫面中所有不屬於這張標籤的條碼。
+   只有一個而且格式和用過的儲位相同 → 直接存;否則列出來讓使用者點選 */
+var inGate=true, locPicking=false, photoShot=false, locC=null, locTimer=0, locLimit=0;
+function locShape(t){ return String(t).toUpperCase().replace(/[A-Z]+/g,'A').replace(/[0-9]+/g,'9'); }
+function isLocShape(t){ return (cfg.locShapes||[]).indexOf(locShape(t))>=0; }
+function learnLoc(t){ var sh=locShape(t), a=cfg.locShapes||[]; if(a.indexOf(sh)<0){ a.unshift(sh); cfg.locShapes=a.slice(0,20); } }
+function isGC(t){ return /^GC-/i.test(String(t).trim()); }
+function labelLike(t){ var c=wClass(t,wcur.type); return c.k==='lot'||c.k==='qty'||/_CP$/i.test(t)||/[;,?]/.test(t); }
 function locFrame(dets){
-  for(var i=0;i<dets.length;i++){
-    var t=String(dets[i].text).trim(), v=wcur.v;
-    if(!t || wcur.seen[t] || t===v.stock || t===v.item || t===v.lot || wfNorm(t)===v.wf) continue;
-    /* 連續兩次讀到同一個內容才採用,避免鏡頭掃過旁邊的條碼時誤存 */
-    var now=Date.now();
-    if(t===locCand && now-locAt<1500){ locCand=''; setLoc(t.toUpperCase(),'scan'); return; }
-    locCand=t; locAt=now; return;
+  var v=wcur.v, now=Date.now(), gc=cfg.locMode==='gc';
+  if(!locC) locC={m:{},t0:0,other:0};
+  var saved=false;
+  dets.forEach(function(d){
+    if(saved) return;
+    var t=String(d.text).trim();
+    if(!t || wcur.seen[t] || t===v.stock || t===v.item || t===v.lot || wfNorm(t)===v.wf) return;
+    if(gc && !isGC(t)){ locC.other++; return; }        /* 氮氣櫃只收 GC- 開頭的儲位 */
+    if(!gc && labelLike(t)) return;                     /* 一般儲位:像標籤內容的不當儲位 */
+    locC.m[t]=(locC.m[t]||0)+1;
+    if(gc){ if(!locC.t0){ locC.t0=now; clearTimeout(locTimer); locTimer=setTimeout(locDecide,800); } }
+    else { saved=true; setLoc(t.toUpperCase(),'scan'); }   /* 一般儲位:按「下一張」後讀到第一個條碼就存 */
+  });
+  if(saved || !locC) return;
+  if(gc && !locC.t0 && locC.other>=6){ locC.other=0; toast('讀到的不是氮氣櫃儲位(GC- 開頭)。一般儲位請在下方儲位那一列切到「一般」','warn'); }
+  if(photoShot && gc && locC.t0) locDecide();
+}
+function locDecide(){
+  clearTimeout(locTimer); clearTimeout(locLimit);
+  if(!isIN() || wcur.stage!=='loc' || !locC || !locC.t0) return;
+  /* 依編號排序,和氮氣櫃上的排列一致 */
+  var list=Object.keys(locC.m).map(function(t){ return t.toUpperCase(); }).filter(function(t,i,a){ return a.indexOf(t)===i; }).sort(function(a,b){ return a.localeCompare(b,undefined,{numeric:true}); });
+  locC=null;
+  locPick(list);
+}
+function locPick(list){
+  locPicking=true; inGate=true; beep('tick');
+  var h='<div class="lpT">要放入哪個儲位?<small>'+esc(wcur.v.item||'')+' · '+esc(wcur.v.lot||'')+' · '+wfCount(wcur.v.wf)+' 片</small></div><div class="lpG'+(list.length>2?' two':'')+'">';
+  list.forEach(function(t,i){ h+='<button class="lpB" data-i="'+i+'"><b>'+esc(t)+'</b></button>'; });
+  h+='</div><div class="lpA"><button id="lpRe">都不是,重刷</button><button id="lpKey">手動輸入</button></div>';
+  var el=$('locPick'); el.innerHTML=h; el.classList.remove('hide'); $('wRows').classList.add('hide');
+  Array.prototype.forEach.call(el.querySelectorAll('.lpB'),function(b){ b.onclick=function(){ var t=list[+b.getAttribute('data-i')]; locPickEnd(); setLoc(t,'pick'); }; });
+  $('lpRe').onclick=function(){ locPickEnd(); inNext(); };
+  $('lpKey').onclick=function(){ locPickEnd(); askLoc(); };
+  renderW();
+}
+function locPickEnd(){ locPicking=false; $('locPick').classList.add('hide'); $('wRows').classList.remove('hide'); renderW(); }
+/* 「下一張」:開始讀目前這一步(標籤或儲位) */
+function inNext(){
+  if(!isIN() || locPicking) return;
+  if(!cfg.vac){ askVac(inNext); return; }
+  if(!running){ wantCam=true; startCam(); }
+  inGate=false; locC=null; clearTimeout(locTimer); clearTimeout(locLimit);
+  if(wcur.stage==='loc'){
+    /* 6 秒內沒讀到儲位就停下來,避免一直開著把別的條碼讀進來 */
+    locLimit=setTimeout(function(){ if(isIN() && wcur.stage==='loc' && !inGate && !locPicking){ inGate=true; beep(false); toast('沒讀到儲位條碼。請對準後再按「下一張」,或按「手動」','warn'); inSync(); } },6000);
   }
+  inSync(); renderW();
+}
+function inRedo(){
+  if(!isIN()) return;
+  if(locPicking) locPickEnd();
+  clearTimeout(locTimer); clearTimeout(locLimit); locC=null;
+  wcur=wNew(); wNextAt=0; wHtml=''; save(); toast('重新刷這張外箱標籤'); inNext();
+}
+/* 入庫的按鈕列與步驟說明 */
+function inSync(){
+  var on=isIN();
+  $('inAct').classList.toggle('hide',!on); $('mainAct').classList.toggle('hide',on);
+  if(!on) return;
+  var lst=wcur.stage==='loc', reading=running && !inGate && !locPicking;
+  var nx=$('inNext'); nx.disabled=reading||locPicking; nx.classList.toggle('go',!reading && !locPicking);
+  nx.lastChild.textContent=reading?'讀取中':(!running?'開始':'下一張');
+  $('inRedo').disabled=!wAny() && !lst && !locPicking;
+  $('inFin').disabled=!inbound.length;
+  $('inStep').textContent=lst?(cfg.locMode==='gc'?'② 氮氣櫃':'② 儲位'):'① 標籤';
+  $('inSub').textContent=locPicking?'點選要放入的儲位':reading?(lst?'讀取儲位中…':'讀取標籤中…'):(lst?'對準儲位後按下一張':(inbound.length?'對準下一箱後按下一張':'對準外箱標籤後按開始'));
+  var have=(wcur.v.stock!==null||wcur.v.item!==null?1:0)+(wcur.v.lot!==null?1:0)+(wcur.v.wf!==null?1:0);
+  $('inProg').style.width=(lst?75:have*25)+'%';
+  $('idleMsg').textContent='按下方「開始」啟動相機';
+}
+$('inNext').onclick=inNext;
+$('inRedo').onclick=inRedo;
+$('inFin').onclick=function(){ $('btnDone').onclick(); };
+/* 入庫:這一批 wafer 有沒有抽真空。電腦端輸入 VPM 時依此回答「是否為抽真空包裝」 */
+var VAC_L={Y:'有抽',N:'沒抽'};
+function askVac(then){
+  ask({title:'這批 wafer 有沒有抽真空?',desc:'之後刷的每一筆都會註記這個狀態,電腦端輸入 VPM 時自動回答「是否為抽真空包裝」。<br>換一批不同狀態的 wafer 時,點畫面上方的「真空」切換。',noInput:true,ok:'有抽真空(Y)',alt:'沒抽真空(N)'},function(how){
+    if(how==='cancel') return;
+    var nv=how==='ok'?'Y':'N', ch=cfg.vac && cfg.vac!==nv;
+    cfg.vac=nv; save(); syncChips(); renderW();
+    toast((ch?'已切換:':'')+'這批註記為「'+(nv==='Y'?'有抽真空':'沒抽真空')+'」'+(ch?',之前刷的筆數不變':''),nv==='Y'?'ok':'warn');
+    if(then) then();
+  });
 }
 function setLoc(loc,src){
   if(!isIN() || wcur.stage!=='loc') return;
+  if(!cfg.vac){ askVac(function(){ setLoc(loc,src); }); return; }
   var v=wcur.v;
-  inbound.push({type:wcur.type,loc:loc,stock:v.stock,item:v.item,lot:v.lot,qty:String(wfCount(v.wf)),wf:v.wf,d:stamp(),ls:src});
+  clearTimeout(locTimer); clearTimeout(locLimit); locC=null; inGate=true; learnLoc(loc);
+  inbound.push({type:wcur.type,loc:loc,stock:v.stock,item:v.item,lot:v.lot,qty:String(wfCount(v.wf)),wf:v.wf,vac:cfg.vac,d:stamp(),ls:src});
   cfg.lastLoc=loc; flash(); beep('done');
-  toast('第 '+inbound.length+' 筆:'+v.item+' → '+loc+'。請刷下一張標籤','ok');
+  toast('第 '+inbound.length+' 筆:'+v.item+' → '+loc+'('+(cfg.vac==='Y'?'有抽真空':'沒抽真空')+')。對準下一箱後按「下一張」','ok');
   wcur=wNew(); wNextAt=Date.now(); wHtml=''; save(); render(); syncMain();
 }
 function askLoc(){
   ask({title:'輸入儲位',desc:'Item No <b>'+esc(wcur.v.item||'')+'</b> · Lot No <b>'+esc(wcur.v.lot||'')+'</b>',value:'',placeholder:'儲位',ok:'存入'},function(how,val){ if(how==='ok') setLoc(val.toUpperCase(),'manual'); });
 }
-$('locUse').onclick=function(){ if(cfg.lastLoc) setLoc(cfg.lastLoc,'reuse'); };
+$('locUse').onclick=function(){ if(cfg.lastLoc && cfg.locMode!=='gc') setLoc(cfg.lastLoc,'reuse'); };
 $('locKey').onclick=askLoc;
 $('btnDone').onclick=function(){
   if(!inbound.length){ toast('還沒有入庫資料','warn'); return; }
@@ -3482,9 +3646,9 @@ function wComplete(){
   var v=wcur.v, i;
   if(isIN()){
     for(i=0;i<inbound.length;i++) if(inbound[i].wf===v.wf && inbound[i].lot===v.lot && inbound[i].stock===v.stock){
-      beep(false); toast('這張標籤已經入庫過了(第 '+(i+1)+' 筆),沒有重複加入','warn'); wcur=wNew(); wNextAt=Date.now(); save(); render(); return;
+      beep(false); toast('這張標籤已經入庫過了(第 '+(i+1)+' 筆),沒有重複加入','warn'); wcur=wNew(); wNextAt=Date.now(); inGate=true; save(); render(); return;
     }
-    wcur.stage='loc'; flash(); beep('tick'); save(); toast('標籤讀完了,請掃描儲位條碼'); render(); return;
+    wcur.stage='loc'; inGate=true; flash(); beep('tick'); save(); toast('標籤讀完了。對準儲位條碼後按「下一張」'); render(); return;
   }
   for(i=0;i<wafers.length;i++) if(wafers[i].wf===v.wf && wafers[i].lot===v.lot && wafers[i].stock===v.stock){
     beep(false); toast('這張標籤已經刷過了(第 '+(i+1)+' 張),沒有重複加入','warn'); wcur=wNew(); wNextAt=Date.now(); save(); render(); return;
@@ -3571,7 +3735,7 @@ function pump(){
   if(!running) return;
   var v=$('video'), wf=isWF();
   if(!wf && armed && Date.now()-armed>6000){ armed=0; syncMain(); beep(false); toast(cfg.only?'沒讀到可拆解的條碼,請對準後再按一次':'沒讀到條碼,請對準後再按一次','warn'); }
-  if((!wf && cfg.mode==='tap' && !armed) || (wf && wcur.done) || v.readyState<2 || !v.videoWidth || askCb){ later(90); return; }
+  if((!wf && cfg.mode==='tap' && !armed) || (wf && wcur.done) || (isIN() && (inGate || locPicking)) || v.readyState<2 || !v.videoWidth || askCb){ later(90); return; }
   if(active>=capacity()) return;                         /* 解完會再呼叫 */
   if(!native && poolOK && !freeWorker()) return;
   active++;
@@ -3587,7 +3751,7 @@ function frame(v,wf,done){
   else if(wf) useHi=canHi && (tickN%2===1);          /* WAFER 的一維條碼很細,細掃也要找一維 */
   else useHi=canHi && fine2d().length>0 && (ph===1||ph===3);
   /* 直條框:條碼沿著手機長邊擺,像素最多;這時以直向解碼為主 */
-  var tall=cfg.frame==='V', rot=wf?(tickN%4===3?!wRotPref:wRotPref):(tall?ph!==0:ph===2);
+  var tall=curFrame()==='V', rot=wf?(tickN%4===3?!wRotPref:wRotPref):(tall?ph!==0:ph===2);
   var small=g.cw*g.ch*hi*hi<=1.0e6, fineMode=(small && ph===1)?'all':'2d';
   if(!wf && !native && small && !canHi && ph===1){ useHi=true; }      /* 小框本來就是原始解析度:仍輪到一次加強的一維解碼 */
   var cv=draw(v,g.sx,g.sy,g.cw,g.ch,useHi?hi:lo,rot && (wf || !native));
@@ -3695,13 +3859,16 @@ function startCam(){
 }
 /* 主按鈕:依狀態只做一件事 */
 function syncMain(){
+  inSync();
   var b=$('btnMain'); b.className='primary';
   if(isWF() && wcur.done){ b.textContent='下一張'; return; }
   if(!running){ b.textContent='啟動相機'; return; }
   if(!isWF() && cfg.mode==='tap'){ if(armed){ b.textContent='讀取中…'; b.classList.add('armed'); } else b.textContent='掃一筆'; }
   else{ b.textContent='暫停掃描'; b.classList.add('stop'); }
 }
+$('cVac').onclick=function(){ askVac(); };
 $('btnMain').onclick=function(){
+  if(isIN() && !cfg.vac && !running){ askVac(function(){ $('btnMain').onclick(); }); return; }
   if(isWF() && wcur.done){ wcur=wNew(); wNextAt=Date.now(); save(); render(); syncMain(); if(!running){ wantCam=true; startCam(); } return; }
   if(!running){ wantCam=true; startCam(); return; }
   if(!isWF() && cfg.mode==='tap'){ armed=Date.now(); syncMain(); return; }
@@ -3733,22 +3900,38 @@ document.addEventListener('visibilitychange',function(){
 });
 
 /* 相機上的快速切換 */
-var MODE_L={auto:'自動',tap:'按鈕'}, FRAME_L={L:'大',M:'中',S:'小',R:'長方',B:'橫條',V:'直條'}, TYPE_L={all:'全部','1d':'一維','2d':'二維'};
+var MODE_L={auto:'自動',tap:'按鈕'}, FRAME_L={L:'大',M:'中',S:'小',R:'長方',B:'橫條',V:'直條'}, WFRAME_L={W:'標籤',L:'大',M:'中'}, TYPE_L={all:'全部','1d':'一維','2d':'二維'};
 function cycle(obj,cur){ var k=Object.keys(obj), i=k.indexOf(cur); return k[(i+1)%k.length]; }
 function syncChips(){
   if(!FRAME_L[cfg.frame]) cfg.frame='M';
-  $('cMode').lastChild.textContent=MODE_L[cfg.mode]||''; $('cFrame').lastChild.textContent=FRAME_L[cfg.frame]; $('cTypes').lastChild.textContent=TYPE_L[cfg.types]||'';
+  if(!WFRAME_L[cfg.wframe]) cfg.wframe='W';
+  $('cMode').lastChild.textContent=MODE_L[cfg.mode]||''; $('cFrame').lastChild.textContent=isWF()?WFRAME_L[cfg.wframe]:FRAME_L[cfg.frame];
+  $('frame').classList.toggle('wl',isWF() && cfg.wframe==='W');
+  var lm=$('cLoc');
+  Array.prototype.forEach.call(lm.querySelectorAll('button'),function(x){ x.classList.toggle('on',x.getAttribute('data-m')===(cfg.locMode||'gen')); }); $('cTypes').lastChild.textContent=TYPE_L[cfg.types]||'';
   $('cMode').classList.toggle('hide',isWF()); $('cTypes').classList.toggle('hide',isWF()); $('cW').classList.toggle('hide',!isWF());
   var f=frameSize(); $('frame').style.inset=((1-f[1])*50)+'% '+((1-f[0])*50)+'%';
+  var cv=$('cVac'); cv.classList.toggle('hide',!isIN()); cv.classList.toggle('need',!cfg.vac); cv.lastChild.textContent=VAC_L[cfg.vac]||'未選';
   $('mIC').classList.toggle('on',cfg.app==='ic'); $('mWF').classList.toggle('on',cfg.app==='wafer'); $('mIN').classList.toggle('on',isIN());
 }
 window.addEventListener('resize',function(){ syncChips(); });
 $('cMode').onclick=function(){ cfg.mode=cycle(MODE_L,cfg.mode); armed=0; save(); syncChips(); syncMain(); toast(cfg.mode==='tap'?'按鈕觸發:按「掃一筆」才會讀':'自動掃描:讀到就加入'); };
-$('cFrame').onclick=function(){ cfg.frame=cycle(FRAME_L,cfg.frame); save(); syncChips(); };
+$('cFrame').onclick=function(){
+  if(isWF()){ cfg.wframe=cycle(WFRAME_L,cfg.wframe||'W'); if(cfg.wframe==='W') toast('標籤框:把標籤右邊的條碼區對進框內,4 條一維條碼在上、QR Code 在下'); }
+  else cfg.frame=cycle(FRAME_L,cfg.frame);
+  save(); syncChips();
+};
+/* 入庫的儲位種類:氮氣櫃的儲位條碼貼得很近,要問放入哪一格;一般儲位只刷一個 */
+Array.prototype.forEach.call(document.querySelectorAll('#cLoc button'),function(b){ b.onclick=function(){
+  var m=b.getAttribute('data-m'); if(m===cfg.locMode) return;
+  cfg.locMode=m; save(); syncChips(); renderW();
+  toast(m==='gc'?'氮氣櫃:刷儲位時會列出讀到的 GC 儲位,點選要放入哪一格':'一般儲位:刷一個儲位條碼就存,也可以手動或沿用上一個');
+}; });
 $('cTypes').onclick=function(){ cfg.types=cycle(TYPE_L,cfg.types); save(); syncChips(); toast({all:'讀取所有類型的條碼','2d':'只讀二維條碼(QR Code 等)','1d':'只讀一維條碼'}[cfg.types]); };
 function setApp(a){
   if(cfg.app===a) return;
   if((cfg.app==='inb')!==(a==='inb') && wcur && !wcur.done) wcur=wNew();   /* WAFER 與入庫共用刷讀格,切換時清掉沒刷完的那張 */
+  if(a==='inb'){ inGate=true; if(locPicking) locPickEnd(); }
   cfg.app=a; armed=0; lastIdx=-1; wHtml=''; save(); syncChips(); render(); syncMain();
   $('btnManual').disabled=false; if(!isWF()) $('btnManual').innerHTML='手動<br>輸入';
   toast(isIN()?'入庫:刷 '+wType()+' 標籤(STOCK NO/LOT NO/WF ID),再掃儲位':isWF()?'WAFER:一張標籤的條碼全部讀出,目前種類 '+wType():'IC:刷 STOCK NO 那張 QR Code');
@@ -3768,7 +3951,9 @@ $('photo').onchange=function(){
     var w=img.naturalWidth, h=img.naturalHeight, m=Math.max(w,h), r=null, i;
     if(isWF()){
       var before=wMissing().length;
-      [[2400,false],[2400,true],[1600,false],[1600,true],[1100,false],[1100,true]].forEach(function(s){ if(!wcur.done) wFrame(decodeNow(draw(img,0,0,w,h,Math.min(1,s[0]/m),s[1]),wfOpt(FMT_WAFER,'hg'))); });
+      photoShot=true; var wasLoc=isIN() && wcur.stage==='loc';
+      [[2400,false],[2400,true],[1600,false],[1600,true],[1100,false],[1100,true]].forEach(function(s){ if(!wcur.done && !(wasLoc && (wcur.stage!=='loc' || locPicking))) wFrame(decodeNow(draw(img,0,0,w,h,Math.min(1,s[0]/m),s[1]),wfOpt(FMT_WAFER,'hg'))); });
+      photoShot=false; if(wasLoc){ URL.revokeObjectURL(url); if(locC && locC.t0) locDecide(); else if(wcur.stage==='loc' && !locPicking) toast('照片裡沒有讀到儲位條碼','bad'); return; }
       URL.revokeObjectURL(url);
       if(!wcur.done) toast(wMissing().length<before?'讀到一部分,還缺 '+wMissing().length+' 個。請靠近缺的條碼再拍一張':'這張照片沒有讀到新的條碼。請靠近一點再拍',wMissing().length<before?'':'bad');
       return;
@@ -3833,7 +4018,7 @@ $('btnClear').onclick=function(){
   var b=this, n=isWF()?wl().length:items.length, unit=isIN()?'筆入庫資料':isWF()?'張 WAFER 標籤':'筆 IC 資料';
   if(!n){ $('outMsg').textContent='清單是空的。'; return; }
   if(Date.now()-clearArm<3000){
-    if(isIN()){ inbound=[]; wcur=wNew(); } else if(isWF()){ wafers=[]; wcur=wNew(); } else { items=[]; rmap={}; lastIdx=-1; seen={}; }
+    if(isIN()){ inbound=[]; wcur=wNew(); cfg.vac=''; inGate=true; if(locPicking) locPickEnd(); syncChips(); } else if(isWF()){ wafers=[]; wcur=wNew(); } else { items=[]; rmap={}; lastIdx=-1; seen={}; }
     save(); render(); syncMain(); clearArm=0; b.textContent='清空全部'; $('outMsg').textContent='已清空。'; return;
   }
   clearArm=Date.now(); b.textContent='再按一次確認清空 '+n+' '+unit;
@@ -3913,8 +4098,8 @@ function tidy(){
   return {rows:rows,st:st};
 }
 function wEdNote(w){ var a=[], L={stock:'STOCK NO',item:'ITEM NO',lot:'LOT NO',qty:'QTY',wf:'WF ID'}; for(var k in (w.ed||{})) a.push(L[k]+' 原為 '+w.ed[k]); return a.length?'手動修改過:'+a.join(';'):''; }
-var INHEAD=['儲位','Item No','Lot No','Qty','WF ID','種類'];
-function inRow(r){ var q=toQty(r.qty); return [r.loc,r.item,r.lot,q===null?r.qty:q,r.wf,r.type||'WF']; }
+var INHEAD=['儲位','Item No','Lot No','Qty','WF ID','種類','抽真空'];
+function inRow(r){ var q=toQty(r.qty); return [r.loc,r.item,r.lot,q===null?r.qty:q,r.wf,r.type||'WF',r.vac||'']; }
 function wRowsOut(){
   return wafers.map(function(w){ var t=w.type||'WF', q=toQty(w.qty), k=t==='KGD'; return [t,w.stock,w.item,w.lot,q===null?w.qty:q,w.wf,k?'':wfCount(w.wf),k?'':(wCheck(w,t)?'不一致':'一致'),w.d,wEdNote(w)]; });
 }
@@ -3992,10 +4177,12 @@ function outNote(n){
 function clean(v){ return String(v===null||v===undefined?'':v).replace(/[\t\r\n]+/g,' '); }
 function qrPayload(){
   var type, rows=[];
-  if(isIN()){ type='IN'; inbound.forEach(function(r){ var x=inRow(r); x.push(r.stock); rows.push(x); }); }
+  /* 入庫每列:儲位/Item/Lot/Qty/WF ID/種類/Stock No/抽真空(Y、N),電腦端依欄位位置讀取 */
+  if(isIN()){ type='IN'; inbound.forEach(function(r){ var x=inRow(r); rows.push([x[0],x[1],x[2],x[3],x[4],x[5],r.stock,r.vac||'']); }); }
   else if(isWF()){ type='WF'; wafers.forEach(function(w){ rows.push([w.type||'WF',w.stock,w.item,w.lot,w.qty,w.wf]); }); }
   else { type='IC'; tidy().rows.forEach(function(r){ rows.push([r.part,r.lot,r.qty]); }); }
-  return {type:type,n:rows.length,text:['SCN1',type,rows.length,stamp()].join('\t')+'\n'+rows.map(function(r){ return r.map(clean).join('\t'); }).join('\n')};
+  /* 第一行最後一欄是手機版本,電腦端用來提醒兩邊版本不同 */
+  return {type:type,n:rows.length,text:['SCN1',type,rows.length,stamp(),'v4.6'].join('\t')+'\n'+rows.map(function(r){ return r.map(clean).join('\t'); }).join('\n')};
 }
 function deflateRaw(bytes){
   try{
@@ -4052,7 +4239,7 @@ $('btnXlsx').onclick=function(){ ready(function(){ var n=fname('xlsx'); download
 
 /* 測試用掛勾 */
 window.__scan={hit:onHit,cfg:cfg,add:addItem,parse:parse,rec:rec,xlsx:xlsxBlob,dec:function(src,sx,sy,w,h,scale,alt,rot){ return decodeNow(draw(src,sx,sy,w,h,scale,!!rot),wfOpt(FMT_WAFER,alt||'h')); },pool:function(){return {ok:poolOK,n:liveWorkers().length};},editGroup:editGroup,wframe:wFrame,wclass:wClass,wfnorm:wfNorm,
-  sync:function(){syncChips();syncMain();render();},items:function(){return items;},wafers:function(){return wafers;},inbound:function(){return inbound;},qr:function(){return qrList;},setLoc:setLoc,wcur:function(){return wcur;},rmap:function(){return rmap;},ms:function(){return lastMs;}};
+  sync:function(){syncChips();syncMain();render();},items:function(){return items;},wafers:function(){return wafers;},inbound:function(){return inbound;},inNext:inNext,inGate:function(){return inGate;},picking:function(){return locPicking;},qr:function(){return qrList;},setLoc:setLoc,wcur:function(){return wcur;},rmap:function(){return rmap;},ms:function(){return lastMs;}};
 
 /* 離線快取:有網路時開過一次,之後沒網路也能開 */
 function offState(msg,cls){ var e=$('offMsg'); if(e){ e.textContent=msg; e.className='note'+(cls?' '+cls:''); } }
