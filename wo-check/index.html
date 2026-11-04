@@ -154,6 +154,15 @@
   .retbtn{width:100%;margin-top:10px;padding:12px;font-size:16px;font-weight:700}
   .empbar{font-size:13px;color:var(--sub);margin:-4px 2px 8px;display:flex;gap:8px;align-items:center} .empbar b{color:var(--ink)}
   .empbar button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:2px 8px;font-size:12px}
+  .empwrap{display:flex;align-items:center;gap:6px} .empR{font-size:26px;font-weight:800;color:var(--accent)} .empwrap .empin{flex:1}
+  .splitbar{margin:0 0 10px;border:2px solid var(--danger);background:#fff5f4;border-radius:12px;padding:8px 12px}
+  .splitbar summary{font-weight:800;color:var(--danger);font-size:15px;list-style:none;cursor:pointer} .splitbar summary::-webkit-details-marker{display:none}
+  .splitbar summary small{font-weight:400;color:var(--sub)} .splitbar .sr{font-size:15px;line-height:1.8} .splitbar .sr b.l{font-family:ui-monospace,monospace;font-size:16px}
+  .splitbar .g{color:var(--ok);font-weight:700} .splitbar .o{color:var(--danger)}
+  .rst{display:inline-block;font-size:12.5px;font-weight:700;border-radius:6px;padding:1px 8px;margin-left:6px} .rst.ok{background:#dafbe1;color:#1a7f37} .rst.ng{background:#fff8c5;color:#9a6700}
+  .qrfull{position:fixed;inset:0;z-index:80;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .qrfull[hidden]{display:none} .qrfull svg{width:min(98vw,92vh);height:auto} .qrfull .fbar{position:absolute;left:0;right:0;bottom:0;display:flex;gap:10px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));align-items:center}
+  .qrfull .fbar .btn{flex:1} .qrfull .fno{position:absolute;top:10px;left:0;right:0;text-align:center;font-weight:800;font-size:20px;color:var(--danger)}
   .empin{width:100%;font:inherit;font-size:22px;padding:10px 12px;border:2px solid var(--accent);border-radius:10px;letter-spacing:2px;text-align:center}
   .qrov{position:fixed;inset:0;z-index:60;background:#000;display:flex;flex-direction:column}
   .qrov[hidden]{display:none}
@@ -229,6 +238,7 @@
 <section class="screen" id="sc-scan">
   <div class="vbar">核對廠商：<b class="curV curCode"></b><button class="tg" id="switchV">切換</button></div>
   <div class="empbar">刷讀人員工號：<b class="empV">—</b><button type="button" id="empChg">更換</button></div>
+  <details class="splitbar" id="splitBar" hidden><summary id="splitSum"></summary><div id="splitList"></div></details>
   <div class="cam" id="cam">
     <video id="video" playsinline muted></video>
     <div class="frame"></div>
@@ -276,6 +286,8 @@
 <div class="qrov" id="qrOv" hidden><video id="qrVideo" playsinline muted></video><div class="qrframe"></div>
   <div class="qrbar"><div id="qrStat">相機啟動中…</div><button class="btn" id="qrClose" type="button">關閉</button></div></div>
 <div class="mask" id="mask"><div class="sheet" id="sheet"><div class="sh" id="sTitle"></div><div class="sb" id="sBody"></div><div class="sf" id="sFoot"></div></div></div>
+<div class="qrfull" id="qrFull" hidden><div class="fno" id="qrFullNo"></div><div id="qrFullBody"></div>
+  <div class="fbar" id="qrFullBar"></div></div>
 <canvas id="cv" hidden></canvas>
 
 <script>
@@ -3258,6 +3270,14 @@ function boxAlert(bx, row){
     button: !rm.length ? '確認，繼續刷下一顆' : onlyOverlap ? '已取出核對，繼續刷下一顆' : '已取出，繼續刷下一顆'
   };
 }
+/* 刻號多了、還沒分片重刷取代的標籤：要出的刻號 go、分出不出的刻號 out（電腦補印標籤檔、手機待重刷提示共用） */
+function splitItems(sm){
+  return (sm && sm.splitBoxes || []).map(r => {
+    const ss = sm.scans.filter(s => s.b === r.b), okS = ss.filter(s => s.status === 'ok'), outS = ss.filter(s => s.status === 'noslot' || s.status === 'cancelled');
+    const sl = a => [...new Set(a.map(s => s.slot))].sort();
+    return {b:r.b, lot:r.lot, slots:r.slots, part:(okS[0] || outS[0] || {}).part || '', outPart:(outS[0] || okS[0] || {}).part || '', go:sl(okS), out:sl(outS)};
+  });
+}
 /* 某家廠商目前的核對狀態（給工單清單的廠商卡片用）；沒有刷讀紀錄回傳 null */
 function vendorStatus(files, v, vBoxes){
   if(!vBoxes || !vBoxes.length) return null;
@@ -3280,7 +3300,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V4.0';
+const APP_VER = 'V4.4';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -3595,7 +3615,7 @@ function renderLoad(){
       <div class="vmeta">出貨日期 <b>${esc(g.date || '—')}</b>　${esc([...g.kinds].join('、'))}　有效 <b>${g.active}</b> / ${g.total} 筆</div>
       <button class="tg" data-delv="${esc(g.name)}">移除</button>
       ${(() => { const st = vendorStatus(files, g.name, g.name === curVendor ? boxes : (scanStore[g.name] || {}).boxes);
-        return st ? `<div class="vst"><span class="tag ${st.clean ? 'o' : st.complete ? 'c' : 'w'}">${st.text}</span><button class="rbtn" data-resv="${esc(g.name)}">查看核對結果</button></div>` : ''; })()}</div>
+        return st ? `<div class="vst"><span class="tag ${st.clean ? 'o' : st.complete ? 'c' : 'w'}">${st.text}</span>${retTag(g.name)}<button class="rbtn" data-resv="${esc(g.name)}">查看核對結果</button></div>` : ''; })()}</div>
     <div class="vbody">${g.files.map(fi => files[fi].records.map((r,ri) => `<div class="card wo ${r.cancel?'cancel':''}">
       <div class="info"><div class="t1">${esc(r.wo)} ${r.cancel?'<span class="tag c">已取消</span>':''}${qtyMismatch(r)?'<span class="tag w">刻號數≠數量</span>':''}</div>
         <div class="t2">${esc(r.part)}　批號 <b style="color:var(--ink)">${esc(r.lot)}</b>　${esc(fabText(r))}</div>
@@ -3625,6 +3645,7 @@ $('fileInput').onchange = async e => {
     const ps = await parseAnyFile(f).catch(e => [{name:f.name, src:f.name, records:[], error:e.message}]);
     const ok = ps.filter(p => p.records.length);
     if(!ok.length) bad.push(f.name + (ps[0] && ps[0].error ? '（' + ps[0].error + '）' : ''));
+    ok.forEach(x => x.loadedAt = todayStr());
     files = files.filter(x => (x.src || x.name) !== f.name).concat(ok);
   }
   $('loadMsg').textContent = bad.length ? '沒有領料廠 RT2 的 Wafer 工單（已略過）：' + bad.join(', ') : '';
@@ -3930,6 +3951,14 @@ function renderScan(){
   $('pNum').innerHTML = `${sm.ok} <small>/ ${sm.expected}</small>`;
   $('pBar').style.width = (sm.expected ? sm.ok / sm.expected * 100 : 0) + '%';
   renderPend();
+  // 待分片重刷：刻號多了、還沒重刷取代的標籤（預設收合成一行，點開看刻號）
+  const sp = splitItems(sm), bar = $('splitBar');
+  bar.hidden = !sp.length;
+  if(sp.length){
+    $('splitSum').innerHTML = `✂ 待分片重刷 ${sp.length} 顆：${sp.map(x => esc(x.lot)).join('、')} <small>（點開看刻號）</small>`;
+    $('splitList').innerHTML = sp.map(x => `<div class="sr"><b class="l">${esc(x.lot)}</b>　要出 <span class="g">${esc(compress(x.go))}</span>　<span class="o">分出 ${esc(compress(x.out))}</span></div>`).join('')
+      + '<div class="muted" style="font-size:12px">印好新標籤後重刷要出的那顆，會自動取代原標籤並從這裡消失</div>';
+  }
   const prog = orderProgress(db, sm.scans);
   $('progSum').textContent = `${prog.filter(r => r.done === r.slots.length).length} / ${prog.length} 筆完成`;
   $('progList').innerHTML = prog.map(r => `<div class="row ${r.done===r.slots.length?'done':''}"><span>${esc(r.wo.replace(/^.*-(\d+)$/,'-$1'))}　${esc(r.part)}　${esc(r.lot)}</span><b>${r.done} / ${r.slots.length}</b></div>`).join('');
@@ -3967,7 +3996,7 @@ async function brightOn(){
   sheetOnClose = brightOff;
 }
 function brightOff(){
-  document.body.classList.remove('qrbright');
+  document.body.classList.remove('qrbright'); const f = document.getElementById('qrFull'); if(f) f.hidden = true;
   try{ if(qrWake) qrWake.release(); }catch(e){} qrWake = null;
 }
 function showComplete(){
@@ -4082,6 +4111,7 @@ function importListQr(r){
       const have = new Set(f.records.map(r => r.wo + '|' + String(r.lot).toUpperCase()));
       files.filter(x => gKey(x) === key).forEach(x => x.records.forEach(r => { if(!have.has(r.wo + '|' + String(r.lot).toUpperCase())) f.records.push(r); }));
     }
+    f.loadedAt = todayStr();
     files = files.filter(x => gKey(x) !== key).concat([f]);
     dbChanged(); setVendor(key); lastKey = ''; hold = null;
     go('scan'); setLast('ok', `✔ 已載入 ${label}（${f.records.length} 筆，清單時間 ${f.qrTime}），可以開始刷讀`);
@@ -4097,19 +4127,36 @@ function importListQr(r){
 }
 /* ---------- 刷讀人員工號：輸入一次後記在瀏覽器，回傳資料時一併帶上 ---------- */
 const EMP_KEY = 'wo_check_m_emp';
-const getEmp = () => { try{ return localStorage.getItem(EMP_KEY) || ''; }catch(e){ return ''; } };
+// 工號一律是 R＋數字（例 R4095）：輸入時只用數字鍵盤輸入 4095，程式自動加上 R
+const empFix = v => { v = String(v || '').trim().toUpperCase(); return /^\d+$/.test(v) ? 'R' + v : v; };
+const getEmp = () => { try{ return empFix(localStorage.getItem(EMP_KEY) || ''); }catch(e){ return ''; } };
 function renderEmp(){ document.querySelectorAll('.empV').forEach(e => e.textContent = getEmp() || '尚未輸入'); }
 function askEmp(after){
   if(modalOpen) return;
   openSheet('plain', '請輸入工號', `<div class="muted" style="margin-bottom:8px">刷讀前請輸入你的工號，回傳資料給電腦時會一併帶上（只要輸入一次，之後會記住）。</div>
-    <input id="empIn" class="empin" inputmode="numeric" autocomplete="off" autocapitalize="characters" value="${esc(getEmp())}" placeholder="工號"><div id="empErr" style="color:var(--danger);font-size:13px;margin-top:6px"></div>`,
-    [['確定', 'primary', () => { const v = $('empIn').value.trim().toUpperCase().replace(/[|~;]/g, '');
-      if(!v){ $('empErr').textContent = '請輸入工號'; return false; }
+    <div class="empwrap"><span class="empR">R</span><input id="empIn" class="empin" inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="${esc(getEmp().replace(/^R/, ''))}" placeholder="例 4095"></div><div id="empErr" style="color:var(--danger);font-size:13px;margin-top:6px"></div>`,
+    [['確定', 'primary', () => { const d = $('empIn').value.replace(/\D/g, '');
+      if(!d){ $('empErr').textContent = '請輸入工號數字（例 4095）'; return false; }
+      const v = 'R' + d;
       try{ localStorage.setItem(EMP_KEY, v); }catch(e){} renderEmp(); if(after) setTimeout(after, 0); }]]);
   setTimeout(() => { const i = $('empIn'); if(i){ i.focus(); i.select(); } }, 200);
 }
 $('empChg').onclick = () => askEmp();
 renderEmp();
+/* ---------- 每家廠商的回傳狀態：記下每次產生回傳 QR 時的刷讀內容，之後有變動就提示「尚未回傳」 ---------- */
+const RET_KEY = 'wo_check_m_ret';
+function todayStr(){ const d = new Date(); return d.getFullYear() + '/' + pad2(d.getMonth() + 1) + '/' + pad2(d.getDate()); }
+const retLoad = () => { try{ return JSON.parse(localStorage.getItem(RET_KEY)) || {}; }catch(e){ return {}; } };
+const retSave = o => { try{ localStorage.setItem(RET_KEY, JSON.stringify(o)); }catch(e){} };
+const boxesOf = key => (key === curVendor ? boxes : (scanStore[key] || {}).boxes) || [];
+const boxSigOf = bx => activeBoxes(bx).map(b => b.lot + ':' + [...b.slots].sort().join(',')).sort().join('|');
+function retStatus(key){
+  const bx = boxesOf(key); if(!activeBoxes(bx).length) return null;
+  const r = retLoad()[key];
+  if(r && r.sig === boxSigOf(bx)) return {ok:true, text:`✔ 已回傳 ${r.at}`};
+  return {ok:false, text:r ? '⚠ 回傳後又有刷讀，尚未回傳' : '⚠ 尚未回傳電腦'};
+}
+const retTag = key => { const st = retStatus(key); return st ? `<span class="rst ${st.ok ? 'ok' : 'ng'}">${st.text}</span>` : ''; };
 /* ---------- 回傳刷讀資料到電腦：所有刷過的廠商一次產生 QR Code（只放工號、廠商、批號、刻號） ---------- */
 async function showReturnQr(){
   if(!getEmp()) return askEmp(showReturnQr);
@@ -4117,6 +4164,8 @@ async function showReturnQr(){
   const groups = vendorGroups(files).map(g => ({key:g.name, boxes:(g.name === curVendor ? boxes : (scanStore[g.name] || {}).boxes) || []})).filter(g => activeBoxes(g.boxes).length);
   if(!groups.length){ openSheet('warn', '沒有刷讀資料', '<div>目前還沒有刷讀任何一顆，沒有資料可以回傳。</div>', [['知道了', 'primary', null]]); return; }
   let q; try{ q = await returnQrTexts(groups, getEmp()); }catch(e){ alert('無法產生 QR Code：' + (e && e.message || e)); return; }
+  { const rs = retLoad(), n = new Date(), at = pad2(n.getHours()) + ':' + pad2(n.getMinutes());
+    groups.forEach(g => rs[g.key] = {at, d:todayStr(), sig:boxSigOf(g.boxes)}); retSave(rs); }
   let k = 0, warned = false;
   const seen = new Set([0]), N = q.texts.length;
   // 多張：每一張都要顯示過（讓電腦刷過）才能關閉；沒看完就關閉會先卡住提醒
@@ -4126,8 +4175,17 @@ async function showReturnQr(){
     <div class="qrnav"><span style="${N > 1 ? 'font-size:20px;color:var(--danger)' : ''}">${N > 1 ? `第 ${k + 1} / ${N} 張` : '共 1 張'}</span><span>工號 ${esc(getEmp())}</span></div>
     <div class="muted" style="margin-top:4px">${groups.map(g => esc(codeLabel(g.key)) + '（' + activeBoxes(g.boxes).length + ' 顆）').join('、')}</div>
     <div class="muted" style="margin-top:6px">在電腦版按「📥 接收與查詢手機核對結果」，用條碼槍刷這個 QR Code${q.texts.length > 1 ? '，刷完按「下一張」' : ''}。</div></div>`;
-  const go = d => { k = (k + d + N) % N; seen.add(k); $('sBody').innerHTML = body(); return false; };
-  const btns = (N > 1 ? [['上一張', '', () => go(-1)], ['下一張', 'primary', () => go(1)]] : [])
+  const go = d => { k = (k + d + N) % N; seen.add(k); $('sBody').innerHTML = body(); if(!$('qrFull').hidden) full(); return false; };
+  // 全螢幕：只顯示 QR Code（白底、放到最大），條碼槍更好刷
+  const full = () => {
+    $('qrFull').hidden = false; $('qrFullNo').textContent = N > 1 ? `第 ${k + 1} / ${N} 張` : '';
+    $('qrFullBody').innerHTML = qrSvg(q.texts[k]);
+    $('qrFullBar').innerHTML = (N > 1 ? '<button class="btn" id="fPrev">上一張</button><button class="btn primary" id="fNext">下一張</button>' : '') + '<button class="btn" id="fClose">結束全螢幕</button>';
+    if(N > 1){ $('fPrev').onclick = () => go(-1); $('fNext').onclick = () => go(1); }
+    $('fClose').onclick = () => { $('qrFull').hidden = true; };
+    return false;
+  };
+  const btns = [['⛶ 全螢幕', '', full]].concat(N > 1 ? [['上一張', '', () => go(-1)], ['下一張', 'primary', () => go(1)]] : [])
     .concat([['關閉', N > 1 ? '' : 'primary', () => { if(N > 1 && seen.size < N && !warned){ warned = true; beep('err'); $('sBody').innerHTML = body(); $('sBody').scrollTop = 0; return false; } }]]);
   openSheet('plain', `📤 回傳刷讀資料（${q.nV} 家廠商・${q.nB} 顆）${N > 1 ? `・共 ${N} 張` : ''}`, body(), btns);
   brightOn();
@@ -4180,6 +4238,7 @@ function renderResult(){
   + foldHtml(`刷讀順序<small>${activeBoxes(boxes).length} 顆</small>`, sm.boxRows.length ? sm.boxRows.map(r => `<div class="rrow">
       <div class="a"><span>#${r.b}　${esc(r.lot)}</span><span>${r.slots.length} 片${r.void ? ' <span class="tag">作廢</span>' : !r.bad.length ? '' : ` <span class="tag c">異常 ${r.bad.length}</span>`}</span></div>
       <div class="b">${r.time}　刻號 ${esc(compress(r.slots))}　${esc(r.parts)}</div></div>`).join('') : '<div class="none">尚未刷讀</div>')
+  + `<div style="margin-top:12px;text-align:center">${retTag(curVendor)}</div>`
   + `<button class="btn primary retbtn" id="retBtnRes" type="button">📤 回傳刷讀資料到電腦（QR Code）</button>`
   + `<button class="btn danger" id="resetBtn" style="width:100%;margin-top:10px">清除刷讀紀錄，重新核對</button>`;
   $('errExpBtn').onclick = e => { e.preventDefault(); e.stopPropagation(); exportErrors(); };
@@ -4198,6 +4257,25 @@ if('serviceWorker' in navigator && location.protocol === 'https:'){
 applyFrame();
 renderLoad();
 if(boxes.length){ go('scan'); setLast('', `已還原上次的核對進度（已刷 ${boxes.length} 顆）`); } else go('load');
+/* 隔天開啟：手機上還有前一天的工單 → 都回傳過就詢問清除；還有沒回傳的先提醒回傳 */
+(function oldDayCheck(){
+  const today = todayStr();
+  files.forEach(f => { if(!f.loadedAt) f.loadedAt = today; }); persist();
+  const old = files.filter(f => f.loadedAt < today); if(!old.length) return;
+  const keys = [...new Set(old.map(gKey))], days = [...new Set(old.map(f => f.loadedAt))].sort();
+  const notRet = keys.filter(k => { const st = retStatus(k); return st && !st.ok; });
+  setTimeout(() => {
+    if(notRet.length) openSheet('warn', '前一天的刷讀資料還沒回傳', `<div>手機上還有 ${esc(days.join('、'))} 的工單，其中 <b>${notRet.length}</b> 家刷讀資料<b>尚未回傳電腦</b>：</div>
+      <div class="big" style="margin:6px 0">${notRet.map(k => esc(codeLabel(k))).join('、')}</div><div>請先回傳給電腦，之後再開啟時會詢問是否清除。</div>`,
+      [['📤 回傳到電腦', 'primary', () => { setTimeout(showReturnQr, 0); }], ['稍後', '', null]]);
+    else openSheet('plain', '要清除前一天的資料嗎？', `<div>手機上還有 ${esc(days.join('、'))} 的工單（${keys.length} 家），刷讀資料都已回傳電腦。</div>
+      <div style="margin-top:6px">清除後再掃今天的點交清單 QR Code，避免新舊工單混在一起。</div>`,
+      [['清除前一天的資料', 'primary', () => {
+         const rs = retLoad(); keys.forEach(k => { delete scanStore[k]; delete rs[k]; }); retSave(rs);
+         files = files.filter(f => f.loadedAt >= today); if(keys.includes(curVendor)){ curVendor = ''; boxes = []; }
+         dbChanged(); go('load'); }], ['保留', '', null]]);
+  }, 400);
+})();
 })();
 </script>
 </body>
