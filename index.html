@@ -268,7 +268,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
   <header>
     <div style="display:flex;align-items:center">
       <div class="modeSeg"><button id="mIC">IC</button><button id="mWF">WAFER</button><button id="mIN">入庫</button></div>
-      <span class="ver">v4.6</span>
+      <span class="ver">v4.7</span>
     </div>
     <div class="tot"><div><b class="num" id="tCnt">0</b><span id="tCntL">筆</span></div><div><b class="num" id="tQty">0</b><span id="tQtyL">總數量</span></div></div>
   </header>
@@ -377,7 +377,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
         <select id="optCam"><option value="">自動(後鏡頭)</option></select></label>
     </div>
     <div class="note" id="camMsg">相機實際解析度:啟動相機後顯示</div>
-    <div class="note">手機條碼掃描 版本 v4.6(電腦端「手機資料接收」要用同一版)</div>
+    <div class="note">手機條碼掃描 版本 v4.7(電腦端「手機資料接收」要用同一版)</div>
     <div class="note" id="offMsg">離線開啟:檢查中…</div>
     <div class="note">資料只存在這支手機的瀏覽器裡,不會上傳。清除瀏覽器資料會一併清掉,請記得先匯出。</div>
   </div></section>
@@ -3293,15 +3293,24 @@ var FMT_WAFER=['CODE_128','CODE_39','QR_CODE'];
 function is2D(fmt){ return FMT_2D.indexOf(fmt)>=0; }
 function allowed(){ return isWF()?FMT_WAFER:(FMT_SET[cfg.types]||FMT_ALL); }
 /* 瞄準框:[寬, 高] 為佔相機畫面的比例;有 ar 的依寬高比換算高度 */
-/* W:廠內 Wafer 標籤的條碼區(右半邊:4 條一維條碼疊在上面、WF ID 的 QR Code 在下面),手機直拿時是窄長的直立區塊 */
-var FRAMES={L:{w:.86,h:.7},M:{w:.62,h:.5},S:{w:.42,h:.32},R:{w:.8,ar:16/9},B:{w:.94,ar:7.5},V:{w:.24,h:.88},W:{w:.6,ar:.64,maxH:.72}};
+/* W:廠內 Wafer 標籤的條碼區(右半邊:4 條一維條碼疊在上面、WF ID 的 QR Code 在下面)。
+   條碼寬度依料號長短而不同(寬高比約 0.5~0.85),框依最寬的設計,解碼範圍再比框多留一點,避免長條碼兩端被切掉 */
+var FRAMES={L:{w:.86,h:.7},M:{w:.62,h:.5},S:{w:.42,h:.32},R:{w:.8,ar:16/9},B:{w:.94,ar:7.5},V:{w:.24,h:.88},W:{w:.84,ar:.86,maxH:.74}};
 /* IC 和 WAFER/入庫 各自記住自己的框 */
+/* 畫面上的框和實際解碼的範圍必須一致:相機區的大小會隨下方面板內容改變,每次都重新套用 */
+var frameKey='';
+function applyFrame(){
+  var f=frameSize(), k=f[0].toFixed(3)+','+f[1].toFixed(3);
+  if(k!==frameKey){ frameKey=k; $('frame').style.inset=((1-f[1])*50)+'% '+((1-f[0])*50)+'%'; }
+  return f;
+}
+if(window.ResizeObserver){ try{ new ResizeObserver(function(){ applyFrame(); }).observe($('cam')); }catch(e){} }
 function curFrame(){ return isWF()?(cfg.wframe||'W'):cfg.frame; }
 function frameSize(){
   var f=FRAMES[curFrame()]||FRAMES.M, c=$('cam');
   if(!f.ar) return [f.w,f.h];
   var h=(f.w*(c.clientWidth||390)/f.ar)/(c.clientHeight||560), mx=f.maxH||.9;
-  if(f.maxH && h>mx) return [f.w*mx/h,mx];             /* 太高時等比例縮小,保持標籤條碼區的形狀,也不被上方的按鈕蓋住 */
+  if(f.maxH && h>mx) return [f.w,mx];                 /* 太高時只壓低高度、寬度不縮,料號長的標籤(條碼很寬)兩端才不會被切掉 */
   return [f.w,Math.min(mx,h)];
 }
 var FINE=['QR_CODE','DATA_MATRIX','AZTEC','CODE_128','CODE_39'], LINEAR=['CODE_128','CODE_39','CODE_93'];
@@ -3724,7 +3733,7 @@ function onHit(text,fmt,now){
 function region(v){
   var vw=v.videoWidth, vh=v.videoHeight, wr=$('cam'), a=(wr.clientWidth/wr.clientHeight)||4/3;
   var visW=vw, visH=vh; if(vw/vh>a) visW=vh*a; else visH=vw/a;
-  var f=frameSize(), cw=Math.round(visW*f[0]), ch=Math.round(visH*f[1]);
+  var f=applyFrame(), pad=isWF() && curFrame()==='W'?1.14:1, cw=Math.round(visW*Math.min(1,f[0]*pad)), ch=Math.round(visH*Math.min(1,f[1]*pad));
   return {sx:Math.round((vw-cw)/2), sy:Math.round((vh-ch)/2), cw:cw, ch:ch};
 }
 /* 掃描排程:有空的解碼器就送下一格畫面,解完立刻接著送,不再固定等待 */
@@ -3910,7 +3919,7 @@ function syncChips(){
   var lm=$('cLoc');
   Array.prototype.forEach.call(lm.querySelectorAll('button'),function(x){ x.classList.toggle('on',x.getAttribute('data-m')===(cfg.locMode||'gen')); }); $('cTypes').lastChild.textContent=TYPE_L[cfg.types]||'';
   $('cMode').classList.toggle('hide',isWF()); $('cTypes').classList.toggle('hide',isWF()); $('cW').classList.toggle('hide',!isWF());
-  var f=frameSize(); $('frame').style.inset=((1-f[1])*50)+'% '+((1-f[0])*50)+'%';
+  applyFrame();
   var cv=$('cVac'); cv.classList.toggle('hide',!isIN()); cv.classList.toggle('need',!cfg.vac); cv.lastChild.textContent=VAC_L[cfg.vac]||'未選';
   $('mIC').classList.toggle('on',cfg.app==='ic'); $('mWF').classList.toggle('on',cfg.app==='wafer'); $('mIN').classList.toggle('on',isIN());
 }
@@ -4182,7 +4191,7 @@ function qrPayload(){
   else if(isWF()){ type='WF'; wafers.forEach(function(w){ rows.push([w.type||'WF',w.stock,w.item,w.lot,w.qty,w.wf]); }); }
   else { type='IC'; tidy().rows.forEach(function(r){ rows.push([r.part,r.lot,r.qty]); }); }
   /* 第一行最後一欄是手機版本,電腦端用來提醒兩邊版本不同 */
-  return {type:type,n:rows.length,text:['SCN1',type,rows.length,stamp(),'v4.6'].join('\t')+'\n'+rows.map(function(r){ return r.map(clean).join('\t'); }).join('\n')};
+  return {type:type,n:rows.length,text:['SCN1',type,rows.length,stamp(),'v4.7'].join('\t')+'\n'+rows.map(function(r){ return r.map(clean).join('\t'); }).join('\n')};
 }
 function deflateRaw(bytes){
   try{
