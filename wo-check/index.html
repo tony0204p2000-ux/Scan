@@ -154,6 +154,7 @@
   .retbtn{width:100%;margin-top:10px;padding:12px;font-size:16px;font-weight:700}
   .empbar{font-size:13px;color:var(--sub);margin:-4px 2px 8px;display:flex;gap:8px;align-items:center} .empbar b{color:var(--ink)}
   .empbar button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:2px 8px;font-size:12px}
+  .cpick{border:1px solid #f3b8b3;background:#fff5f4;border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.7} .cpick b.r{color:var(--danger)} .cpk{display:inline-block;border-radius:5px;padding:0 8px;font-weight:700;font-size:13px} .cpk.out{background:#ffebe9;color:#cf222e} .cpk.sp{background:#fff1e5;color:#bc4c00}
   .empwrap{display:flex;align-items:center;gap:6px} .empR{font-size:26px;font-weight:800;color:var(--accent)} .empwrap .empin{flex:1}
   .splitbar{margin:0 0 10px;border:2px solid var(--danger);background:#fff5f4;border-radius:12px;padding:8px 12px}
   .splitbar summary{font-weight:800;color:var(--danger);font-size:15px;list-style:none;cursor:pointer} .splitbar summary::-webkit-details-marker{display:none}
@@ -3275,7 +3276,8 @@ function splitItems(sm){
   return (sm && sm.splitBoxes || []).map(r => {
     const ss = sm.scans.filter(s => s.b === r.b), okS = ss.filter(s => s.status === 'ok'), outS = ss.filter(s => s.status === 'noslot' || s.status === 'cancelled');
     const sl = a => [...new Set(a.map(s => s.slot))].sort();
-    return {b:r.b, lot:r.lot, slots:r.slots, part:(okS[0] || outS[0] || {}).part || '', outPart:(outS[0] || okS[0] || {}).part || '', go:sl(okS), out:sl(outS)};
+    const cwo = [...new Set(outS.filter(s => s.status === 'cancelled').flatMap(s => String(s.wo).split(' / ')))];
+    return {b:r.b, lot:r.lot, slots:r.slots, part:(okS[0] || outS[0] || {}).part || '', outPart:(outS[0] || okS[0] || {}).part || '', go:sl(okS), out:sl(outS), cwo};
   });
 }
 /* 某家廠商目前的核對狀態（給工單清單的廠商卡片用）；沒有刷讀紀錄回傳 null */
@@ -3287,10 +3289,17 @@ function vendorStatus(files, v, vBoxes){
     text: clean ? '核對完成・相符' : sm.complete ? `核對完成・錯誤 ${sm.errors.length} 筆` : `核對中 ${sm.ok}/${sm.expected}`};
 }
 /* 結果頁最上方的大字結論（綠：相符；不符時 綠 正確 / 紅 錯誤 / 黃 未刷讀） */
+/* 錯誤的標籤都已整張取出（例如批號不在工單）、其餘全部到齊：視為核對相符 */
+function outOk(sm){
+  if(!sm || !sm.complete || sm.splitBoxes.length || sm.issues.overlap.length || !sm.errors.length) return false;
+  const out = new Set(sm.outBoxes.map(r => r.b));
+  return sm.errors.every(e => out.has(e.b));
+}
 function verdictHtml(sm){
   const okBox = sm.boxRows.filter(r => !r.void && !r.bad.length).length, badBox = sm.boxRows.filter(r => !r.void && r.bad.length).length;
   const unscanned = sm.expected - sm.ok;
   const good = sm.complete && !sm.errors.length && sm.partRows.every(p => p.diff === 0);
+  if(!good && outOk(sm)) return `<div class="vd vd-ok"><div class="vt">✔ 核對相符</div><div class="vbig">正確 <b>${okBox}</b> 顆</div><div class="vsub">共 ${sm.total} 片 Wafer，與工單一致・已取出問題標籤 ${sm.outBoxes.length} 張（不交付）</div></div>`;
   if(good) return `<div class="vd vd-ok"><div class="vt">✔ 核對相符</div><div class="vbig">正確 <b>${okBox}</b> 顆</div><div class="vsub">共 ${sm.total} 片 Wafer，與工單一致</div></div>`;
   return `<div class="vd vd-ng"><div class="vt">✖ 核對不符</div>
     <div class="vgrid"><div class="vb vb-g"><span>正確</span><b>${okBox}</b><span>顆</span></div>
@@ -3300,7 +3309,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V4.4';
+const APP_VER = 'V4.7';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -3457,20 +3466,21 @@ const slotsUnpack = s => { const out = []; String(s || '').split('.').filter(Boo
 /* 點交清單 QR：一家廠商（＋出貨日期）一組 */
 async function listQrTexts(files, key){
   const g = vendorGroups(files).find(x => x.name === key); if(!g) return [];
-  const recs = []; vFiles(files, key).forEach(f => f.records.forEach(r => { if(!r.cancel) recs.push(r); }));
+  // 已取消的項次也放進去（標 C）：手機合併新清單時才知道哪些已取消，已刷到的會提醒取出
+  const recs = []; vFiles(files, key).forEach(f => f.records.forEach(r => recs.push(r)));
   recs.sort((x, y) => String(x.wo).localeCompare(String(y.wo), undefined, {numeric:true}));
   const t = new Date(), time = `${t.getFullYear()}/${pad2(t.getMonth() + 1)}/${pad2(t.getDate())} ${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
   const header = ['L1', vCodeOf(g.vendor), g.vendor, g.date || '', time].join('|');
   const lines = recs.map(r => { const sl = []; r.wafers.forEach(w => splitSlots(w.slots).forEach(s => { const n = parseInt(s, 10); if(!isNaN(n)) sl.push(pad2(n)); }));
-    return [r.wo, r.part, String(r.lot).toUpperCase(), slotsPack(sl), r.wsize || ''].join('|'); });
+    return [r.wo, r.part, String(r.lot).toUpperCase(), slotsPack(sl), r.wsize || ''].concat(r.cancel ? ['C'] : []).join('|'); });
   return {texts:await qrPack('WQ', header, lines, QR_MAX_LIST), time};
 }
 /* 掃到的點交清單 QR → 檔案物件（跟上傳檔案一樣的格式） */
 function listFromQr(header, lines){
   const h = header.split('|'), code = h[1] || '', vendor = normVendor(h[2] || ''), date = h[3] || '', time = h[4] || '';
   if(code) VCODE[vKey(vendor)] = code;
-  const records = lines.map(l => { const [wo, part, lot, sl, sz] = l.split('|'); const slots = slotsUnpack(sl);
-    return {wo, part, lot, plant:'RT2', qty:slots.length, wsize:sz || '', wafers:[{die:part, fab:'', slots:slots.join(',')}], cancel:false}; });
+  const records = lines.map(l => { const [wo, part, lot, sl, sz, c] = l.split('|'); const slots = slotsUnpack(sl);
+    return {wo, part, lot, plant:'RT2', qty:slots.length, wsize:sz || '', wafers:[{die:part, fab:'', slots:slots.join(',')}], cancel:c === 'C'}; });
   return {name:`QR｜${vendor}｜${date}`, src:`QR:${vendor}|${date}`, vendor, vcode:code, printDate:date, kind:'清單QR', qrTime:time, records, excluded:0};
 }
 /* 手機錯誤清單 QR */
@@ -3495,13 +3505,14 @@ function errorFromQr(header, lines){
 /* 手機回傳刷讀資料（一次回傳所有刷過的廠商）：只放 工號、廠商、批號、刻號；電腦端套用工單資料組出完整明細 */
 async function returnQrTexts(groups, emp){
   const t = new Date(), time = `${t.getFullYear()}/${pad2(t.getMonth() + 1)}/${pad2(t.getDate())} ${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
-  const vt = groups.map(g => { const i = g.key.indexOf('｜'), v = i < 0 ? g.key : g.key.slice(0, i), d = i < 0 ? '' : g.key.slice(i + 1); return [vCodeOf(v), v, d].join('~'); });
+  // 每家附上手機清單時間（qt）：電腦判斷之後才取消的工單，手機當時知不知道
+  const vt = groups.map(g => { const i = g.key.indexOf('｜'), v = i < 0 ? g.key : g.key.slice(0, i), d = i < 0 ? '' : g.key.slice(i + 1); return [vCodeOf(v), v, d, g.qt || ''].join('~'); });
   const header = ['R1', String(emp || '').replace(/[|~;\n]/g, ''), time, vt.join(';')].join('|');
   const lines = []; groups.forEach((g, i) => activeBoxes(g.boxes).forEach(b => lines.push([i, String(b.lot).toUpperCase(), slotsPack(b.slots)].join('|'))));
   return {texts:await qrPack('WR', header, lines, QR_MAX_RET), time, nV:groups.length, nB:lines.length};
 }
 function returnFromQr(header, lines){
-  const h = header.split('|'), vs = (h[3] || '').split(';').filter(Boolean).map(x => { const [code, name, date] = x.split('~'); return {code, name, date, boxes:[]}; });
+  const h = header.split('|'), vs = (h[3] || '').split(';').filter(Boolean).map(x => { const [code, name, date, qt] = x.split('~'); return {code, name, date, qt:qt || '', boxes:[]}; });
   lines.forEach(l => { const [i, lot, sl] = l.split('|'); const v = vs[+i]; if(v) v.boxes.push({b:v.boxes.length + 1, lot, slots:slotsUnpack(sl), time:''}); });
   return {emp:h[1] || '', time:h[2] || '', vendors:vs};
 }
@@ -4115,6 +4126,7 @@ function importListQr(r){
     files = files.filter(x => gKey(x) !== key).concat([f]);
     dbChanged(); setVendor(key); lastKey = ''; hold = null;
     go('scan'); setLast('ok', `✔ 已載入 ${label}（${f.records.length} 筆，清單時間 ${f.qrTime}），可以開始刷讀`);
+    if(!clear) setTimeout(cancelPickAlert, 300);
   };
   const exists = vendorGroups(files).some(g => g.name === key);
   if(!exists) return done(false);
@@ -4124,6 +4136,20 @@ function importListQr(r){
     [['合併新工單，保留刷讀進度', 'primary', () => { setTimeout(() => done(false), 0); }],
      ['只用新工單，清除刷讀紀錄重新核對', '', () => { setTimeout(() => done(true), 0); }],
      ['取消', '', null]]);
+}
+/* 合併新清單後：已刷讀的 Wafer 有工單被電腦取消 → 提醒取出（整張取出，或分片重印標籤） */
+function cancelPickAlert(){
+  const sm = summarize(db, boxes);
+  const rows = sm.boxRows.filter(r => !r.void && r.bad.some(x => x.status === 'cancelled'));
+  if(!rows.length) return;
+  const sl = r => [...new Set(r.bad.filter(x => x.status === 'cancelled').map(x => x.slot))].sort();
+  const wos = r => [...new Set(r.bad.filter(x => x.status === 'cancelled').flatMap(x => String(x.wo).split(' / ')))].join('、');
+  beep('err');
+  openSheet('err', '⚠ 已刷讀的 Wafer 有工單被取消', `<div>新清單裡有工單已取消，以下 <b>${rows.length}</b> 張標籤已經刷讀過，請取出：</div>
+    ${rows.map(r => `<div class="cpick"><b>第 ${r.b} 顆　${esc(r.lot)}</b>　標籤刻號 ${esc(compress(r.slots))}<br>
+      取出刻號 <b class="r">${esc(compress(sl(r)))}（${sl(r).length} 片）</b>　${esc(wos(r))}<br>
+      ${r.ok ? '<span class="cpk sp">分片：重新列印標籤，重刷要出的那張</span>' : '<span class="cpk out">整張取出，不交付</span>'}</div>`).join('')}`,
+    [['已取出，繼續刷讀', 'primary', null]]);
 }
 /* ---------- 刷讀人員工號：輸入一次後記在瀏覽器，回傳資料時一併帶上 ---------- */
 const EMP_KEY = 'wo_check_m_emp';
@@ -4161,11 +4187,12 @@ const retTag = key => { const st = retStatus(key); return st ? `<span class="rst
 async function showReturnQr(){
   if(!getEmp()) return askEmp(showReturnQr);
   persist();
-  const groups = vendorGroups(files).map(g => ({key:g.name, boxes:(g.name === curVendor ? boxes : (scanStore[g.name] || {}).boxes) || []})).filter(g => activeBoxes(g.boxes).length);
+  const groups = vendorGroups(files).map(g => ({key:g.name, qt:files.filter(f => gKey(f) === g.name).map(f => f.qrTime || '').sort().pop() || '',
+    boxes:(g.name === curVendor ? boxes : (scanStore[g.name] || {}).boxes) || []})).filter(g => activeBoxes(g.boxes).length);
   if(!groups.length){ openSheet('warn', '沒有刷讀資料', '<div>目前還沒有刷讀任何一顆，沒有資料可以回傳。</div>', [['知道了', 'primary', null]]); return; }
   let q; try{ q = await returnQrTexts(groups, getEmp()); }catch(e){ alert('無法產生 QR Code：' + (e && e.message || e)); return; }
   { const rs = retLoad(), n = new Date(), at = pad2(n.getHours()) + ':' + pad2(n.getMinutes());
-    groups.forEach(g => rs[g.key] = {at, d:todayStr(), sig:boxSigOf(g.boxes)}); retSave(rs); }
+    groups.forEach(g => rs[g.key] = {at, d:todayStr(), sig:boxSigOf(g.boxes)}); retSave(rs);  try{ renderLoad(); }catch(e){} }
   let k = 0, warned = false;
   const seen = new Set([0]), N = q.texts.length;
   // 多張：每一張都要顯示過（讓電腦刷過）才能關閉；沒看完就關閉會先卡住提醒
