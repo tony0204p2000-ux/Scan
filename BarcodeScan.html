@@ -268,7 +268,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
   <header>
     <div style="display:flex;align-items:center">
       <div class="modeSeg"><button id="mIC">IC</button><button id="mWF">WAFER</button><button id="mIN">入庫</button></div>
-      <span class="ver">v4.8</span>
+      <span class="ver">v4.10</span>
     </div>
     <div class="tot"><div><b class="num" id="tCnt">0</b><span id="tCntL">筆</span></div><div><b class="num" id="tQty">0</b><span id="tQtyL">總數量</span></div></div>
   </header>
@@ -377,7 +377,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
         <select id="optCam"><option value="">自動(後鏡頭)</option></select></label>
     </div>
     <div class="note" id="camMsg">相機實際解析度:啟動相機後顯示</div>
-    <div class="note">手機條碼掃描 版本 v4.8(電腦端「手機資料接收」要用同一版)</div>
+    <div class="note">手機條碼掃描 版本 v4.10(電腦端「手機資料接收」要用同一版)</div>
     <div class="note" id="offMsg">離線開啟:檢查中…</div>
     <div class="note">資料只存在這支手機的瀏覽器裡,不會上傳。清除瀏覽器資料會一併清掉,請記得先匯出。</div>
   </div></section>
@@ -3460,7 +3460,7 @@ function renderW(){
   if(isIN()){ $('locUse').classList.toggle('hide',!cfg.lastLoc || cfg.locMode==='gc'); $('locUse').innerHTML='沿用<br><b>'+esc(cfg.lastLoc||'')+'</b>'; }
   $('btnDone').classList.toggle('hide',!isIN());
   if(isIN() && wcur.stage==='loc'){
-    hint.className=''; hint.textContent=locPicking?'點選要放入的儲位。':(cfg.locMode==='gc'?(inGate?'標籤已讀完。對準氮氣櫃的儲位條碼(GC-)後按「下一張」,讀到的儲位會列出來讓你選。':'讀取氮氣櫃儲位中…'):(inGate?'標籤已讀完。對準儲位條碼後按「下一張」,或按右邊的「手動」「沿用」。':'讀取儲位中…'))+'這批註記:'+(cfg.vac==='Y'?'有抽真空':cfg.vac==='N'?'沒抽真空':'未選(存入前會詢問)')+'。';
+    hint.className=''; hint.textContent=locPicking?'點選要放入的儲位。':(cfg.locMode==='gc'?(inGate?'標籤已讀完。對準氮氣櫃的儲位條碼(NC-)後按「下一張」,讀到的儲位會列出來讓你選。':'讀取氮氣櫃儲位中…'):(inGate?'標籤已讀完。對準儲位條碼後按「下一張」,或按右邊的「手動」「沿用」。':'讀取儲位中…'))+'這批註記:'+(cfg.vac==='Y'?'有抽真空':cfg.vac==='N'?'沒抽真空':'未選(存入前會詢問)')+'。';
   }else if(wcur.done){
     var bad=wCheck(wcur.v,wcur.type);
     hint.className=bad?'':'done'; hint.textContent=bad?'刷讀完成,但'+bad+',請確認。':'刷讀完成。按「下一張」繼續。';
@@ -3543,7 +3543,8 @@ var inGate=true, locPicking=false, photoShot=false, locC=null, locTimer=0, locLi
 function locShape(t){ return String(t).toUpperCase().replace(/[A-Z]+/g,'A').replace(/[0-9]+/g,'9'); }
 function isLocShape(t){ return (cfg.locShapes||[]).indexOf(locShape(t))>=0; }
 function learnLoc(t){ var sh=locShape(t), a=cfg.locShapes||[]; if(a.indexOf(sh)<0){ a.unshift(sh); cfg.locShapes=a.slice(0,20); } }
-function isGC(t){ return /^GC-/i.test(String(t).trim()); }
+/* 氮氣櫃的儲位條碼是 NC- 開頭 */
+function isGC(t){ return /^NC-/i.test(String(t).trim()); }
 function labelLike(t){ var c=wClass(t,wcur.type); return c.k==='lot'||c.k==='qty'||/_CP$/i.test(t)||/[;,?]/.test(t); }
 function locFrame(dets){
   var v=wcur.v, now=Date.now(), gc=cfg.locMode==='gc';
@@ -3553,14 +3554,14 @@ function locFrame(dets){
     if(saved) return;
     var t=String(d.text).trim();
     if(!t || wcur.seen[t] || t===v.stock || t===v.item || t===v.lot || wfNorm(t)===v.wf) return;
-    if(gc && !isGC(t)){ locC.other++; return; }        /* 氮氣櫃只收 GC- 開頭的儲位 */
+    if(gc && !isGC(t)){ locC.other++; return; }        /* 氮氣櫃只收 NC- 開頭的儲位 */
     if(!gc && labelLike(t)) return;                     /* 一般儲位:像標籤內容的不當儲位 */
     locC.m[t]=(locC.m[t]||0)+1;
     if(gc){ if(!locC.t0){ locC.t0=now; clearTimeout(locTimer); locTimer=setTimeout(locDecide,800); } }
     else { saved=true; setLoc(t.toUpperCase(),'scan'); }   /* 一般儲位:按「下一張」後讀到第一個條碼就存 */
   });
   if(saved || !locC) return;
-  if(gc && !locC.t0 && locC.other>=6){ locC.other=0; toast('讀到的不是氮氣櫃儲位(GC- 開頭)。一般儲位請在下方儲位那一列切到「一般」','warn'); }
+  if(gc && !locC.t0 && locC.other>=6){ locC.other=0; toast('讀到的不是氮氣櫃儲位(NC- 開頭)。一般儲位請在下方儲位那一列切到「一般」','warn'); }
   if(photoShot && gc && locC.t0) locDecide();
 }
 function locDecide(){
@@ -3934,13 +3935,13 @@ $('cFrame').onclick=function(){
 Array.prototype.forEach.call(document.querySelectorAll('#cLoc button'),function(b){ b.onclick=function(){
   var m=b.getAttribute('data-m'); if(m===cfg.locMode) return;
   cfg.locMode=m; save(); syncChips(); renderW();
-  toast(m==='gc'?'氮氣櫃:刷儲位時會列出讀到的 GC 儲位,點選要放入哪一格':'一般儲位:刷一個儲位條碼就存,也可以手動或沿用上一個');
+  toast(m==='gc'?'氮氣櫃:刷儲位時會列出讀到的 NC 儲位,點選要放入哪一格':'一般儲位:刷一個儲位條碼就存,也可以手動或沿用上一個');
 }; });
 $('cTypes').onclick=function(){ cfg.types=cycle(TYPE_L,cfg.types); save(); syncChips(); toast({all:'讀取所有類型的條碼','2d':'只讀二維條碼(QR Code 等)','1d':'只讀一維條碼'}[cfg.types]); };
 function setApp(a){
   if(cfg.app===a) return;
   if((cfg.app==='inb')!==(a==='inb') && wcur && !wcur.done) wcur=wNew();   /* WAFER 與入庫共用刷讀格,切換時清掉沒刷完的那張 */
-  if(a==='inb'){ inGate=true; if(locPicking) locPickEnd(); }
+  if(a==='inb'){ inGate=wcur.stage==='loc'; if(locPicking) locPickEnd(); }   /* 切到入庫就直接讀標籤 */
   cfg.app=a; armed=0; lastIdx=-1; wHtml=''; save(); syncChips(); render(); syncMain();
   $('btnManual').disabled=false; if(!isWF()) $('btnManual').innerHTML='手動<br>輸入';
   toast(isIN()?'入庫:刷 '+wType()+' 標籤(STOCK NO/LOT NO/WF ID),再掃儲位':isWF()?'WAFER:一張標籤的條碼全部讀出,目前種類 '+wType():'IC:刷 STOCK NO 那張 QR Code');
@@ -4191,7 +4192,7 @@ function qrPayload(){
   else if(isWF()){ type='WF'; wafers.forEach(function(w){ rows.push([w.type||'WF',w.stock,w.item,w.lot,w.qty,w.wf]); }); }
   else { type='IC'; tidy().rows.forEach(function(r){ rows.push([r.part,r.lot,r.qty]); }); }
   /* 第一行最後一欄是手機版本,電腦端用來提醒兩邊版本不同 */
-  return {type:type,n:rows.length,text:['SCN1',type,rows.length,stamp(),'v4.8'].join('\t')+'\n'+rows.map(function(r){ return r.map(clean).join('\t'); }).join('\n')};
+  return {type:type,n:rows.length,text:['SCN1',type,rows.length,stamp(),'v4.10'].join('\t')+'\n'+rows.map(function(r){ return r.map(clean).join('\t'); }).join('\n')};
 }
 function deflateRaw(bytes){
   try{
@@ -4261,6 +4262,8 @@ function offState(msg,cls){ var e=$('offMsg'); if(e){ e.textContent=msg; e.class
 load(); if(!wcur || !wcur.type) wcur=wNew();
 bindCfg(); syncChips(); syncMain(); render(); initNative(); initPool();
 if(noStore) toast('這個瀏覽器無法暫存資料,關閉頁面前請先匯出','warn',true);
+/* 入庫:開啟頁面時直接讀標籤,不用先按「下一張」;停在儲位那一步的話仍要按,避免開啟時誤讀 */
+inGate=wcur.stage==='loc';
 /* 之前已允許相機的話,開啟就直接啟動 */
 try{ if(navigator.permissions && navigator.permissions.query) navigator.permissions.query({name:'camera'}).then(function(p){ if(p.state==='granted' && view==='vScan' && !document.hidden){ wantCam=true; startCam(); } }).catch(function(){}); }catch(e){}
 })();

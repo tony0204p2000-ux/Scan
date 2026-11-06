@@ -1,5 +1,5 @@
 /* 手機條碼掃描:離線快取。有網路時優先拿最新版並更新快取;沒網路或太慢就用快取。 */
-var CACHE='scan-ca9a3c0bd0';
+var CACHE='scan-7293e129fe';
 /* 只負責 BarcodeScan.html 這一頁(註冊時 scope 限定),不會影響同一個資料夾裡其他程式的 sw.js */
 var FILES=['./BarcodeScan.html','./BarcodeScan.webmanifest','./icon.png'];
 self.addEventListener('install',function(e){
