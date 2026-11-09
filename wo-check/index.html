@@ -3309,7 +3309,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V4.7';
+const APP_VER = 'V5.1';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -3612,10 +3612,19 @@ function renderBottom(){
   } else {
     b.innerHTML = `<button class="btn" id="bBack">繼續掃描</button><button class="btn primary wide" id="bNext">掃描下一家廠商</button>`;
     $('bBack').onclick = () => go('scan');
-    $('bNext').onclick = () => pickVendor('要掃描哪家廠商？', v => { setVendor(v); go('scan'); setLast('', `開始核對 ${labelOf(v)}`); });
+    $('bNext').onclick = () => nextVendor();
   }
 }
 
+/* 掃描下一家廠商：已載入的其他廠商可直接選；也可以掃新的出貨單 QR Code（沒有其他廠商時直接開掃描） */
+function nextVendor(){
+  const others = vendorGroups(files).filter(g => g.active && g.name !== curVendor);
+  if(!others.length){ go('load'); setTimeout(openQrImport, 200); return; }
+  openSheet('plain vpick', '要掃描哪家廠商？', '<div class="muted">選已載入的廠商，或掃新的出貨單 QR Code</div>',
+    [['📷 掃描新的出貨單 QR Code', 'primary', () => { go('load'); setTimeout(openQrImport, 200); }]].concat(
+    others.map(g => [{html:`<b class="vcode">${esc(vCodeOf(g.vendor) || g.vendor)}</b><small>${esc(g.date || '')}・${progText(gprog(g.name))}</small>`}, 'vbtn', () => { setTimeout(() => { setVendor(g.name); go('scan'); setLast('', `開始核對 ${labelOf(g.name)}`); }, 0); }]),
+    [['取消', '', null]]));
+}
 /* ================= 1 工單 ================= */
 const openV = new Set();   // 已展開明細的廠商卡片
 function renderLoad(){
@@ -3886,6 +3895,8 @@ function handleCodes(codes){
   let multi = false;
   if(codes.length){
     const got = {lot:new Set(), wf:new Map()};
+    const wq = codes.find(o => /^WQ1[|:]/.test(String(o.text)));
+    if(wq){ stopCam(); go('load'); setTimeout(() => openQrImport(wq.text), 150); return; }   // 掃描畫面讀到出貨單 QR：改成載入工單
     codes.forEach(o => { const c = classifyCode(o.text, o.fmt);
       if(c.type === 'lot') got.lot.add(c.value); else if(c.type === 'wf' && o.fmt === 'qr') got.wf.set(c.value.join('/'), c.value); });
     // 剛刷完的同一張標籤還在畫面中：在讀到不同批號或離開畫面 1.5 秒前，不再顯示它的 WF ID
@@ -4071,14 +4082,15 @@ $('optCam').onchange = e => { settings.cam = e.target.value; persist(); stopCam(
 /* ---------- 點交清單 QR 載入：電腦列印的出貨單第一聯右上角 ---------- */
 let qrStream = null, qrTimer = null, qrLastGot = 0;
 const qrCol = qrCollector(), qrCv = document.createElement('canvas');
-async function openQrImport(){
+async function openQrImport(first){
   stopCam(); qrCol.reset(); qrLastGot = 0;
+  if(typeof first === 'string'){ try{ const r = await qrCol.add(first); if(r && !r.bad && r.kind === 'WQ'){ if(r.done){ beep('done'); importListQr(r); return; } qrLastGot = r.got; } }catch(e){} }
   $('qrOv').hidden = false; $('qrStat').textContent = '相機啟動中…';
   if(!detector && !wasm && !zx) await initDecoder();
   try{ qrStream = await navigator.mediaDevices.getUserMedia({audio:false, video:{facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}}); }
   catch(e){ $('qrStat').textContent = '無法開啟相機，請允許相機權限'; return; }
   const v = $('qrVideo'); v.srcObject = qrStream; try{ await v.play(); }catch(e){}
-  $('qrStat').textContent = '把點交清單右上角的 QR Code 放進框內';
+  $('qrStat').innerHTML = qrLastGot ? `已讀 ${qrLastGot} 張，請對準下一張 QR Code` : '把點交清單右上角的 QR Code 放進框內';
   qrLoop();
 }
 function closeQrImport(){ clearTimeout(qrTimer); qrTimer = null; if(qrStream){ qrStream.getTracks().forEach(t => t.stop()); qrStream = null; } $('qrOv').hidden = true; }
