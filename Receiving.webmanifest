@@ -1,0 +1,14 @@
+{
+ "name": "收料核對",
+ "short_name": "收料核對",
+ "start_url": "./Receiving.html",
+ "scope": "./Receiving.html",
+ "display": "standalone",
+ "orientation": "portrait",
+ "background_color": "#0f1216",
+ "theme_color": "#12161b",
+ "icons": [
+  {"src": "icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+  {"src": "icon.png", "sizes": "192x192", "type": "image/png", "purpose": "any"}
+ ]
+}

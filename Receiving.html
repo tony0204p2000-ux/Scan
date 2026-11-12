@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#12161b">
-<link rel="manifest" href="manifest.webmanifest">
+<link rel="manifest" href="Receiving.webmanifest">
 <title>收料核對</title>
 <script>
 /* SheetJS xlsx library v0.18.5 — embedded inline for fully offline use, no internet required */
@@ -166,7 +166,7 @@ details.card[open] summary{margin-bottom:10px}
 .hv span{display:block;font-size:13px;color:#8b97a4;letter-spacing:1px}
 .hv b{display:block;font-family:Consolas,Menlo,"Roboto Mono",monospace;font-weight:700;color:#fff;line-height:1.15;white-space:nowrap;overflow:hidden;letter-spacing:1px}
 .hv.q b{color:#f2cc60}
-.hpn{font-size:13px;color:#8b97a4;margin:0 2px 12px;word-break:break-all}
+.hpn{font-size:13px;color:#8b97a4;margin:0 2px 12px;word-break:break-all;white-space:pre-line}
 .hnote{font-size:13px;margin:-4px 2px 12px}
 #hand .acts button{min-height:56px;font-size:17px}
 #hand .acts .pri{flex:2}
@@ -237,6 +237,7 @@ details.card[open] summary{margin-bottom:10px}
         <li><b>華邦電</b><span>二維碼 [)&gt; 格式 → 1T（LOT NO）、15Q（PLQTY）</span></li>
         <li><b>LG</b><span>條碼「Lot 空格 Qty 空格 其他」→ 第 1、2 段</span></li>
         <li><b>新創誠</b><span>QR Code 以「&amp;」分隔 → 第 3 欄 Lot No、第 5 欄 Good Die</span></li>
+        <li><b>羽鈞</b><span>外箱「右下角」QR → 批號、刻號（沒有顆數；用刻號比對 WAFER_LIST，沒有刻號才比片數 M_IN_QTY）；上方的箱號 QR 不能掃</span></li>
         <li><b>愛普</b><span>(1T)LOT 與 (Q)QTY 兩個條碼，順序不拘；LOT 尾端的 AAA 會自動忽略</span></li>
         <li><b>其他</b><span>Lot No 與 Qty 分開的條碼（如弘憶）：鏡頭掃過兩個條碼即可，順序不拘，片數、日期等其他數字條碼會自動略過</span></li>
         <li><b>純文字</b><span>沒有條碼的標籤（如聯強、艾睿、光菱）：在核對清單點該筆人工核對</span></li>
@@ -336,6 +337,7 @@ details.card[open] summary{margin-bottom:10px}
         <li><b>華邦電</b><span>二維碼：1T、15Q</span></li>
         <li><b>LG</b><span>條碼第 1 段 Lot、第 2 段 Qty</span></li>
         <li><b>新創誠</b><span>QR：第 3 欄 Lot、第 5 欄 Good Die</span></li>
+        <li><b>羽鈞</b><span>右下角 QR（比刻號）</span></li>
         <li><b>愛普</b><span>(1T)LOT ＋ (Q)QTY 條碼</span></li>
         <li><b>其他</b><span>Lot、Qty 分開的條碼，順序不拘</span></li>
         <li><b>無條碼</b><span>點清單項目人工核對</span></li>
@@ -413,7 +415,7 @@ details.card[open] summary{margin-bottom:10px}
 (function(){
 'use strict';
 var KEY='rcvcheck.v1', PAGE=80;
-var recs=[], headers=[], order=[], exlog=[], files=[], idx={}, pending=-1, filter='all', query='', shown=PAGE, savedWarned=false;
+var recs=[], headers=[], order=[], exlog=[], files=[], idx={}, pending=-1, filter='all', query='', shown=PAGE, savedWarned=false, idxAll={};
 var $=function(id){ return document.getElementById(id); };
 
 /* ---------- 共用 ---------- */
@@ -423,10 +425,45 @@ function normText(v){ return String(v==null?'':v).trim().toUpperCase(); }
 function normLot(v){ return normText(v).replace(/\./g,''); }
 /* 找 Lot No 在清單的位置。找不到時:批號尾端多了 1~3 個英文字母的(如愛普 MWN984000AAA → MWN984000),去掉再找一次 */
 function lotIdx(v){
-  var k=normLot(v), i=idx[k];
-  if(i!==undefined) return i;
+  var a=lotIdxs(v); if(!a.length) return undefined;
+  for(var j=0;j<a.length;j++) if(recs[a[j]].status!=='ok') return a[j];
+  return a[0];
+}
+/* 同一個 Lot No 在 Excel 有多筆(拆批)時,全部列出 */
+function lotIdxs(v){
+  var k=normLot(v);
+  if(idxAll[k]) return idxAll[k];
   var m=/^(.{5,}\d)([A-Z]{1,3})$/.exec(k);
-  return m?idx[m[1]]:undefined;
+  return (m && idxAll[m[1]])?idxAll[m[1]]:[];
+}
+/* 這個 Lot 的任一筆(拆批)是否為這個數量 */
+function lotHasQty(i,n){ return lotIdxs(recs[i].lot).some(function(j){ return normQty(recs[j].qty)===n; }); }
+/* 刻號清單展開:「9-18,20-25」或「22;24」→ 排序後的數字陣列 */
+function expandWafers(s){
+  var out=[], seen={};
+  String(s==null?'':s).split(/[,;、，；\s]+/).forEach(function(tok){
+    var m=/^(\d+)\s*-\s*(\d+)$/.exec(tok);
+    if(m){ var a=+m[1], b=+m[2]; if(a>b){var t=a;a=b;b=t;} if(b-a<=100) for(var i=a;i<=b;i++){ if(!seen[i]){seen[i]=1;out.push(i);} } }
+    else if(/^\d+$/.test(tok)){ var n=+tok; if(!seen[n]){seen[n]=1;out.push(n);} }
+  });
+  return out.sort(function(a,b){return a-b;});
+}
+/* 刻號陣列 → 「1-12,14,16-20」 */
+function wRange(a){
+  var out=[], i=0;
+  while(i<a.length){ var j=i; while(j+1<a.length && a[j+1]===a[j]+1) j++; out.push(j>i?a[i]+'-'+a[j]:String(a[i])); i=j+1; }
+  return out.join(',');
+}
+function rawCol(r,c){ return r.raw && r.raw[c]!=null ? String(r.raw[c]).trim() : ''; }
+/* 這筆資料與標籤上的數量/刻號是否相符(與 check 的判斷一致) */
+function recMatches(r,qty,kind,wl){
+  if(kind==='wafer'){
+    var eW=expandWafers(rawCol(r,'WAFER_LIST')), sW=expandWafers(wl);
+    if(eW.length && sW.length) return eW.join(',')===sW.join(',');
+    var wf=rawCol(r,'M_IN_QTY');
+    return wf?normQty(wf)===normQty(qty):true;
+  }
+  return normQty(r.qty)===normQty(qty);
 }
 function normQty(v){ var s=String(v==null?'':v).replace(/[^0-9.-]/g,''); return s===''?NaN:Number(s); }
 function fmtQty(v){ var n=normQty(v); return isNaN(n)?String(v):n.toLocaleString('en-US'); }
@@ -488,6 +525,18 @@ function parseLabel(raw){
   var t=String(raw==null?'':raw).replace(/\r/g,'').trim();
   if(!t) return null;
   var m, di, f, p;
+  /* 羽鈞(JOLLA)外箱「右下角」QR:以換行分隔 → 1,1 / 料號(-RT) / Lot / 片數 / (空) / 刻號清單 / INV。
+     QR 內沒有顆數,只有片數(第 4 行)與刻號 → qtyKind:'wafer',核對時比對資料的 WAFER_LIST(沒有才比 M_IN_QTY) */
+  var jg=String(raw==null?'':raw).split(/[\r\n]+/).map(function(x){return x.trim();}).filter(Boolean);
+  if(jg.length>=4 && /^\d+,\d+$/.test(jg[0]) && /^[A-Za-z0-9][A-Za-z0-9.\-_]*$/.test(jg[1]) && /[A-Za-z0-9]/.test(jg[2]) && /^\d{1,4}$/.test(jg[3]))
+    return {vendor:'羽鈞',lot:jg[2],qty:jg[3],part:jg[1],kind:'wafer',
+            wlist:(jg.slice(4).filter(function(x){return /^[\d,;\-\s]+$/.test(x)&&/\d/.test(x);})[0]||'')};
+  /* 羽鈞 外箱上方(INV NO. 旁)的 QR:002,003,G26A057624 → 只有箱號與發票號,不能核對 */
+  if(jg.length===1 && /^\d{3},\d{3},[A-Za-z]\d{2}[A-Za-z]\d+$/.test(jg[0]))
+    return {vendor:'羽鈞',reject:'這是羽鈞外箱上方的箱號／發票 QR，沒有批號，請改掃「右下角」的 QR'};
+  /* 羽鈞 右下角 QR 但換行字元遺失(整串連在一起,批號與片數分不開) */
+  if(jg.length===1 && /^\d+,\d+[A-Za-z0-9][A-Za-z0-9.\-_]*-RT[A-Za-z]/.test(jg[0]) && jg[0].length>25)
+    return {vendor:'羽鈞',reject:'讀到羽鈞右下角 QR，但條碼槍沒有送出換行字元，批號與片數分不開。請改用相機掃描，或在清單點該筆人工核對'};
   /* 華邦電:[)>RS06GS1P…GS1T…GS15Q… (ISO 15434) */
   var k=t.indexOf('[)>');
   if(k>=0){
@@ -539,8 +588,15 @@ function stats(){
 function logEx(type,lot,qty,vendor,note){
   exlog.unshift({type:type,lot:String(lot),qty:String(qty),vendor:vendor||'',time:new Date().toISOString(),note:note});
 }
-function check(lot,qty,vendor,part){
-  var i=lotIdx(lot);
+function check(lot,qty,vendor,part,kind,wl){
+  var cands=lotIdxs(lot), i=cands[0];
+  if(cands.length>1){   /* 拆批:優先「還沒核對、數量/刻號相符」那筆;其次已核對相符(重複掃);再其次第一筆未核對 */
+    var pick=function(f){ for(var j=0;j<cands.length;j++) if(f(recs[cands[j]])) return cands[j]; };
+    i=pick(function(r){ return r.status!=='ok' && recMatches(r,qty,kind,wl); })
+    ; if(i===undefined) i=pick(function(r){ return r.status==='ok' && recMatches(r,qty,kind,wl); });
+    if(i===undefined) i=pick(function(r){ return r.status!=='ok'; });
+    if(i===undefined) i=cands[0];
+  }
   var base={vendor:vendor,scanLot:lot,scanQty:qty};
   if(i===undefined){
     logEx('notfound',lot,qty,vendor,'此批號不在收料資料中');
@@ -552,14 +608,33 @@ function check(lot,qty,vendor,part){
     logEx('duplicate',lot,qty,vendor,'此 Lot 先前已核對成功，重複掃描');
     return mix(base,{cls:'warn',title:'⚠️ 這個 Lot 已核對過',detail:'可能重複掃描。',short:'已核對過 '+r.lot});
   }
-  var res;
-  if(normQty(r.qty)===normQty(qty)){
-    r.status='ok'; r.note='核對正確'; okAt[i]=Date.now();
-    res=mix(base,{cls:'ok',title:'✅ 核對正確',short:'正確 '+r.lot+' × '+fmtQty(r.qty)});
+  var res, okQ, qLabel='Qty', exp=fmtQty(r.qty), got=fmtQty(qty), extra='', lotOnly=false;
+  if(kind==='wafer'){
+    /* 羽鈞:標籤只有片數與刻號,沒有顆數 → 優先用刻號逐片比對 WAFER_LIST,沒有刻號才比片數 M_IN_QTY,都沒有只核對 Lot */
+    var eW=expandWafers(rawCol(r,'WAFER_LIST')), sW=expandWafers(wl), wf=rawCol(r,'M_IN_QTY');
+    if(eW.length && sW.length){
+      qLabel='刻號'; exp=wRange(eW); got=wRange(sW); okQ=eW.join(',')===sW.join(',');
+      if(!okQ){
+        var miss=eW.filter(function(x){ return sW.indexOf(x)<0; }), more=sW.filter(function(x){ return eW.indexOf(x)<0; });
+        extra=(miss.length?'\n資料有、標籤沒有：'+miss.join(','):'')+(more.length?'\n標籤有、資料沒有：'+more.join(','):'');
+      }
+    }else{
+      qLabel='片數'; got=String(normQty(qty));
+      if(wf){ exp=String(normQty(wf)); okQ=normQty(wf)===normQty(qty); }
+      else{ lotOnly=true; okQ=true; exp='—'; }
+    }
+    base.qLabel=qLabel; base.qShow=got; base.qExp=exp;
+  }else okQ=normQty(r.qty)===normQty(qty);
+  if(okQ){
+    r.status='ok'; okAt[i]=Date.now();
+    r.note='核對正確'+(qLabel==='刻號'?'（刻號相符）':'')+(lotOnly?'，僅核對 Lot No':'');
+    res=mix(base,{cls:'ok',title:'✅ 核對正確',
+      detail:qLabel==='刻號'?'已用刻號逐片比對，共 '+sW.length+' 片。':qLabel==='片數'?(lotOnly?'這個標籤只有片數，但資料沒有 M_IN_QTY 欄位，所以只核對了 Lot No。':'這個標籤只有片數，已對照資料的 M_IN_QTY。'):'',
+      short:'正確 '+r.lot+(kind==='wafer'?' · '+qLabel+' '+got:' × '+fmtQty(r.qty))});
   }else{
-    r.status='fail'; r.note='Qty 不符：應為 '+fmtQty(r.qty)+'，掃到 '+fmtQty(qty);
-    logEx('qtymismatch',r.lot,qty,vendor,'Qty不符：資料應為「'+r.qty+'」，掃到「'+qty+'」');
-    res=mix(base,{cls:'bad',title:'❌ 數量不符，請檢查標籤',detail:r.note,short:'Qty 不符 應 '+fmtQty(r.qty)+' 掃 '+fmtQty(qty)});
+    r.status='fail'; r.note=qLabel+' 不符：應為 '+exp+'，掃到 '+got+extra;
+    logEx('qtymismatch',r.lot,qty,vendor,qLabel+'不符：資料應為「'+exp+'」，掃到「'+got+'」'+extra.replace(/\n/g,'　'));
+    res=mix(base,{cls:'bad',title:'❌ '+qLabel+'不符，請檢查標籤',detail:r.note,short:qLabel+' 不符 應 '+exp+' 掃 '+got});
   }
   r.vendor=vendor||''; r.scanLot=String(lot);
   if(order.indexOf(i)<0) order.push(i);
@@ -569,19 +644,33 @@ function mix(a,b){ for(var k in b) a[k]=b[k]; return a; }
 
 /* 處理一筆掃描/輸入內容。回傳結果物件(cls: ok|bad|warn|info|skip) */
 function handle(raw,fromCamera){
-  var p=parseLabel(raw), res;
-  if(!p){ res={cls:'warn',title:'⚠️ 無法辨識這個條碼',detail:'掃到的內容：'+raw,short:'無法辨識'}; }
+  var p=parseLabel(raw), res, shown=String(raw).replace(/\n/g,' ⏎ ');
+  if(!p){
+    res={cls:'warn',title:'⚠️ 無法辨識這個條碼',detail:'掃到的內容：'+shown,short:'無法辨識'};
+    logEx('parse','(無)','(無)','','原始內容：'+shown);
+  }
+  else if(p.reject){
+    res={cls:'warn',title:'⚠️ '+p.reject,detail:'掃到的內容：'+shown,short:p.reject};
+    logEx('parse','(無)','(無)',p.vendor||'',p.reject);
+  }
+  else if(p.single!==undefined && String(raw).indexOf('[)>')>=0){
+    /* 華邦電 [)> 二維碼,但分隔字元遺失、備援也拆不出來 */
+    res={cls:'warn',title:'⚠️ 讀到 [)> 二維碼，但拆不出 Lot No / Qty',detail:'條碼槍可能沒有送出分隔用的控制字元。請改用相機掃描，或在清單點該筆人工核對。\n掃到的內容：'+shown,short:'[)> 拆不出 Lot/Qty'};
+    logEx('parse','(無)','(無)','華邦電','[)> 二維碼分隔字元遺失');
+  }
   else if(p.single!==undefined){
-    var v=p.single, i=lotIdx(v);
-    if(i!==undefined && fromCamera && seenNum(normQty(recs[i].qty))){
+    var v=p.single, i=lotIdx(v), isNum=/^\d[\d,]*$/.test(v);
+    if(pending>=0 && isNum && (i===undefined || lotHasQty(pending,normQty(v)))){
+      /* 正在等 Qty:純數字就當 Qty(除非它同時是另一筆的 Lot No、而且不是等待中那筆的數量) */
+      var lot=recs[pending].lot; pending=-1;
+      res=check(lot,v,'分開掃描');
+    }else if(i!==undefined && fromCamera && lotIdxs(v).some(function(j){ return recs[j].status!=='ok' && seenNum(normQty(recs[j].qty)); })){
       pending=-1;
-      res=check(recs[i].lot,recs[i].qty,'分開掃描');
+      var hit=lotIdxs(v).filter(function(j){ return recs[j].status!=='ok' && seenNum(normQty(recs[j].qty)); })[0];
+      res=check(recs[hit].lot,recs[hit].qty,'分開掃描');
     }else if(i!==undefined){
       pending=i;
       res={cls:'info',title:'已讀到 Lot No，請接著掃 Qty',rec:recs[i],scanLot:v,vendor:'分開掃描',short:'Lot '+recs[i].lot+'，請掃 Qty'};
-    }else if(pending>=0 && /^\d[\d,]*$/.test(v)){
-      var lot=recs[pending].lot; pending=-1;
-      res=check(lot,v,'分開掃描');
     }else if(pending>=0){
       res={cls:'warn',title:'⚠️ 這不是數量條碼',detail:'正在等 '+recs[pending].lot+' 的 Qty，掃到：'+v,short:'請掃 Qty 條碼'};
     }else if(/^\d[\d,]*$/.test(v)){
@@ -591,7 +680,7 @@ function handle(raw,fromCamera){
     }
   }else{
     pending=-1;
-    res=check(p.lot,p.qty,p.vendor,p.part); if(p.runon) res.runon=true;
+    res=check(p.lot,p.qty,p.vendor,p.part,p.kind,p.wlist); if(p.runon) res.runon=true;
   }
   showResult(res); save(); render();
   return res;
@@ -599,7 +688,7 @@ function handle(raw,fromCamera){
 /* 相機只收「看得懂」的條碼,其他條碼(料號、PO…)略過繼續找 */
 function wanted(text){
   var p=parseLabel(text);
-  if(!p) return false;
+  if(!p || p.reject) return false;
   if(p.single===undefined) return true;
   if(lotIdx(p.single)!==undefined) return true;
   return pending>=0 && /^\d[\d,]*$/.test(p.single);
@@ -616,9 +705,9 @@ function camWanted(text){
   var p=parseLabel(text), now=Date.now();
   if(p && p.single!==undefined && /^\d[\d,]*$/.test(p.single)){
     var n=normQty(p.single); seen[n]=now;
-    if(pending>=0) return n===normQty(recs[pending].qty);
+    if(pending>=0) return lotHasQty(pending,n);
     for(var k in seenLot){
-      if(now-seenLot[k]<15000 && recs[k] && recs[k].status!=='ok' && normQty(recs[k].qty)===n){ pending=+k; return true; }
+      if(now-seenLot[k]<15000 && recs[k] && recs[k].status!=='ok' && lotHasQty(+k,n)){ pending=+k; return true; }
     }
     return false;
   }
@@ -627,7 +716,7 @@ function camWanted(text){
     /* 分開掃描剛完成:同一張標籤的 Lot 條碼還在鏡頭裡,10 秒內不要再跳「已核對過」 */
     if(i!==undefined && recs[i].status==='ok' && okAt[i] && now-okAt[i]<10000) return false;
     if(i!==undefined){
-      if(seenNum(normQty(recs[i].qty))) return true;
+      if(lotIdxs(recs[i].lot).some(function(j){ return seenNum(normQty(recs[j].qty)); })) return true;
       var t=seenLot[i];
       if(!t || now-t>15000){ seenLot[i]=now; return false; }
       return now-t>800;
@@ -649,8 +738,13 @@ function showResult(r){
     var lot=r.rec?r.rec.lot:r.scanLot;
     h+='<span>Lot No</span><b>'+esc(lot)+'</b>';
     if(r.rec && r.scanLot && normText(r.scanLot)!==normText(r.rec.lot)) h+='<span></span><span>標籤上為 '+esc(r.scanLot)+'</span>';
-    if(r.scanQty!==undefined) h+='<span>Qty</span><b>'+esc(fmtQty(r.scanQty))+'</b>';
-    if(r.rec && r.cls==='bad') h+='<span>應為</span><b>'+esc(fmtQty(r.rec.qty))+'</b>';
+    if(r.qLabel){
+      h+='<span>'+esc(r.qLabel)+'</span><b>'+esc(r.qShow)+'</b>';
+      if(r.cls==='bad') h+='<span>應為</span><b>'+esc(r.qExp)+'</b>';
+    }else{
+      if(r.scanQty!==undefined) h+='<span>Qty</span><b>'+esc(fmtQty(r.scanQty))+'</b>';
+      if(r.rec && r.cls==='bad') h+='<span>應為</span><b>'+esc(fmtQty(r.rec.qty))+'</b>';
+    }
     if(r.rec && r.rec.part) h+='<span>Part No</span><span style="color:#c9d1d9">'+esc(r.rec.part)+'</span>';
     h+='</div>';
   }
@@ -694,7 +788,7 @@ function renderList(){
   $('moreBtn').hidden=items.length<=shown;
   $('moreBtn').textContent='顯示更多（還有 '+(items.length-shown)+' 筆）';
 }
-var EXT={notfound:['找不到資料','bad'],duplicate:['重複掃描','warn'],qtymismatch:['Qty 不符','bad'],manual:['人工核對','warn'],undo:['取消核對','warn']};
+var EXT={parse:['格式無法解析','warn'],notfound:['找不到資料','bad'],duplicate:['重複掃描','warn'],qtymismatch:['Qty 不符','bad'],manual:['人工核對','warn'],undo:['取消核對','warn']};
 
 /* ---------- 人工核對(條碼受損/不完整、純文字標籤) ---------- */
 var handI=-1;
@@ -706,7 +800,8 @@ function fitText(el,max){
 function openHand(i){
   var r=recs[i]; if(!r) return; handI=i;
   $('hLot').textContent=r.lot; $('hQty').textContent=fmtQty(r.qty);
-  $('hPart').textContent=r.part?'DEVICE_NO：'+r.part:'';
+  var wl=rawCol(r,'WAFER_LIST'), wq=rawCol(r,'M_IN_QTY');
+  $('hPart').textContent=(r.part?'DEVICE_NO：'+r.part:'')+(wl?'\n刻號：'+wl:'')+(wq?'　片數：'+wq:'');
   var tag=$('hTag'), note=$('hNote');
   tag.className='tag'+(r.status==='ok'?' ok':r.status==='fail'?' bad':'');
   tag.textContent=r.status==='ok'?'✅ 已核對':r.status==='fail'?'❌ 不符':'⏳ 未核對';
@@ -784,11 +879,11 @@ function loadFiles(list){
   });
 }
 function buildIndex(){
-  idx={};
+  idx={}; idxAll={};
   recs.forEach(function(r,i){
     var k=normLot(r.lot);
-    if(idx[k]!==undefined && r.status==='pending' && !r.note) r.note='⚠ Excel 中 Lot No 重複';
-    idx[k]=i;
+    if(idx[k]===undefined) idx[k]=i;
+    (idxAll[k]=idxAll[k]||[]).push(i);
   });
 }
 function showWork(){ $('upload').hidden=true; $('work').hidden=false; $('dock').hidden=false; }
@@ -882,7 +977,8 @@ function startScan(){
       /* 讀到但略過的條碼:簡短提示,讓人知道相機有在讀 */
       if(!ok && pending<0 && Date.now()-hintT>2000 && Date.now()>=photoUntil){
         hintT=Date.now(); var sk=String(text).replace(/\s+/g,' ').trim(); if(sk.length>24) sk=sk.slice(0,24)+'…';
-        setTimeout(function(){ h.say('略過：'+sk+'（不是清單的 Lot No）',''); },0);
+        var pr=parseLabel(text), sayT=pr&&pr.reject?pr.reject:'略過：'+sk+'（不是清單的 Lot No）';
+        setTimeout(function(){ h.say(sayT,pr&&pr.reject?'warn':''); },0);
       }
       /* 等 Qty 時讀到不相符的數字:提示讀到什麼,但不算錯(可能是片數、日期條碼) */
       if(!ok && pending>=0 && Date.now()-hintT>1500 && /^\d[\d,]*$/.test(String(text).trim())){
@@ -1114,49 +1210,68 @@ $('hOk').onclick=function(){ var i=handI; closeHand(); confirmHand(i); toast('�
 $('hUndo').onclick=function(){ var i=handI; closeHand(); modal('改回未核對？',recs[i].lot+'\n會從刷讀順序中移除。',function(){ undoHand(i); },'改回未核對'); };
 $('fileInput').onchange=function(){ loadFiles(this.files); };
 $('scanBtn').onclick=startScan;
-$('manForm').onsubmit=function(e){
-  e.preventDefault();
-  var v=$('manInput').value; $('manInput').value='';
-  if(!v.trim()) return;
+/* ---------- 外接條碼槍(藍牙/OTG)與手動輸入 ----------
+   1) 沒點輸入框也能掃:畫面沒有在打字時,快速連續輸入的字元收成一筆條碼
+   2) 多行 QR(如羽鈞右下角 QR)條碼槍會把換行送成 Enter:按 Enter 後再等 0.2 秒,
+      有後續字元就當成換行繼續收,停住才送出核對
+   3) 分隔字元:條碼槍若把 GS/RS/FS/EOT 送成 Ctrl+] / Ctrl+^ / Ctrl+\ / Ctrl+D,或直接送控制字元本身,都保留下來 */
+var CTRLS={']':'\x1D','BracketRight':'\x1D','^':'\x1E','6':'\x1E','\\':'\x1C','Backslash':'\x1C','d':'\x04','D':'\x04'};
+function ctrlChar(e){
+  if(e.key && e.key.length===1 && e.key.charCodeAt(0)<32 && e.key!=='\r' && e.key!=='\n' && e.key!=='\t') return e.key;
+  if(!e.ctrlKey || e.altKey || e.metaKey) return '';
+  return CTRLS[e.key]||CTRLS[e.code]||'';
+}
+function runScan(v){
+  v=String(v).replace(/\n+$/,'');
+  if(!v.replace(/[\x00-\x1F\s]/g,'')) return;
   handle(v,false);
   $('result').scrollIntoView({behavior:'smooth',block:'center'});
-};
-/* ---------- 外接條碼槍(藍牙/OTG) ----------
-   1) 沒點輸入框也能掃:畫面沒有在打字時,快速連續輸入且以 Enter/Tab 結尾,就當成一筆條碼
-   2) 條碼槍若把 GS/RS/EOT 送成 Ctrl+] / Ctrl+^ / Ctrl+D,保留成分隔字元,華邦電、旺宏可照正常格式拆 */
-var CTRLS={']':'\x1D','BracketRight':'\x1D','^':'\x1E','6':'\x1E','d':'\x04','D':'\x04'};
-function ctrlChar(e){ if(!e.ctrlKey || e.altKey || e.metaKey) return ''; return CTRLS[e.key]||CTRLS[e.code]||''; }
+}
+/* 手動輸入框:input 不能存換行,多行內容另外收在 man.lines */
+var man={lines:[],timer:0};
+function manFlush(){
+  clearTimeout(man.timer);
+  var v=man.lines.concat([$('manInput').value]).join('\n'); man.lines=[]; $('manInput').value='';
+  runScan(v);
+}
+$('manForm').onsubmit=function(e){ e.preventDefault(); manFlush(); };
 $('manInput').addEventListener('keydown',function(e){
-  var c=ctrlChar(e); if(!c) return;
-  e.preventDefault();
-  try{ this.setRangeText(c,this.selectionStart,this.selectionEnd,'end'); }catch(x){ this.value+=c; }
+  var c=ctrlChar(e);
+  if(c){ e.preventDefault(); try{ this.setRangeText(c,this.selectionStart,this.selectionEnd,'end'); }catch(x){ this.value+=c; } return; }
+  if(e.key==='Enter'){
+    e.preventDefault();
+    man.lines.push(this.value); this.value='';
+    clearTimeout(man.timer); man.timer=setTimeout(manFlush,200);
+  }
 });
-var wedge={buf:'',t:0};
+$('manInput').addEventListener('input',function(){ if(man.lines.length) clearTimeout(man.timer); });
+var wedge={buf:'',t:0,timer:0};
+function wedgeFlush(){ clearTimeout(wedge.timer); var v=wedge.buf; wedge.buf=''; runScan(v); }
 document.addEventListener('keydown',function(e){
   var a=document.activeElement, tag=a&&a.tagName;
   if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT'||(a&&a.isContentEditable)) return;
   if($('work').hidden || !$('modal').hidden || !$('hand').hidden || document.querySelector('.psx') || !$('ocr').hidden) return;
   var now=Date.now();
-  if(now-wedge.t>120) wedge.buf='';      /* 條碼槍每個字間隔很短;人手打字太慢就重來 */
+  if(now-wedge.t>120 && !wedge.timer){ wedge.buf=''; }   /* 條碼槍每個字間隔很短;人手打字太慢就重來 */
   wedge.t=now;
   var c=ctrlChar(e);
-  if(c){ wedge.buf+=c; e.preventDefault(); return; }
+  if(c){ clearTimeout(wedge.timer); wedge.timer=0; wedge.buf+=c; e.preventDefault(); return; }
   if(e.key==='Enter'||e.key==='Tab'){
-    if(wedge.buf.replace(/[\x00-\x1F]/g,'').length>=3){
+    if(wedge.buf.replace(/[\x00-\x1F\s]/g,'').length>=1){
       e.preventDefault();
-      var v=wedge.buf; wedge.buf='';
-      handle(v,false);
-      $('result').scrollIntoView({behavior:'smooth',block:'center'});
+      wedge.buf+='\n';
+      clearTimeout(wedge.timer);
+      wedge.timer=setTimeout(function(){ wedge.timer=0; if(wedge.buf.replace(/[\x00-\x1F\s]/g,'').length>=3) wedgeFlush(); else wedge.buf=''; },200);
     }
-    wedge.buf=''; return;
+    return;
   }
-  if(e.key && e.key.length===1 && !e.ctrlKey && !e.metaKey){ wedge.buf+=e.key; }
+  if(e.key && e.key.length===1 && !e.ctrlKey && !e.metaKey){ clearTimeout(wedge.timer); wedge.timer=0; wedge.buf+=e.key; }
 });
 
 $('resetBtn').onclick=function(){ modal('重新上傳？','目前的核對進度會全部清除。',clearAll,'清除並重新上傳'); };
 
 if(restore()){ showWork(); render(); showResult({cls:'',title:'已恢復上次的進度',detail:'共 '+recs.length+' 筆，已核對 '+order.length+' 筆。要換一批貨請按「重新上傳」。'}); }
-try{ if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('sw.js').catch(function(){}); }catch(e){}
+try{ if('serviceWorker' in navigator && location.protocol==='https:') navigator.serviceWorker.register('Receiving-sw.js',{scope:'./Receiving.html'}).catch(function(){}); }catch(e){}
 
 /* 給測試用 */
 window.__rcv={lotIdx:lotIdx,getSet:function(){ return SET; },camFormats:camFormats,camWanted:camWanted,parseLabel:parseLabel,handle:handle,wanted:wanted,matchOcr:matchOcr,ocrRun:ocrRun,ocrShow:ocrShow};
