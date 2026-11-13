@@ -3332,7 +3332,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V5.6';
+const APP_VER = 'V5.8';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -3701,8 +3701,13 @@ const FRAMES = {code:[.24,.04,.52,.92], label:[.04,.04,.92,.92], bar:[.05,.38,.9
 let stream = null, track = null, detector = null, wasm = false, zx = null, loopTimer = null, paused = false, busy = false;
 let lastKey = '', coolUntil = 0, hold = null, lastHintAt = 0;
 
+/* 補刷料號時掃描框加寬（料號條碼通常比較長）；「整張標籤」「單條」框本來就夠寬，不變 */
+function curFrame(){
+  const f = FRAMES[settings.frame] || FRAMES.code;
+  return partWait && f === FRAMES.code ? [.08, f[1], .84, f[3]] : f;
+}
 function applyFrame(){
-  const f = FRAMES[settings.frame] || FRAMES.code, el = cam.querySelector('.frame');
+  const f = curFrame(), el = cam.querySelector('.frame');
   el.style.left = f[0]*100 + '%'; el.style.top = f[1]*100 + '%'; el.style.width = f[2]*100 + '%'; el.style.height = f[3]*100 + '%';
   document.querySelectorAll('#frameChips button').forEach(b => b.classList.toggle('on', b.dataset.f === settings.frame));
 }
@@ -3803,7 +3808,7 @@ const BINS = ['LocalAverage', 'FixedThreshold', 'GlobalHistogram'];
 let frameNo = 0;
 function grabFrame(){
   const vw = video.videoWidth, vh = video.videoHeight; if(!vw || !vh) return null;
-  const f = FRAMES[settings.frame] || FRAMES.code;
+  const f = curFrame();
   const box = cam.getBoundingClientRect(), scale = Math.max(box.width / vw, box.height / vh);
   const ox = (vw * scale - box.width) / 2, oy = (vh * scale - box.height) / 2;
   const fx = (box.width * f[0] + ox) / scale, fy = (box.height * f[1] + oy) / scale;
@@ -3985,12 +3990,12 @@ function commitBox(lot, slots){
   // 批號不在工單的整顆：入庫標籤要料號。刷讀時順便讀到就直接記；沒有就請補刷 STOCK NO（或手動輸入），補到才能繼續
   if(lastPart.v && Date.now() - lastPart.t < 4000){ bx.part = lastPart.v; persist(); }
   if(bx.part){ openSheet(al.kind, al.title, al.body + partBoxHtml(bx, 'auto'), [[al.button, 'primary', done]]); return; }
-  partWait = bx; partCand = null;
+  partWait = bx; partCand = null; applyFrame();
   openSheet(al.kind, al.title, al.body + partBoxHtml(bx, 'wait'),
     [[{html:'⌨ 手動輸入料號'}, 'pmanual', () => { partManual(); return false; }], [al.button, 'primary', () => { if(!bx.part) return false; done(); }]]);
   const pb = $('sFoot').querySelector('.primary'); pb.disabled = true;
   $('mask').classList.add('partwait'); coolUntil = Date.now() + 500;
-  sheetOnClose = () => { partWait = null; partCand = null; $('mask').classList.remove('partwait'); };
+  sheetOnClose = () => { partWait = null; partCand = null; $('mask').classList.remove('partwait'); applyFrame(); };
 }
 /* 補刷料號的區塊：wait 等待讀取／ok 補刷讀到／auto 刷讀時順便讀到 */
 function partBoxHtml(bx, st){
@@ -4010,7 +4015,7 @@ function candPart(v, now){
 }
 function gotPart(v){
   const bx = partWait; if(!bx || !v) return;
-  bx.part = v; persist(); beep('ok'); partWait = null;
+  bx.part = v; persist(); beep('ok'); partWait = null; applyFrame();
   const box = $('partBox'); if(box) box.outerHTML = partBoxHtml(bx, 'ok');
   const pb = $('sFoot').querySelector('.primary'); if(pb) pb.disabled = false;
   $('mask').classList.remove('partwait');
