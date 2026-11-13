@@ -154,7 +154,9 @@
   .retbtn{width:100%;margin-top:10px;padding:12px;font-size:16px;font-weight:700}
   .empbar{font-size:13px;color:var(--sub);margin:-4px 2px 8px;display:flex;gap:8px;align-items:center} .empbar b{color:var(--ink)}
   .empbar button{border:1px solid var(--line);background:#fff;border-radius:6px;padding:2px 8px;font-size:12px}
-  @keyframes spin{to{transform:rotate(360deg)}} .sheet .sf .btn:disabled{background:#afb8c1;border-color:#afb8c1;color:#fff}
+  .pn{border:2px solid #d4a72c;background:#fff8c5;border-radius:10px;padding:9px 11px;margin-top:10px} .pn .t{font-weight:800;color:#7d4e00} .pn.ok{border-color:#2da44e;background:#dafbe1} .pn.ok .t{color:#1a7f37}
+  .pn .pcand{margin-top:8px;padding-top:8px;border-top:1px dashed #d4a72c} .pn .pcand .btn{width:100%;margin:6px 0 2px} .pn .pv{font-size:22px;font-weight:900;font-family:Consolas,monospace} .pn .wait{display:flex;align-items:center;gap:8px;margin-top:4px} .pn .spin{width:14px;height:14px;border:3px solid #d4a72c;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}} .mask.partwait{background:rgba(0,0,0,.12)} .mask.partwait .sheet{max-height:64vh;overflow:auto} .sheet .sf .btn:disabled{background:#afb8c1;border-color:#afb8c1;color:#fff}
   .cpick{border:1px solid #f3b8b3;background:#fff5f4;border-radius:8px;padding:8px 10px;margin-top:8px;line-height:1.7} .cpick b.r{color:var(--danger)} .cpk{display:inline-block;border-radius:5px;padding:0 8px;font-weight:700;font-size:13px} .cpk.out{background:#ffebe9;color:#cf222e} .cpk.sp{background:#fff1e5;color:#bc4c00}
   .empwrap{display:flex;align-items:center;gap:6px} .empR{font-size:26px;font-weight:800;color:var(--accent)} .empwrap .empin{flex:1}
   .splitbar{margin:0 0 10px;border:2px solid var(--danger);background:#fff5f4;border-radius:12px;padding:8px 12px}
@@ -2831,6 +2833,16 @@ function partCodeOf(raw, fmt){
   if(v.length < 6 || v.length > 30 || !/^[A-Z0-9][A-Z0-9_\-.]+$/.test(v) || !/[A-Z]/.test(v) || !/\d/.test(v)) return '';
   return v;
 }
+/* 判斷讀到的料號條碼哪一條是 STOCK NO（入庫標籤要用 STOCK NO）
+   已測 wafer：STOCK NO 結尾 _CP，ITEM NO 沒有（WF 庫位 L0、RL 開頭）→ 讀到 _CP 結尾的才採用，L0／RL 開頭沒有 _CP 的是 ITEM NO，不採用
+   KGD：STOCK NO＝ITEM NO（都沒有 _CP）→ 同一畫面讀到兩條相同的才確定；只讀到一條 → 不確定（sure:false，讓使用者確認） */
+function stockOf(list){
+  const a = list.filter(Boolean), cp = a.find(x => /_CP$/.test(x));
+  if(cp) return {v:cp, sure:true};
+  const k = a.filter(x => !/^(L0|RL)/.test(x)); if(!k.length) return null;
+  const dup = k.find((x, i) => k.indexOf(x) !== i);
+  return dup ? {v:dup, sure:true} : {v:k[0], sure:false};
+}
 /* 同一畫面讀到 STOCK NO 和 ITEM NO 時，取 STOCK NO（有 _CP 的；沒有就取最長的） */
 function pickPart(list){ const a = [...new Set(list.filter(Boolean))]; return a.find(x => /_CP$/.test(x)) || a.sort((x, y) => y.length - x.length)[0] || ''; }
 /* 格式錯誤的原因說明（防誤刷：不符格式一律不寫入，只提示重刷） */
@@ -3320,7 +3332,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V5.5';
+const APP_VER = 'V5.6';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -3539,7 +3551,7 @@ const $ = id => document.getElementById(id);
 const EMPTY = () => ({lot:'', wf:null, t_lot:0, t_wf:0});
 let files = [], boxes = [], pending = EMPTY(), db = buildDb([]);
 let info = {handler:'', receiver:'', note:''}, settings = {frame:'code', zoom:0, v:2};
-let screen = 'load', modalOpen = false, completedShown = false;
+let screen = 'load', modalOpen = false, completedShown = false, partWait = null, lastPart = {v:'', t:0}, partCand = null;
 
 const VCODE_KEY = 'wo_check_m_vcode';   // 上傳 Excel 時學到的供應商代碼
 SHOW_VCODE = true;
@@ -3883,7 +3895,7 @@ function loop(){
   clearTimeout(loopTimer);
   if(!stream || paused || screen !== 'scan') return;
   loopTimer = setTimeout(async () => {
-    if(!busy && !modalOpen && Date.now() > coolUntil){
+    if(!busy && (!modalOpen || partWait) && Date.now() > coolUntil){
       busy = true;
       try{ handleCodes(await decodeFrame()); }catch(e){}
       busy = false;
@@ -3906,6 +3918,10 @@ function handleCodes(codes){
   let multi = false;
   if(codes.length){
     const got = {lot:new Set(), wf:new Map()};
+    const pc = codes.map(o => partCodeOf(o.text, o.fmt)).filter(Boolean);
+    const so = stockOf(pc);   // 判斷哪一條是 STOCK NO（_CP 結尾＝已測；兩條相同＝KGD）
+    if(partWait){ if(so){ if(so.sure) gotPart(so.v); else candPart(so.v, now); } return; }   // 等待補刷料號：只讀料號
+    if(so && so.sure) lastPart = {v:so.v, t:now};                    // 順便讀到的料號（批號不在工單時入庫標籤要用）
     const wq = codes.find(o => /^WQ1[|:]/.test(String(o.text)));
     if(wq){ stopCam(); go('load'); setTimeout(() => openQrImport(wq.text), 150); return; }   // 掃描畫面讀到出貨單 QR：改成載入工單
     codes.forEach(o => { const c = classifyCode(o.text, o.fmt);
@@ -3965,7 +3981,52 @@ function commitBox(lot, slots){
   const al = boxAlert(bx, row);
   setLast(al.kind, `✖ 第 ${bx.b} 顆　${lot}　正確 ${row.ok} 片，問題 ${row.bad.length} 片`);
   const done = () => { if(summarize(db, boxes).complete && !completedShown){ completedShown = true; setTimeout(showComplete, 200); } };
-  openSheet(al.kind, al.title, al.body, [[al.button, 'primary', done]]);
+  if(!al.needPart){ openSheet(al.kind, al.title, al.body, [[al.button, 'primary', done]]); return; }
+  // 批號不在工單的整顆：入庫標籤要料號。刷讀時順便讀到就直接記；沒有就請補刷 STOCK NO（或手動輸入），補到才能繼續
+  if(lastPart.v && Date.now() - lastPart.t < 4000){ bx.part = lastPart.v; persist(); }
+  if(bx.part){ openSheet(al.kind, al.title, al.body + partBoxHtml(bx, 'auto'), [[al.button, 'primary', done]]); return; }
+  partWait = bx; partCand = null;
+  openSheet(al.kind, al.title, al.body + partBoxHtml(bx, 'wait'),
+    [[{html:'⌨ 手動輸入料號'}, 'pmanual', () => { partManual(); return false; }], [al.button, 'primary', () => { if(!bx.part) return false; done(); }]]);
+  const pb = $('sFoot').querySelector('.primary'); pb.disabled = true;
+  $('mask').classList.add('partwait'); coolUntil = Date.now() + 500;
+  sheetOnClose = () => { partWait = null; partCand = null; $('mask').classList.remove('partwait'); };
+}
+/* 補刷料號的區塊：wait 等待讀取／ok 補刷讀到／auto 刷讀時順便讀到 */
+function partBoxHtml(bx, st){
+  if(st === 'wait') return `<div id="partBox" class="pn"><div class="t">📷 請補刷料號（入庫標籤要用）</div>
+    <div class="muted">對準標籤右側<b>第 1 條</b>條碼（STOCK NO），讀到會自動填入</div><div class="wait"><span class="spin"></span>等待讀取料號…</div></div>`;
+  return `<div id="partBox" class="pn ok"><div class="t">✔ ${st === 'auto' ? '已記錄料號（入庫標籤要用）' : '已讀到料號'}</div><div class="pv">${esc(bx.part)}</div>${st === 'ok' ? '<div class="muted">讀錯了？按「⌨ 手動輸入料號」修改</div>' : ''}</div>`;
+}
+/* KGD（STOCK NO＝ITEM NO、沒有 _CP）一直讀不到兩條相同的：讀到 2 秒後顯示料號，讓使用者確認 */
+function candPart(v, now){
+  if(!partCand || partCand.v !== v){ partCand = {v, t:now, shown:false}; return; }
+  if(partCand.shown || now - partCand.t < 2000) return;
+  partCand.shown = true;
+  const box = $('partBox'); if(!box) return;
+  let c = $('partCand'); if(!c){ c = document.createElement('div'); c.id = 'partCand'; c.className = 'pcand'; box.appendChild(c); }
+  c.innerHTML = `<div>讀到 <b>${esc(v)}</b>（沒有 _CP，只讀到一條）</div><button type="button" class="btn" id="partCandOk">✔ 這是 KGD，用這個料號</button><div class="muted">已測 wafer 請繼續對準第 1 條（STOCK NO，結尾 _CP）</div>`;
+  $('partCandOk').onclick = () => gotPart(v);
+}
+function gotPart(v){
+  const bx = partWait; if(!bx || !v) return;
+  bx.part = v; persist(); beep('ok'); partWait = null;
+  const box = $('partBox'); if(box) box.outerHTML = partBoxHtml(bx, 'ok');
+  const pb = $('sFoot').querySelector('.primary'); if(pb) pb.disabled = false;
+  $('mask').classList.remove('partwait');
+  setLast('warn', `第 ${bx.b} 顆 ${bx.lot} 已記錄料號 ${v}，取出後按「已取出，繼續刷下一顆」`);
+}
+function partManual(){
+  const bx = boxes[boxes.length - 1], box = $('partBox'); if(!box || !bx) return;
+  partWait = partWait || bx;
+  box.className = 'pn'; box.innerHTML = `<div class="t">⌨ 手動輸入料號</div><div class="muted">請照標籤上的 <b>STOCK NO</b> 輸入，例：RL6480D_CP</div>
+    <input id="partIn" autocomplete="off" autocapitalize="characters" value="${esc(bx.part || '')}"><div id="partErr" style="color:var(--danger);font-size:14px"></div>
+    <button type="button" class="btn primary" id="partOk" style="width:100%">確定</button>`;
+  const ok = () => { const v = toHalfWidth($('partIn').value).trim().toUpperCase();
+    if(v.length < 4 || !/^[A-Z0-9][A-Z0-9_\-.]+$/.test(v)){ $('partErr').textContent = '料號格式不對（英文、數字，可含 _ -）'; return; }
+    partWait = bx; gotPart(v); };
+  $('partOk').onclick = ok; $('partIn').onkeydown = e => { if(e.key === 'Enter') ok(); };
+  setTimeout(() => $('partIn').focus(), 50);
 }
 function flashFrame(c){ cam.classList.add(c); setTimeout(() => cam.classList.remove(c), 500); }
 function setLast(cls, t){ const l = $('last'); l.className = 'last ' + cls; l.textContent = t; }
