@@ -3320,7 +3320,7 @@ function verdictHtml(sm){
 }
 /* 可收合的區塊：預設收起，按 ＋ 展開 */
 /* 版本流水號：每次有改動就往上加（電腦版、手機版共用） */
-const APP_VER = 'V5.4';
+const APP_VER = 'V5.5';
 document.addEventListener('DOMContentLoaded', () => document.querySelectorAll('.appVer').forEach(e => e.textContent = '版本 ' + APP_VER));
 function foldHtml(title, inner, extraClass, actions){
   return `<details class="fold ${extraClass || ''}"><summary><span class="ft">${title}</span><span class="fact">${actions || ''}<span class="pm"></span></span></summary>${inner}</details>`;
@@ -3930,10 +3930,10 @@ function handleCodes(codes){
     const key = pending.lot + '|' + pending.wf.join('/');
     if(key === lastKey){ pending = EMPTY(); renderPend(); return; }         // 同一張標籤還在畫面中
     // 批號和上一顆相同、刻號不同：可能是上一張標籤的 LOT 條碼還在畫面邊緣，配到下一張的 QR Code。
-    // 先等 1.5 秒確認畫面中沒有出現別的批號，才判定（同批號分多顆的情況，等 1.5 秒後一樣會判定）
+    // 先等 1 秒確認畫面中沒有出現別的批號，才判定（同批號分多顆的情況，等 1 秒後一樣會判定）
     if(prevLot.lot === pending.lot && now - prevLot.t < 15000){
       if(pairKey !== key){ pairKey = key; pairSince = now; setLast('', `批號 ${pending.lot} 與上一顆相同，確認是否為新的一顆…請保持對準`); }
-      if(now - pairSince < 1500){ renderPend(); return; }
+      if(now - pairSince < 1000){ renderPend(); return; }
     }
     pairKey = '';
     commitBox(pending.lot, pending.wf);
