@@ -51,6 +51,10 @@ header h1 small{font-weight:400;color:var(--sub);font-size:12px;margin-left:4px}
 .frame{position:absolute;inset:25% 20%;border:2px solid rgba(255,255,255,.9);border-radius:10px;pointer-events:none;box-shadow:0 0 0 3000px rgba(0,0,0,.38);display:none}
 #cam.live .frame{display:block}
 .frame.hit{border-color:#4ade80;box-shadow:0 0 0 3000px rgba(16,120,70,.42)}
+#btnTorch{position:absolute;right:-2px;top:calc(100% + 10px);pointer-events:auto;display:flex;align-items:center;gap:6px;height:44px;padding:0 14px 0 11px;border-radius:22px;background:rgba(0,0,0,.6);color:#fff;border:1px solid rgba(255,255,255,.45);font-size:14px;z-index:2}
+#btnTorch.in{top:auto;bottom:8px;right:8px}
+#btnTorch.on{background:#facc15;color:#1f1300;border-color:#facc15}
+#btnTorch.no{opacity:.55}
 .chips{position:absolute;left:10px;right:10px;top:10px;display:flex;gap:8px;flex-wrap:wrap;z-index:2}
 .chip{min-height:38px;border-radius:19px;padding:0 13px;font-size:14px;background:rgba(0,0,0,.55);color:#fff;border:1px solid rgba(255,255,255,.35)}
 .chip b{font-weight:700;margin-left:3px}
@@ -268,7 +272,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
   <header>
     <div style="display:flex;align-items:center">
       <div class="modeSeg"><button id="mIC">IC</button><button id="mWF">WAFER</button><button id="mIN">入庫</button></div>
-      <span class="ver">v4.13.5</span>
+      <span class="ver">v4.13.6</span>
     </div>
     <div class="tot"><div><b class="num" id="tCnt">0</b><span id="tCntL">筆</span></div><div><b class="num" id="tQty">0</b><span id="tQtyL">總數量</span></div></div>
   </header>
@@ -277,7 +281,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
   <section class="view on" id="vScan">
     <div id="cam">
       <video id="video" playsinline muted autoplay></video>
-      <div class="frame" id="frame"><div class="wg"><i></i><i></i><i></i><i></i><b></b></div></div>
+      <div class="frame" id="frame"><div class="wg"><i></i><i></i><i></i><i></i><b></b></div><button id="btnTorch" class="no" aria-label="手電筒"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10v4l-2 4v9a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1v-9L7 7z"/><path d="M7 7h10"/><path d="M12 13v2"/></svg><span>手電筒</span></button></div>
       <div id="focusDot"></div>
       <div class="chips">
         <div class="chipSeg hide" id="cW"><button data-t="WF">WF</button><button data-t="520W">520W</button><button data-t="KGD">KGD</button></div>
@@ -378,7 +382,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
         <select id="optCam"><option value="">自動(後鏡頭)</option></select></label>
     </div>
     <div class="note" id="camMsg">相機實際解析度:啟動相機後顯示</div>
-    <div class="note">手機條碼掃描 版本 v4.13.5(電腦端「手機資料接收」要用 v4.13 以上)</div>
+    <div class="note">手機條碼掃描 版本 v4.13.6(電腦端「手機資料接收」要用 v4.13 以上)</div>
     <div class="note" id="offMsg">離線開啟:檢查中…</div>
     <div class="note">資料只存在這支手機的瀏覽器裡,不會上傳。清除瀏覽器資料會一併清掉,請記得先匯出。</div>
   </div></section>
@@ -3304,6 +3308,7 @@ var frameKey='';
 function applyFrame(){
   var f=frameSize(), k=f[0].toFixed(3)+','+f[1].toFixed(3);
   if(k!==frameKey){ frameKey=k; $('frame').style.inset=((1-f[1])*50)+'% '+((1-f[0])*50)+'%'; }
+  var ch=$('cam').clientHeight||560; $('btnTorch').classList.toggle('in',(1-f[1])*ch/2<62);
   return f;
 }
 if(window.ResizeObserver){ try{ new ResizeObserver(function(){ applyFrame(); }).observe($('cam')); }catch(e){} }
@@ -3837,7 +3842,7 @@ function listCams(){
 function stopCam(){
   running=false; armed=0; torchOn=false; zoomCap=null; $('cZoom').classList.add('hide');
   if(stream){ stream.getTracks().forEach(function(t){t.stop();}); stream=null; }
-  $('video').srcObject=null; $('cam').classList.remove('live'); $('cTorch').classList.add('hide'); $('cTorch').classList.remove('on');
+  $('video').srcObject=null; $('cam').classList.remove('live'); $('cTorch').classList.add('hide'); $('cTorch').classList.remove('on'); $('btnTorch').classList.remove('on');
   setWake(false); syncMain();
 }
 function startCam(){
@@ -3857,7 +3862,7 @@ function startCam(){
     toast(isWF()?'把 '+wType()+' 標籤的條碼放進框內':(cfg.mode==='tap'?'對準條碼,讓它在框內盡量大,再按「掃一筆」':'對準條碼,讓它在框內盡量大,讀到會自動加入'));
     try{
       var tr=s.getVideoTracks()[0], cap=tr.getCapabilities?tr.getCapabilities():{};
-      if(cap.torch) $('cTorch').classList.remove('hide');
+      torchCaps(tr);
       zoomCap=(cap.zoom && cap.zoom.max>1.5)?cap.zoom:null; zoomAt=1; $('cZoom').classList.toggle('hide',!zoomCap); $('cZoom').lastChild.textContent='1x';
       if(cap.focusMode && cap.focusMode.indexOf('continuous')>=0) tr.applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(function(){});
     }catch(e){}
@@ -3904,10 +3909,20 @@ $('cam').addEventListener('click',function(e){
     setTimeout(function(){ if(stream) stream.getVideoTracks()[0].applyConstraints({advanced:[{focusMode:'continuous'}]}).catch(function(){}); },1500);
   }).catch(function(){});
 });
-$('cTorch').onclick=function(){
-  if(!stream) return; torchOn=!torchOn; var c=this;
-  stream.getVideoTracks()[0].applyConstraints({advanced:[{torch:torchOn}]}).then(function(){ c.classList.toggle('on',torchOn); },function(){ torchOn=false; });
-};
+/* 手電筒:有些 Android 手機剛開相機時還沒回報支援手電筒,過一下再查一次 */
+var torchOK=false;
+function torchCaps(tr){
+  function chk(){ try{ if(!stream || stream.getVideoTracks()[0]!==tr) return; var c=tr.getCapabilities?tr.getCapabilities():{}; torchOK=!!c.torch; $('btnTorch').classList.toggle('no',!torchOK); }catch(e){} }
+  torchOn=false; $('btnTorch').classList.remove('on'); chk(); setTimeout(chk,800); setTimeout(chk,2000);
+}
+function torchSet(on){
+  if(!stream) return;
+  var tr=stream.getVideoTracks()[0];
+  tr.applyConstraints({advanced:[{torch:on}]}).then(function(){ torchOn=on; torchOK=true; $('btnTorch').classList.toggle('on',on); $('btnTorch').classList.remove('no'); },
+    function(){ torchOn=false; $('btnTorch').classList.remove('on'); if(on) toast(torchOK?'手電筒打不開,請再按一次':'這支手機的瀏覽器不支援從網頁開手電筒(iPhone 的 Safari 不支援)','warn'); });
+}
+$('btnTorch').onclick=function(e){ e.stopPropagation(); torchSet(!torchOn); };
+$('cTorch').onclick=function(){ torchSet(!torchOn); };
 document.addEventListener('visibilitychange',function(){
   if(document.hidden){ if(running) stopCam(); }
   else if(wantCam && view==='vScan') startCam();
@@ -4196,7 +4211,7 @@ function qrPayload(){
   else if(isWF()){ type='WF'; wafers.forEach(function(w){ rows.push([w.type||'WF',w.stock,w.item,w.lot,w.qty,w.wf]); }); }
   else { type='IC'; tidy().rows.forEach(function(r){ rows.push([r.part,r.lot,r.qty]); }); }
   /* 第一行最後一欄是手機版本,電腦端用來提醒兩邊版本不同 */
-  return {type:type,n:rows.length,text:['SCN1',type,rows.length,stamp(),'v4.13.5'].join('\t')+'\n'+rows.map(function(r){ return r.map(clean).join('\t'); }).join('\n')};
+  return {type:type,n:rows.length,text:['SCN1',type,rows.length,stamp(),'v4.13.6'].join('\t')+'\n'+rows.map(function(r){ return r.map(clean).join('\t'); }).join('\n')};
 }
 function deflateRaw(bytes){
   try{
