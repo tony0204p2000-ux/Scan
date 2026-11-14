@@ -268,7 +268,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
   <header>
     <div style="display:flex;align-items:center">
       <div class="modeSeg"><button id="mIC">IC</button><button id="mWF">WAFER</button><button id="mIN">入庫</button></div>
-      <span class="ver">v4.10</span>
+      <span class="ver">v4.13.5</span>
     </div>
     <div class="tot"><div><b class="num" id="tCnt">0</b><span id="tCntL">筆</span></div><div><b class="num" id="tQty">0</b><span id="tQtyL">總數量</span></div></div>
   </header>
@@ -341,6 +341,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
     </div>
     <div class="stack">
       <button class="primary" id="btnXlsx">匯出 Excel<small id="xlsxSub"></small></button>
+      <button id="btnCopy520" class="hide">複製 520W 入庫表格<small id="copy520Sub">料號/批號/數量/儲位,貼到 520W Excel 庫存總表後按「自動補搜尋碼」</small></button>
       <button id="btnQR">產生 QR Code<small>電腦端用條碼槍讀取,轉成 Excel 或輸入 VPM</small></button>
       <button id="btnShare" class="hide">分享 Excel<small>用手機的分享選單傳出去</small></button>
     </div>
@@ -377,7 +378,7 @@ header .ver{font-size:11px;color:var(--sub);margin-left:6px}
         <select id="optCam"><option value="">自動(後鏡頭)</option></select></label>
     </div>
     <div class="note" id="camMsg">相機實際解析度:啟動相機後顯示</div>
-    <div class="note">手機條碼掃描 版本 v4.10(電腦端「手機資料接收」要用同一版)</div>
+    <div class="note">手機條碼掃描 版本 v4.13.5(電腦端「手機資料接收」要用 v4.13 以上)</div>
     <div class="note" id="offMsg">離線開啟:檢查中…</div>
     <div class="note">資料只存在這支手機的瀏覽器裡,不會上傳。清除瀏覽器資料會一併清掉,請記得先匯出。</div>
   </div></section>
@@ -3110,6 +3111,7 @@ function renderHead(st){
     var ws=wStats();
     $('tCnt').textContent=fmtN(wl().length); $('tCntL').textContent=isIN()?'筆':'張'; $('tQty').textContent=fmtN(ws.qty); $('tQtyL').textContent='總片數'; $('navCnt').textContent=wl().length;
     $('sCnt').textContent=fmtN(wl().length); $('sCntL').textContent=isIN()?'入庫筆數':'標籤張數'; $('sQty').textContent=fmtN(ws.qty); $('sQtyL').textContent='總片數'; $('sPart').textContent=ws.parts; $('sLot').textContent=ws.lots;
+    var n520=isIN()?rows520().length:0; $('btnCopy520').classList.toggle('hide',!n520); if(n520) $('copy520Sub').textContent=n520+' 筆 · 料號/批號/數量/儲位,貼到 520W Excel 庫存總表後按「自動補搜尋碼」';
     $('xlsxSub').textContent=isIN()?'入庫表單:儲位/Item No/Lot No/Qty/WF ID':'每張標籤一列:種類/STOCK NO/ITEM NO/LOT NO/QTY/WF ID';
   }else{
     $('tCnt').textContent=fmtN(items.length); $('tCntL').textContent='筆'; $('tQty').textContent=fmtN(st.qty); $('tQtyL').textContent='總數量'; $('navCnt').textContent=items.length;
@@ -3541,11 +3543,13 @@ function wFrame(dets){
    只有一個而且格式和用過的儲位相同 → 直接存;否則列出來讓使用者點選 */
 var inGate=true, locPicking=false, photoShot=false, locC=null, locTimer=0, locLimit=0;
 function locShape(t){ return String(t).toUpperCase().replace(/[A-Z]+/g,'A').replace(/[0-9]+/g,'9'); }
-function isLocShape(t){ return (cfg.locShapes||[]).indexOf(locShape(t))>=0; }
+/* RL 開頭一定是料號(例 RL6665:格式和 U11 這種儲位一樣是「英文+數字」,以前會被當成儲位擋掉) */
+function isRL(t){ return /^RL/i.test(String(t).trim()); }
+function isLocShape(t){ return !isRL(t) && (cfg.locShapes||[]).indexOf(locShape(t))>=0; }
 function learnLoc(t){ var sh=locShape(t), a=cfg.locShapes||[]; if(a.indexOf(sh)<0){ a.unshift(sh); cfg.locShapes=a.slice(0,20); } }
 /* 氮氣櫃的儲位條碼是 NC- 開頭 */
 function isGC(t){ return /^NC-/i.test(String(t).trim()); }
-function labelLike(t){ var c=wClass(t,wcur.type); return c.k==='lot'||c.k==='qty'||/_CP$/i.test(t)||/[;,?]/.test(t); }
+function labelLike(t){ var c=wClass(t,wcur.type); return c.k==='lot'||c.k==='qty'||isRL(t)||/_CP$/i.test(t)||/[;,?]/.test(t); }
 function locFrame(dets){
   var v=wcur.v, now=Date.now(), gc=cfg.locMode==='gc';
   if(!locC) locC={m:{},t0:0,other:0};
@@ -4192,7 +4196,7 @@ function qrPayload(){
   else if(isWF()){ type='WF'; wafers.forEach(function(w){ rows.push([w.type||'WF',w.stock,w.item,w.lot,w.qty,w.wf]); }); }
   else { type='IC'; tidy().rows.forEach(function(r){ rows.push([r.part,r.lot,r.qty]); }); }
   /* 第一行最後一欄是手機版本,電腦端用來提醒兩邊版本不同 */
-  return {type:type,n:rows.length,text:['SCN1',type,rows.length,stamp(),'v4.10'].join('\t')+'\n'+rows.map(function(r){ return r.map(clean).join('\t'); }).join('\n')};
+  return {type:type,n:rows.length,text:['SCN1',type,rows.length,stamp(),'v4.13.5'].join('\t')+'\n'+rows.map(function(r){ return r.map(clean).join('\t'); }).join('\n')};
 }
 function deflateRaw(bytes){
   try{
@@ -4224,6 +4228,29 @@ function drawQR(){
   $('qrDens').textContent=(cfg.qrSize||700)>400?'較疏':'較密';
 }
 $('btnQR').onclick=function(){ ready(makeQR); };
+/* 520W:520W Excel 的「自動補搜尋碼」可以一次處理貼上的多筆,所以整理成 料號/批號/數量/儲位 四欄(不含標題)直接複製 */
+function rows520(){ return inbound.filter(function(r){ return (r.type||'WF')==='520W'; }).map(function(r){ var q=toQty(r.qty); return [r.stock||r.item,r.lot,q===null?r.qty:q,r.loc]; }); }
+/* Excel 貼上時會把 1E23 這類批號變成數字、12-3 這類儲位變成日期 */
+function xlRisk(rows){ var a=[]; rows.forEach(function(r,i){ if(/^\d+E\d+$/i.test(r[1])) a.push(r[1]); if(/^\d{1,2}[-\/]\d{1,2}$/.test(String(r[3]))) a.push(r[3]); }); return a; }
+function copyText(tsv,html){
+  if(navigator.clipboard && window.ClipboardItem && html){
+    try{ return navigator.clipboard.write([new ClipboardItem({'text/plain':new Blob([tsv],{type:'text/plain'}),'text/html':new Blob([html],{type:'text/html'})})]); }catch(e){}
+  }
+  if(navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(tsv);
+  return new Promise(function(ok,bad){ var t=document.createElement('textarea'); t.value=tsv; document.body.appendChild(t); t.select(); try{ document.execCommand('copy')?ok():bad(); }catch(e){ bad(e); } t.remove(); });
+}
+$('btnCopy520').onclick=function(){
+  var rows=rows520(); if(!rows.length){ toast('沒有 520W 的入庫資料','warn'); return; }
+  if(wAny() && !wcur.done) toast('目前這張標籤還沒存完,不包含在內','warn');
+  var tsv=rows.map(function(r){ return r.join('\t'); }).join('\r\n')+'\r\n';
+  /* HTML 版本把料號/批號/儲位標成文字格式,Excel 貼上時不會被轉成數字或日期 */
+  var td=function(v,txt){ return '<td'+(txt?' style="mso-number-format:\'\\@\'"':'')+'>'+esc(String(v))+'</td>'; };
+  var html='<table>'+rows.map(function(r){ return '<tr>'+td(r[0],1)+td(r[1],1)+td(r[2],0)+td(r[3],1)+'</tr>'; }).join('')+'</table>';
+  var risk=xlRisk(rows);
+  copyText(tsv,html).then(function(){
+    beep('done'); toast('已複製 520W '+rows.length+' 筆。到 520W Excel 庫存總表,點最後一筆下面那一列的 A 欄貼上,再按「自動補搜尋碼」'+(risk.length?'。注意:'+risk.join('、')+' 貼上後請確認沒有被 Excel 改成數字或日期':''),'ok',true);
+  },function(){ toast('這支手機不允許複製,請改用「產生 QR Code」傳到電腦','bad'); });
+};
 $('qrPrev').onclick=function(){ if(qrAt>0){ qrAt--; drawQR(); } };
 $('qrNext').onclick=function(){ if(qrAt<qrList.length-1){ qrAt++; drawQR(); } };
 $('qrClose').onclick=function(){ $('qrv').classList.remove('on'); if(!running) setWake(false); };
